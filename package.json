@@ -1,0 +1,32 @@
+{
+    "name": "pi-code",
+    "version": "0.1.0",
+    "description": "A curated pi package bundling custom extensions and configurations.",
+    "keywords": [
+        "pi-package"
+    ],
+    "dependencies": {
+        "pi-mcporter": "*",
+        "pi-ask-tool-extension": "*"
+    },
+    "bundledDependencies": [
+        "pi-mcporter",
+        "pi-ask-tool-extension"
+    ],
+    "peerDependencies": {
+        "@mariozechner/pi-coding-agent": "*",
+        "@mariozechner/pi-ai": "*",
+        "@mariozechner/pi-agent-core": "*",
+        "@sinclair/typebox": "*"
+    },
+    "pi": {
+        "extensions": [
+            "./extensions",
+            "node_modules/pi-mcporter/dist/index.js",
+            "node_modules/pi-ask-tool-extension/src/index.ts"
+        ],
+        "skills": [
+            "./skills"
+        ]
+    }
+}
