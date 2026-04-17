@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-04-17
+
+### Added
+
+- **`parallel` extension**: New `extensions/parallel.ts` registers a `parallel` meta tool that fans out multiple independent operations (read, bash, write, edit, ptc) concurrently in a single tool call via `Promise.all`. Results are returned together. Sits alongside `ptc.ts` as a single-file extension, auto-discovered by the `./extensions` glob.
+
+### Changed
+
+- **`system-prompt` extension — tool selection section**: Added a `## Tool selection` section positioning `ptc` as the default and `parallel` as the preferred choice when 2+ independent operations are needed — fan out instead of issuing sequential calls.
+- **`subagents` extension — system prompt injection**: Revised `buildSubagentInstruction()`:
+  - Added coordinator framing: parent agent orchestrates, subagents do the work and report back.
+  - Defined "trivial" explicitly: direct answer from context, single tool call, no file changes.
+  - Replaced hardcoded `→ Explore / → general-purpose` mappings in triggers with description-based matching: agent reads the live registry and picks by description.
+  - Added **Never do inline** anti-patterns: writing/editing code, reading >2 files, multi-step shell sequences.
+  - Added **Foreground vs background** decision rule.
+  - Added fallback: if no matching agent is found, handle the work inline.
+
 ## [1.4.0] - 2026-04-17
 
 ### Changed
