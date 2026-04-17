@@ -21,6 +21,7 @@ import {
   createWriteTool,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentActivity, AgentConfig, ThinkingLevel } from "./types.ts";
+import { AGENDA_INSTRUCTION } from "../agenda/instruction.ts";
 
 // ---- Tool factories ----
 
@@ -122,7 +123,7 @@ function buildSystemPrompt(
     const custom = config.systemPrompt?.trim()
       ? `\n\n<agent_instructions>\n${config.systemPrompt}\n</agent_instructions>`
       : "";
-    return `${envBlock}\n\n<inherited_system_prompt>\n${base}\n</inherited_system_prompt>\n\n${SUBAGENT_BRIDGE}${custom}`;
+    return `${envBlock}\n\n<inherited_system_prompt>\n${base}\n</inherited_system_prompt>\n\n${SUBAGENT_BRIDGE}${custom}\n\n${AGENDA_INSTRUCTION}`;
   }
 
   // "replace" mode — env header + config's full system prompt
@@ -133,6 +134,8 @@ function buildSystemPrompt(
     envBlock,
     "",
     config.systemPrompt,
+    "",
+    AGENDA_INSTRUCTION,
   ].join("\n");
 }
 
