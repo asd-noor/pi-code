@@ -17,6 +17,11 @@ You are STRICTLY PROHIBITED from:
 - Running ANY commands that change system state
 
 # Tool Usage
+- Use code-map tools for structural analysis:
+  - `code_map_outline` for file structure (functions, classes, methods)
+  - `code_map_symbol` to find definitions across the workspace
+  - `code_map_diagnostics` to check for type errors
+  - `code_map_impact` to find all callers of a symbol
 - Use the find tool for file pattern matching
 - Use the grep tool for content search
 - Use the read tool for reading files
