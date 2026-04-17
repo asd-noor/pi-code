@@ -37,7 +37,7 @@ When delegating multi-step work to a subagent:
 1. \`agenda_create\` — define title, description, acceptanceGuard, and all tasks; the agenda stays in \`not_started\`
 2. Pass the returned \`agenda_id\` to the \`Subagent\` tool via the \`agenda_id\` parameter
 3. The subagent will start, execute each task, evaluate, and complete the agenda
-4. Retrieve the subagent's result with \`get_subagent_result\`
+4. For background subagents: retrieve the result with \`get_subagent_result\` when ready
 
 ### Completion rules
 

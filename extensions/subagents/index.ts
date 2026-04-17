@@ -163,9 +163,12 @@ export default function (pi: ExtensionAPI) {
     widget.onTurnStart();
   });
 
-  pi.on("before_agent_start", async (event) => ({
-    systemPrompt: event.systemPrompt + "\n\n" + buildSubagentInstruction(),
-  }));
+  pi.on("before_agent_start", async (event) => {
+    // Subagent sessions already contain <sub_agent_context> — skip orchestration instructions
+    // that are only relevant to the primary agent.
+    if (event.systemPrompt.includes("<sub_agent_context>")) return {};
+    return { systemPrompt: event.systemPrompt + "\n\n" + buildSubagentInstruction() };
+  });
 
   pi.on("session_shutdown", async () => {
     manager.abortAll();
@@ -243,14 +246,15 @@ export default function (pi: ExtensionAPI) {
       "",
       "### Parallel work — fan-out pattern",
       "",
-      "To run multiple agents simultaneously, call `Subagent` once per task with `run_in_background: true`.",
+      "To run multiple agents simultaneously: create one agenda per task, then call `Subagent` once per task with `run_in_background: true`.",
       "All agents start at once. Collect results with `get_subagent_result` when needed.",
       "",
       "Example:",
-      "1. Subagent(task=A, run_in_background=true) → id-1",
-      "2. Subagent(task=B, run_in_background=true) → id-2",
-      "3. Subagent(task=C, run_in_background=true) → id-3",
-      "4. get_subagent_result(id-1, wait=true), get_subagent_result(id-2, wait=true), get_subagent_result(id-3, wait=true)",
+      "1. agenda_create(title, tasks, acceptanceGuard) → agenda_id=42  [for each independent task]",
+      "2. Subagent(task=A, agenda_id=42, run_in_background=true) → id-1",
+      "3. Subagent(task=B, agenda_id=43, run_in_background=true) → id-2",
+      "4. Subagent(task=C, agenda_id=44, run_in_background=true) → id-3",
+      "5. get_subagent_result(id-1, wait=true), get_subagent_result(id-2, wait=true), get_subagent_result(id-3, wait=true)",
       "",
       "Use this pattern whenever tasks are independent. Never run sequential subagents when parallel is possible.",
       "- `get_subagent_result` — retrieve output when done (`wait: true` to block)",

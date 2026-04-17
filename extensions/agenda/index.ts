@@ -6,9 +6,12 @@ import { AGENDA_TOOL_NAMES, registerAgendaTools } from "./tools.ts";
 import { refreshAgendaWidget } from "./widget.ts";
 
 export default function (pi: ExtensionAPI) {
-  pi.on("before_agent_start", async (event) => ({
-    systemPrompt: event.systemPrompt + "\n\n" + AGENDA_INSTRUCTION,
-  }));
+  pi.on("before_agent_start", async (event) => {
+    // Subagent sessions always contain <sub_agent_context> in their base system prompt.
+    // They receive a targeted agenda instruction via buildSubagentAgendaInstruction() instead.
+    if (event.systemPrompt.includes("<sub_agent_context>")) return {};
+    return { systemPrompt: event.systemPrompt + "\n\n" + AGENDA_INSTRUCTION };
+  });
 
   registerAgendaTools(pi);
 
