@@ -22,6 +22,18 @@ Task:   \`not_started\` → \`in_progress\` → \`completed\` (reopen: \`complet
 
 Task state can only change while the parent agenda is \`in_progress\`.
 
+### Task granularity
+
+Each task is a **meaningful phase of work**, not a single tool call.
+`ptc` and `parallel` let multiple reads/edits/commands execute in one shot — plan tasks around
+outcomes, not tool invocations:
+
+- ✓ `Audit all relevant files` — one task; may fan out a dozen parallel reads
+- ✓ `Apply all edits and verify` — one task; may use ptc + parallel edits + type-check
+- ✗ `Read file X` / `Read file Y` / `Edit Z` — too granular; collapse into phases
+
+A well-scoped agenda has 2–6 tasks. More than that usually means over-splitting.
+
 ### Workflow — self-executing (no delegation)
 
 1. \`agenda_create\` — title, description, acceptanceGuard, initial task notes

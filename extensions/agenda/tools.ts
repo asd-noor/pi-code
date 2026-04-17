@@ -85,7 +85,7 @@ export function registerAgendaTools(pi: ExtensionAPI): void {
       title: Type.String({ description: "Agenda title." }),
       description: Type.String({ description: "Agenda description." }),
       acceptanceGuard: Type.String({ description: "Agenda-level acceptance guard for terminal completion." }),
-      tasks: Type.Optional(Type.Array(Type.String({ description: "Short task note." }))),
+      tasks: Type.Optional(Type.Array(Type.String({ description: "One task = one meaningful phase of work (not a single tool call). With ptc/parallel, many operations can be one task. Keep to 2-6 tasks total." }))),
     }),
     execute(db, params) {
       const title       = String(params.title ?? "").trim();
