@@ -308,7 +308,7 @@ ${buildTypeListText()}
 
 Guidelines:
 - Delegate to a subagent by default. Only handle work inline when it is a single, trivial action.
-- Hard triggers: exploration across >2 files → Explore; implementation/refactor/edit → general-purpose; architecture planning → Plan; committing staged changes → git-commit; any task with 3+ steps → general-purpose.
+- Hard triggers: exploration across >2 files → Explore; implementation/refactor/edit → general; committing staged changes → git-commit; any task with 3+ steps → general.
 - Read each agent's description and pick the best fit. The available agents are listed in the system prompt.
 - For parallel work, use run_in_background: true on each subagent. Foreground calls run sequentially — only one executes at a time.
 - Provide clear, detailed prompts so the subagent can work autonomously.
@@ -363,7 +363,7 @@ Guidelines:
       widget.setUICtx(ctx.ui);
 
       const rawType = params.subagent_type as SubagentType;
-      const agentConfig = getConfig(rawType) ?? getConfig("general-purpose")!;
+      const agentConfig = getConfig(rawType) ?? getConfig("general")!;
       const fellBack = !getConfig(rawType);
 
       // Resolve model override
@@ -383,7 +383,7 @@ Guidelines:
       const maxTurns        = params.max_turns ?? agentConfig.maxTurns ?? getDefaultMaxTurns();
 
       const fallbackNote = fellBack
-        ? `Note: Unknown subagent type "${rawType}" — using general-purpose.\n\n`
+        ? `Note: Unknown subagent type "${rawType}" — using general.\n\n`
         : "";
 
       // Resume existing agent
