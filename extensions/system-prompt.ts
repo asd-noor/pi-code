@@ -50,10 +50,10 @@ Before every tool action, run this internal decision check:
 
 ## Tool selection
 
-\`ptc\` is the default for all work. Use \`parallel\` when you have 2+ independent operations
-whose results don't need to be combined — fan them out in one call instead of issuing them
-sequentially. Prefer \`parallel\` over separate sequential tool calls whenever the independence
-condition holds.
+\`ptc\` is the default for all work. \`parallel\` fans out 2+ independent operations in one call —
+each slot can be \`read\`, \`bash\`, \`write\`, \`edit\`, or \`ptc\`. Slots must be independent of each
+other (no slot depends on another's output). Prefer \`parallel\` over sequential calls whenever
+the independence condition holds.
 
 ## MCP Policy
 

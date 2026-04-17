@@ -22,15 +22,37 @@ const SANDBOX_DIR   = "/tmp/pi-sandbox";
 const SYSTEM_INSTRUCTION = `
 ## Programmatic Tool Calling (PTC)
 
-**Default to \`ptc\` for all work.** Use individual tools only in these specific cases:
+**\`ptc\` is the default for all work.** Use \`parallel\` to fan out independent items simultaneously.
+Use \`read\` and \`edit\` only in the specific cases below.
 
-- **\`read\`** — only when you need raw file content in your context window to reason about it before deciding what to do (e.g. reading a file before planning an edit strategy). If reading to process or summarise, use \`ptc\`.
-- **\`edit\`** — only when making parallel tool calls that may touch the same file simultaneously. \`edit\` uses a file mutation queue that prevents race conditions in parallel execution. For sequential edits, \`ptc\` is fine.
-- Everything else: **use \`ptc\`**.
+### Decision tree
 
-### Script type priority
+1. **Two or more independent operations?** → \`parallel\` — fan them out in one call, all run concurrently
+   - Each slot can be: \`read\`, \`bash\`, \`write\`, \`edit\`, or **\`ptc\`**
+   - Slots must be independent: no slot may depend on another slot's output
+   - Results are returned together — you can combine them freely after
+2. **Single operation?** → \`ptc\` (default for everything)
+3. **Exceptions — use the named tool directly:**
+   - \`read\` — when you need raw file content in your context window *before deciding* what to do
+   - \`edit\` — when two parallel slots write to the same file (\`edit\` uses a mutation queue to prevent races)
 
-1. **Python** (primary) — data processing, file operations, APIs, parsing, logic
+### \`parallel\` with \`ptc\` slots
+
+\`parallel\` can mix \`ptc\` scripts with other operations in one fan-out call:
+
+\`\`\`
+parallel([
+  ptc(type="python", script="..."),   // analyse file A
+  ptc(type="python", script="..."),   // analyse file B simultaneously
+  read(path="config.ts"),             // bring raw content into context
+])
+\`\`\`
+
+Use this to run multiple scripts, read files, and execute shell commands all at once.
+
+### Script type priority (inside \`ptc\`)
+
+1. **Python** (primary) — data processing, file I/O, APIs, parsing, logic; use PEP 723 inline deps
 2. **Bash** — shell operations, git, build commands, multi-step shell logic
 
 ### Python scripts must use PEP 723 inline metadata
