@@ -217,9 +217,14 @@ export default function (pi: ExtensionAPI) {
     const lines: string[] = [
       "## Subagents",
       "",
-      "Spawning a subagent should be your default instinct for any non-trivial task." +
-      " Prefer delegation over handling work inline — subagents get a clean context window," +
-      " can run in parallel, and keep the parent session uncluttered.",
+      "Delegate to a subagent by default. Only handle work inline when it is a single, trivial action.",
+      "",
+      "**Hard triggers — always spawn a subagent:**",
+      "- Exploring or reading more than 2 files → Explore",
+      "- Implementing a feature, fix, or refactor → general-purpose",
+      "- Planning architecture or design before coding → Plan",
+      "- Committing staged changes → git-commit",
+      "- Any task with 3 or more steps → general-purpose",
       "",
       "### Parallel work",
       "",
@@ -274,7 +279,8 @@ Available subagent types:
 ${buildTypeListText()}
 
 Guidelines:
-- Spawning a subagent should be your default instinct for any non-trivial task — prefer delegation over handling work inline.
+- Delegate to a subagent by default. Only handle work inline when it is a single, trivial action.
+- Hard triggers: exploration across >2 files → Explore; implementation/refactor/edit → general-purpose; architecture planning → Plan; committing staged changes → git-commit; any task with 3+ steps → general-purpose.
 - Read each agent's description and pick the best fit. The available agents are listed in the system prompt.
 - For parallel work, use run_in_background: true on each subagent. Foreground calls run sequentially — only one executes at a time.
 - Provide clear, detailed prompts so the subagent can work autonomously.
