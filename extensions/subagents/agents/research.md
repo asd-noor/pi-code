@@ -1,7 +1,7 @@
 ---
 description: Performs comprehensive research on topics, libraries, and APIs using web sources and documentation, with memory integration.
 display_name: Research
-prompt_mode: append
+prompt_mode: replace
 ---
 
 # Research Agent
