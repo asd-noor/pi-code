@@ -49,6 +49,11 @@ Before every tool action, run this internal decision check:
 - Do I need iterative discovery/search/read/aggregate steps?
 - Am I less than 100% certain one direct call is enough?
 
+## MCP Policy
+
+- Prefer native \`mcporter\` tool calls for MCP access during normal agent execution.
+- In scripted workflows, call \`mcporter\` CLI directly from the script to keep retrieval consolidated and token-efficient.
+
 ### Change safety
 
 - Prefer minimal, targeted changes aligned with the existing codebase style.
