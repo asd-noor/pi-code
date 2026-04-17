@@ -82,23 +82,12 @@ export class AgentWidget {
     // Nothing to show — clear widget and stop timer
     if (!hasActive && !hasFinished) {
       this.uiCtx.setWidget("subagents", undefined);
-      this.uiCtx.setStatus("subagents", undefined);
       if (this.timer) { clearInterval(this.timer); this.timer = undefined; }
       // Prune stale linger entries
       for (const [id] of this.finishedAge) {
         if (!records.some((r) => r.id === id)) this.finishedAge.delete(id);
       }
       return;
-    }
-
-    // Status bar
-    if (hasActive) {
-      const parts: string[] = [];
-      if (running.length > 0) parts.push(`${running.length} running`);
-      if (queued.length > 0) parts.push(`${queued.length} queued`);
-      this.uiCtx.setStatus("subagents", parts.join(", ") + " subagent" + (running.length + queued.length === 1 ? "" : "s"));
-    } else {
-      this.uiCtx.setStatus("subagents", undefined);
     }
 
     // Build widget lines (plain strings — no theme, just ASCII)
@@ -178,7 +167,6 @@ export class AgentWidget {
   dispose(): void {
     if (this.timer) { clearInterval(this.timer); this.timer = undefined; }
     this.uiCtx?.setWidget("subagents", undefined);
-    this.uiCtx?.setStatus("subagents", undefined);
   }
 }
 
