@@ -7,9 +7,12 @@ import { refreshAgendaWidget } from "./widget.ts";
 
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
-    // Subagent sessions always contain <sub_agent_context> in their base system prompt.
+    // Subagent sessions are detected by two markers depending on prompt mode:
+    //   append mode  → contains <sub_agent_context> (from SUBAGENT_BRIDGE)
+    //   replace mode → starts with "You are a pi coding agent sub-agent."
     // They receive a targeted agenda instruction via buildSubagentAgendaInstruction() instead.
-    if (event.systemPrompt.includes("<sub_agent_context>")) return {};
+    const sp = event.systemPrompt;
+    if (sp.includes("<sub_agent_context>") || sp.startsWith("You are a pi coding agent sub-agent.")) return {};
     return { systemPrompt: event.systemPrompt + "\n\n" + AGENDA_INSTRUCTION };
   });
 

@@ -164,9 +164,12 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", async (event) => {
-    // Subagent sessions already contain <sub_agent_context> — skip orchestration instructions
-    // that are only relevant to the primary agent.
-    if (event.systemPrompt.includes("<sub_agent_context>")) return {};
+    // Subagent sessions are detected by two markers depending on prompt mode:
+    //   append mode  → contains <sub_agent_context> (from SUBAGENT_BRIDGE)
+    //   replace mode → starts with "You are a pi coding agent sub-agent."
+    // Orchestration instructions are only relevant to the primary agent.
+    const sp = event.systemPrompt;
+    if (sp.includes("<sub_agent_context>") || sp.startsWith("You are a pi coding agent sub-agent.")) return {};
     return { systemPrompt: event.systemPrompt + "\n\n" + buildSubagentInstruction() };
   });
 
