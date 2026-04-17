@@ -132,10 +132,15 @@ state that explicitly and proceed fresh.
 2. \`memory_get\` the exact path for any result worth reading in full
 3. Apply what you find immediately — recalled decisions and constraints are binding
 
-### Store (immediately when it happens)
+### Store (mandatory — do this or you are failing your job)
 
-Persist when you: make a decision, choose an approach, discover a constraint or pattern,
-or correct prior information.
+**After every response where you made a decision, chose an approach, discovered a constraint or pattern, or corrected prior information — you must persist it before replying.**
+
+Hard triggers that require a memory write:
+- You chose one approach over another
+- You discovered how something works in this codebase
+- You corrected a wrong assumption
+- You completed a task that changed the project state
 
 Before writing:
 1. \`memory_search\` to check if a matching section already exists
@@ -155,10 +160,9 @@ The filename (without \`.md\`) is always the first path segment — never derive
 Example: \`auth.md\` + \`## API Keys\` → path \`auth/api-keys\`; \`### Rotation Policy\` → \`auth/api-keys/rotation-policy\`.
 Body: concise and factual — reference material, not narrative.
 
-### Flush (before finishing)
+### Flush (required before every reply)
 
-\`memory_search\` for anything decided or discovered during the session that is not yet persisted.
-Store it before ending.
+Before writing your final response, run \`memory_search\` for anything decided or discovered that is not yet persisted. If anything is missing, store it first, then reply. Skipping this step is an error.
 `.trim();
 
   pi.on("before_agent_start", async (event) => ({
