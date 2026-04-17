@@ -83,7 +83,7 @@ auth.md
 No config file needed. Directory resolved in order:
 
 1. `$MEMORY_MD_DIR` env var — if already set in the environment
-2. `~/.pi/memory` — global default, created automatically
+2. `<current-directory>/.pi-memory` — project-local default, created automatically
 
 `/memory status` shows which source is active.
 
@@ -91,9 +91,11 @@ No config file needed. Directory resolved in order:
 
 | Status | Meaning |
 |---|---|
-| `☰ memory: starting… (~/.pi/memory)` | Daemon spawned, initialising |
-| `☰ memory: running (~/.pi/memory)` | Daemon ready, accepting queries |
-| `☰ memory: stopped (~/.pi/memory)` | Daemon not running |
+| `☰ memory: starting… (/path/to/project/.pi-memory)` | Daemon spawned, initialising |
+| `☰ memory: running (/path/to/project/.pi-memory)` | Daemon ready, accepting queries |
+| `☰ memory: stopped (/path/to/project/.pi-memory)` | Daemon not running |
+
+*Paths are abbreviated: `~` replaces your home directory.*
 
 ## Vector search
 

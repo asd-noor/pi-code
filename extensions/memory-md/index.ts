@@ -6,7 +6,7 @@
  *
  * Dir resolution (first match wins):
  *   1. MEMORY_MD_DIR env var (if already set in the environment)
- *   2. ~/.pi/memory (global default)
+ *   2. <current-directory>/.pi-memory (project-local default)
  *
  * Binary:  memory-md (must be in PATH)
  * Socket:  ~/.cache/memory-md/<sha256[:16] of MEMORY_MD_DIR>/channel.sock
