@@ -16,7 +16,7 @@ import { existsSync, openSync, mkdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerTools } from "./tools.ts";
 
@@ -48,8 +48,21 @@ function readCacheDirBreadcrumb(memDir: string): string | undefined {
   catch { return undefined; }
 }
 
-function isDaemonRunning(memDir: string): boolean {
-  return existsSync(getSocketPath(memDir));
+type DaemonStatus = "starting" | "indexing" | "ready" | "stopped";
+
+function getDaemonStatus(memDir: string): DaemonStatus {
+  if (!existsSync(getSocketPath(memDir))) return "stopped";
+  try {
+    const r = spawnSync("memory-md", ["status"], {
+      env: { ...process.env, MEMORY_MD_DIR: memDir },
+      timeout: 2000,
+      encoding: "utf8",
+    });
+    const out: string = r.stdout ?? "";
+    if (out.includes("indexing: active")) return "indexing";
+    if (out.includes("running")) return "ready";
+  } catch {}
+  return "stopped";
 }
 
 // ── Extension ─────────────────────────────────────────────────────────────────
@@ -66,12 +79,18 @@ export default function (pi: ExtensionAPI) {
 
   // ── Footer helpers ────────────────────────────────────────────────────────
 
+  const STATUS_LABEL: Record<DaemonStatus, (d: string) => string> = {
+    starting: (d) => `☰ memory: starting… (${d})   `,
+    indexing: (d) => `☰ memory: indexing… (${d})   `,
+    ready:    (d) => `☰ memory: ready (${d})   `,
+    stopped:  (d) => `☰ memory: stopped (${d})   `,
+  };
+
   function updateFooter(): void {
     if (!uiCtx || !memDir) return;
-    const running = isDaemonRunning(memDir);
+    const status = getDaemonStatus(memDir);
     const shortDir = memDir.replace(homedir(), "~");
-    const label = running ? `☰ memory: running (${shortDir})   ` : `☰ memory: stopped (${shortDir})   `;
-    uiCtx.setStatus("memory-md", label);
+    uiCtx.setStatus("memory-md", STATUS_LABEL[status](shortDir));
   }
 
   function clearFooter(): void {
@@ -80,13 +99,7 @@ export default function (pi: ExtensionAPI) {
 
   function startPolling(): void {
     if (poller) return;
-    poller = setInterval(() => {
-      updateFooter();
-      if (memDir && isDaemonRunning(memDir)) {
-        clearInterval(poller);
-        poller = undefined;
-      }
-    }, 2000);
+    poller = setInterval(updateFooter, 2000);
   }
 
   // ── Daemon lifecycle ──────────────────────────────────────────────────────
@@ -220,13 +233,13 @@ Before writing your final response, run \`memory_search\` for anything decided o
       }
 
       if (sub === "status" || sub === "") {
-        const running    = isDaemonRunning(memDir);
+        const status     = getDaemonStatus(memDir);
         const source     = process.env.MEMORY_MD_DIR ? "$MEMORY_MD_DIR" : "~/.pi/memory";
         const breadcrumb = readCacheDirBreadcrumb(memDir);
         const cacheDir   = getCacheDir(memDir);
         ctx.ui.notify(
           [
-            `Status:    ${running ? "running" : "stopped"}`,
+            `Status:    ${status}`,
             `Dir:       ${memDir}  (${source})`,
             `Cache:     ${cacheDir}`,
             breadcrumb ? `Confirmed: ${breadcrumb}` : "",
