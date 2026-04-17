@@ -30,6 +30,7 @@ Spawn autonomous sub-agents for parallel and delegated work. Each sub-agent runs
 | Command | Description |
 |---|---|
 | `/subagents` | Open interactive management menu |
+| `/delegate` | Delegate a task directly to a named subagent. Usage: `/delegate <agent> [task]` |
 
 ## Management menu
 
@@ -56,9 +57,9 @@ Agents are defined as `.md` files with YAML frontmatter. On first install, the b
 
 | Name | Model | Mode | Description |
 |---|---|---|---|
-| `general-purpose` | inherits parent | append | Full tools, general coding tasks |
-| `Explore` | grok-code-fast-1 | replace | Read-only codebase exploration |
-| `Plan` | claude-haiku-4-5 | replace | Read-only architecture planning |
+| `worker` | inherits parent | append | Implements features, fixes bugs, refactors code, edits files, and handles any multi-step coding task |
+| `Explore` | grok-code-fast-1 | replace | Fast codebase exploration agent (read-only) |
+| `Research` | claude-haiku-4.5 | replace | Performs comprehensive research on topics, libraries, and APIs using web sources and documentation, with memory integration |
 
 ### Frontmatter reference
 
