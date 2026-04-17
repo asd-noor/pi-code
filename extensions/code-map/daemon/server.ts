@@ -49,11 +49,8 @@ export interface ImpactRow {
   name: string;
 }
 
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
-
 export class DaemonServer {
   private server: Server;
-  private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private activeConnections = 0;
 
   constructor(
@@ -64,7 +61,6 @@ export class DaemonServer {
     private onShutdown: () => void,
   ) {
     this.server = createServer((s) => this.handleConnection(s));
-    this.resetIdleTimer();
   }
 
   listen(): Promise<void> {
@@ -78,21 +74,11 @@ export class DaemonServer {
   }
 
   close(): Promise<void> {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
     return new Promise((res) => this.server.close(() => res()));
-  }
-
-  private resetIdleTimer() {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => {
-      if (this.activeConnections === 0) this.onShutdown();
-      else this.resetIdleTimer();
-    }, IDLE_TIMEOUT_MS);
   }
 
   private handleConnection(socket: Socket) {
     this.activeConnections++;
-    this.resetIdleTimer();
     let buf = "";
 
     socket.on("data", (chunk) => {
@@ -104,7 +90,7 @@ export class DaemonServer {
         if (t) this.handleLine(t, socket);
       }
     });
-    socket.on("close", () => { this.activeConnections--; this.resetIdleTimer(); });
+    socket.on("close", () => { this.activeConnections--; });
     socket.on("error", () => { this.activeConnections--; });
   }
 

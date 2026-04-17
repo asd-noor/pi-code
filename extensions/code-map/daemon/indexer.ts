@@ -10,7 +10,7 @@
 
 import { relative, resolve, extname } from "node:path";
 import { readdirSync, statSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import type { LspClient } from "../lsp/client.ts";
 import { CodeGraph, REF_KINDS, nodeId, type RefLocation, type GraphNode } from "./graph.ts";
@@ -39,6 +39,8 @@ type Log = (msg: string) => void;
 
 export class Indexer {
   private aborted = false;
+  /** Serialises concurrent file-change re-indexes so they never race. */
+  private reindexQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private client: LspClient,
@@ -123,16 +125,27 @@ export class Indexer {
 
   // ── Incremental re-index ──────────────────────────────────────────────────
 
-  async reindexFile(absFile: string): Promise<void> {
+  /** Public entry-point: queues re-indexes so concurrent watcher events never race. */
+  reindexFile(absFile: string): Promise<void> {
+    const task = this.reindexQueue.then(() =>
+      this.aborted ? Promise.resolve() : this._reindexFile(absFile),
+    );
+    this.reindexQueue = task.catch(() => {});
+    return task;
+  }
+
+  private async _reindexFile(absFile: string): Promise<void> {
     const relFile = relative(this.rootPath, absFile);
     this.log(`re-indexing: ${relFile}`);
     this.graph.removeFile(relFile);
 
+    // Tell the LSP about the changed content, then wait until diagnostics
+    // have gone quiet (no new publishDiagnostics for 600 ms, hard cap 6 s).
+    // This replaces the blind sleep(800) and ensures symbols are fresh.
+    this.client.updateFile(absFile);
+    await this.client.waitForQuietDiagnostics(600, 6000);
+
     try {
-      // Notify the LSP about the new file content so it type-checks the
-      // updated version rather than its stale in-memory copy.
-      this.client.updateFile(absFile);
-      await sleep(800);
       const raw   = await this.client.documentSymbols(absFile);
       const nodes = flattenSymbols(raw, relFile);
       for (const node of nodes) this.graph.addNode(node);
@@ -141,20 +154,13 @@ export class Indexer {
       this.log(`  re-index symbols failed: ${err}`);
     }
 
-    // Read diagnostics fresh from the client — they have been updated by the
-    // LSP's publishDiagnostics push in response to the didChange above.
-    const uri   = pathToFileURL(absFile).href;
-    const rawDiags = this.client.getDiagnostics() as Map<string, Diagnostic[]>;
-    const diags = rawDiags.get(uri) ?? [];
-    this.graph.diagnostics.set(relFile, diags.map((d) => ({
-      severity: SEVERITY_NAMES[d.severity ?? DiagnosticSeverity.Error] ?? "unknown",
-      file:     relFile,
-      line:     d.range.start.line + 1,
-      col:      d.range.start.character + 1,
-      source:   String(d.source ?? ""),
-      message:  d.message,
-    })));
+    // Re-snapshot ALL diagnostics — a single file change can invalidate
+    // diagnostics in any file that imports it.
+    this.snapshotDiagnostics(
+      this.client.getDiagnostics() as Map<string, Diagnostic[]>,
+    );
 
+    // Update reverse refs for new nodes (background, best-effort).
     const newNodes = this.graph.byFile.get(relFile) ?? [];
     void (async () => {
       for (const node of newNodes.filter((n) => REF_KINDS.has(n.kind))) {

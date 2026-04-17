@@ -128,10 +128,6 @@ Prefer code-map tools over grep / read / bash for structural understanding:
       if (!projectDir) return;
       const status = readStatus(projectDir);
       setFooterStatus(status);
-      if (status === "ready" || status === "error" || status === "stopped") {
-        clearInterval(poller);
-        poller = undefined;
-      }
     }, 2000);
   }
 

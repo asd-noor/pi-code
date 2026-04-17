@@ -138,7 +138,9 @@ async function main() {
   // ── 5. Start socket server + file watcher ─────────────────────────────────
 
   const watcher = new FileWatcher(rootPath, serverDef.extensions, async (changedFile) => {
+    writeFileSync(statusFile, "indexing", "utf8");
     await indexer.reindexFile(changedFile);
+    writeFileSync(statusFile, "ready", "utf8");
   });
 
   const server = new DaemonServer(sockFile, graph, client, rootPath, () =>

@@ -71,6 +71,7 @@ export class LspClient extends EventEmitter {
     if (!msg.id && msg.method === "textDocument/publishDiagnostics") {
       const p = msg.params as { uri: string; diagnostics: Diagnostic[] };
       this.diagnostics.set(p.uri, p.diagnostics ?? []);
+      this.emit("diagnostics", p.uri);
       return;
     }
     if (msg.id !== undefined) {
@@ -167,6 +168,33 @@ export class LspClient extends EventEmitter {
 
   waitForDiagnostics(ms = 3000): Promise<void> {
     return new Promise((r) => setTimeout(r, ms));
+  }
+
+  /**
+   * Wait until no new publishDiagnostics notifications arrive for `quietMs`,
+   * or until `maxMs` has elapsed — whichever comes first.
+   * Use after a didChange to let the LSP finish type-checking before reading
+   * symbols / diagnostics.
+   */
+  waitForQuietDiagnostics(quietMs = 600, maxMs = 6000): Promise<void> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hardLimit);
+        clearTimeout(quietTimer);
+        this.off("diagnostics", onDiag);
+        resolve();
+      };
+      let quietTimer = setTimeout(done, quietMs);
+      const onDiag = () => {
+        clearTimeout(quietTimer);
+        quietTimer = setTimeout(done, quietMs);
+      };
+      const hardLimit = setTimeout(done, maxMs);
+      this.on("diagnostics", onDiag);
+    });
   }
 
   async shutdown(): Promise<void> {
