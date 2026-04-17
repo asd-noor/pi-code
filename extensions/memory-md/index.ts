@@ -182,7 +182,8 @@ Store it before ending.
     if (poller) { clearInterval(poller); poller = undefined; }
 
     const shortDir = memDir.replace(homedir(), "~");
-    uiCtx.setStatus("memory-md", isDaemonRunning(memDir) ? `☰ memory: running (${shortDir})   ` : `☰ memory: starting… (${shortDir})   `);
+    // Always show starting — stale socket from a prior session can fool isDaemonRunning
+    uiCtx.setStatus("memory-md", `☰ memory: starting… (${shortDir})   `);
     daemonChild = spawnDaemon(memDir);
     startPolling();
   });
