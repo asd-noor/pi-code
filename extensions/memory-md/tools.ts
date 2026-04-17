@@ -124,7 +124,7 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
       if (params.heading) args.push("--heading", params.heading);
       try {
         const out = await runWithInput(dir, args, params.body);
-        return text(out || "Section created.");
+        return text(out || `Section created: ${params.path}`);
       } catch (err: any) {
         return text(`Error: ${err.message}`);
       }
@@ -147,7 +147,7 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
       if (!dir) return text("Error: memory-md directory not configured.");
       try {
         const out = await runWithInput(dir, ["update", params.path], params.body);
-        return text(out || "Section updated.");
+        return text(out || `Section updated: ${params.path}`);
       } catch (err: any) {
         return text(`Error: ${err.message}`);
       }
@@ -167,7 +167,7 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
     async execute(_id, params, _signal, _update, ctx) {
       const dir = getDir() ?? ctx.cwd;
       const res = await run(dir, ["delete", params.path], pi.exec.bind(pi));
-      return text(res.ok ? "Section deleted." : `Error: ${res.stderr || res.stdout}`);
+      return text(res.ok ? `Section deleted: ${params.path}` : `Error: ${res.stderr || res.stdout}`);
     },
   });
 
@@ -184,7 +184,7 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
     async execute(_id, params, _signal, _update, ctx) {
       const dir = getDir() ?? ctx.cwd;
       const res = await run(dir, ["create-file", params.name], pi.exec.bind(pi));
-      return text(res.ok ? `File '${params.name}.md' created.` : `Error: ${res.stderr || res.stdout}`);
+      return text(res.ok ? `File created: ${params.name}.md` : `Error: ${res.stderr || res.stdout}`);
     },
   });
 
@@ -201,7 +201,7 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
     async execute(_id, params, _signal, _update, ctx) {
       const dir = getDir() ?? ctx.cwd;
       const res = await run(dir, ["delete-file", params.name], pi.exec.bind(pi));
-      return text(res.ok ? `File '${params.name}.md' deleted.` : `Error: ${res.stderr || res.stdout}`);
+      return text(res.ok ? `File deleted: ${params.name}.md` : `Error: ${res.stderr || res.stdout}`);
     },
   });
 
@@ -218,7 +218,9 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
     async execute(_id, params, _signal, _update, ctx) {
       const dir = getDir() ?? ctx.cwd;
       const res = await run(dir, ["validate-file", params.name], pi.exec.bind(pi));
-      return text(res.stdout || res.stderr || "(no output)");
+      return text(res.ok
+        ? `${params.name}.md: ${res.stdout.trim() || "no issues found"}`
+        : res.stdout || res.stderr || "(no output)");
     },
   });
 }
