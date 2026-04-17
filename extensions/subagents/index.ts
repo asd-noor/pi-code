@@ -929,7 +929,7 @@ Guidelines:
   // =====================================================================
 
   pi.registerCommand("delegate", {
-    description: "Delegate a task directly to a named subagent. Usage: /delegate <agent> <task>",
+    description: "Delegate a task directly to a named subagent. Usage: /delegate <agent> [task]",
 
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
       // Only offer completions while the user is still typing the agent name
@@ -950,20 +950,15 @@ Guidelines:
 
     handler: async (args, ctx) => {
       const trimmed = (args ?? "").trim();
+
+      if (!trimmed) {
+        ctx.ui.notify("Usage: /delegate <agent-name> [task]", "error");
+        return;
+      }
+
       const spaceIdx = trimmed.indexOf(" ");
-
-      if (!trimmed || spaceIdx === -1) {
-        ctx.ui.notify("Usage: /delegate <agent-name> <task>", "error");
-        return;
-      }
-
-      const agentName = trimmed.slice(0, spaceIdx);
-      const task = trimmed.slice(spaceIdx + 1).trim();
-
-      if (!task) {
-        ctx.ui.notify("Usage: /delegate <agent-name> <task>", "error");
-        return;
-      }
+      const agentName = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
+      const task = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1).trim();
 
       rebuildRegistry(ctx.cwd);
       const agentConfig = getConfig(agentName);
@@ -976,7 +971,7 @@ Guidelines:
 
       ctx.ui.notify(`Delegating to ${agentName}…`, "info");
 
-      const description = task.length > 50 ? task.slice(0, 50) + "…" : task;
+      const description = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
       const record = await manager.spawnAndWait(ctx, task, {
         description,
         agentConfig,
