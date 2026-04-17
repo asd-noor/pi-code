@@ -192,7 +192,7 @@ export function registerAgendaTools(pi: ExtensionAPI): void {
 
       runTx(db, () => {
         const sets: string[]    = [];
-        const values: unknown[] = [];
+        const values: any[] = [];
 
         if (title !== undefined) {
           if (!title) throw new Error("Title cannot be empty");

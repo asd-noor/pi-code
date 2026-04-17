@@ -56,7 +56,7 @@ export async function openAgendaBrowserInteractive(ctx: ExtensionContext): Promi
 
   const stateOrder: Array<AgendaBrowserFilters["state"]> = ["all", "not_started", "in_progress", "paused", "completed"];
 
-  await ctx.ui.custom<void>((tui, theme, _keybindings, done) => {
+  return ctx.ui.custom<number | undefined>((tui, theme, _keybindings, done) => {
     // ── colour helpers ────────────────────────────────────────────────────────
     const b   = (s: string) => theme.fg("borderMuted", s);
     const ba  = (s: string) => theme.fg("borderAccent", s);
@@ -85,6 +85,7 @@ export async function openAgendaBrowserInteractive(ctx: ExtensionContext): Promi
     let selectedTasksAgendaId: number | undefined;
     let selectedTasksError: string | undefined;
     let selectedAgendaId: number | undefined;
+    let errorMessage: string | undefined;
     let contentLines: string[]          = [];
 
     // ── task reload ───────────────────────────────────────────────────────────
