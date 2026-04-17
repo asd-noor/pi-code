@@ -34,4 +34,4 @@ When any third-party library is involved in planning or implementation:
 
 ## File
 
-`extensions/system-prompt.ts`
+`extensions/pi-code-prompt.ts`

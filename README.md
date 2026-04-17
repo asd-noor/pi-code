@@ -6,7 +6,7 @@ A curated pi package bundling custom extensions, skills, and system instructions
 
 | Instruction | Description |
 |---|---|
-| [system-prompt](./docs/system-prompt.md) | Package-wide runtime policy: skill routing, library versions, clarification, change safety |
+| [pi-code-prompt](./docs/system-prompt.md) | Package-wide runtime policy: skill routing, library versions, clarification, change safety |
 | [ptc](./docs/ptc.md) | Programmatic Tool Calling — always-on preference for scripts over multi-hop tool calls |
 | code-map | Code intelligence tool preferences — injected by the code-map extension |
 
