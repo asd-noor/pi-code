@@ -1,9 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { spawn } from "node:child_process";
 
 export type ExecFn = ExtensionAPI["exec"];
 
@@ -27,13 +24,23 @@ async function run(
 }
 
 /** Run a memory-md subcommand that reads the body from stdin (new / update). */
-async function runWithInput(memDir: string, args: string[], body: string): Promise<string> {
-  const result = await execFileAsync("memory-md", args, {
-    input:   body,
-    env:     { ...process.env, MEMORY_MD_DIR: memDir },
-    timeout: 15_000,
-  } as any);
-  return String(result.stdout);
+function runWithInput(memDir: string, args: string[], body: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("memory-md", args, {
+      env: { ...process.env, MEMORY_MD_DIR: memDir },
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+    child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+    child.on("close", (code: number | null) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`Command failed: memory-md ${args.join(" ")}\n${stderr || stdout}`));
+    });
+    child.on("error", reject);
+    child.stdin.write(body);
+    child.stdin.end();
+  });
 }
 
 function text(t: string) {
