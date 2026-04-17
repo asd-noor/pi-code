@@ -366,7 +366,7 @@ Guidelines:
       widget.setUICtx(ctx.ui);
 
       const rawType = params.subagent_type as SubagentType;
-      const agentConfig = getConfig(rawType) ?? getConfig("general")!;
+      const agentConfig = getConfig(rawType) ?? getConfig("worker")!;
       const fellBack = !getConfig(rawType);
 
       // Resolve model override
