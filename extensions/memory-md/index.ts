@@ -22,8 +22,8 @@ import { registerTools } from "./tools.ts";
 
 // ── Dir resolution ────────────────────────────────────────────────────────────
 
-function resolveMemDir(_cwd: string): string {
-  return process.env.MEMORY_MD_DIR?.trim() || join(homedir(), ".pi", "memory");
+function resolveMemDir(cwd: string): string {
+  return process.env.MEMORY_MD_DIR?.trim() || join(cwd, ".pi-memory");
 }
 
 // ── Cache path helpers ────────────────────────────────────────────────────────

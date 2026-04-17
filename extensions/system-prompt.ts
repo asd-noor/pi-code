@@ -41,6 +41,14 @@ When planning or implementing code that uses third-party libraries:
 - If the project already pins an older version, flag it and ask the user whether to upgrade before proceeding.
 - Never assume a library's API from training data — look it up. Hallucinated APIs waste implementation cycles.
 
+## Mandatory Pre-Call Check
+
+Before every tool action, run this internal decision check:
+- Is there a consequential ambiguity that should be clarified with \`ask\` first (interactive mode)?
+- Will this likely require >1 tool call?
+- Do I need iterative discovery/search/read/aggregate steps?
+- Am I less than 100% certain one direct call is enough?
+
 ### Change safety
 
 - Prefer minimal, targeted changes aligned with the existing codebase style.
