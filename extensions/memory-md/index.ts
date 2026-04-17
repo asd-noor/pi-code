@@ -135,7 +135,8 @@ export default function (pi: ExtensionAPI) {
 
 > **RUN BEFORE EVERY REPLY — mandatory checklist:**
 > 1. Did I discover, decide, or correct anything this turn? **YES → \`memory_search\` then write now.** NO → skip.
-> 2. Run \`memory_search\` one more time to confirm nothing was missed.
+> 2. Did I write to memory? **YES → \`memory_validate_file\` now. Read validation output.** NO → skip.
+> 3. Run \`memory_search\` one more time to confirm nothing was missed.
 >
 > Skipping this = failing your job.
 
@@ -164,7 +165,14 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
 1. \`memory_search\` — check if a matching section already exists
 2. Exists → \`memory_update\` (child sections are preserved)
 3. Missing → \`memory_create_file\` if the file is new, then \`memory_new\`
-4. After any write → \`memory_validate_file\` to check for structural errors
+4. **MANDATORY:** \`memory_validate_file\` immediately after every write — errors = corrupted state
+5. If validation fails or update doesn't work: \`read\` the .md file directly, fix with \`edit\` tool, then validate again
+
+**Structural corruption recovery:**
+- If \`memory_update\` succeeds but content looks wrong: file structure is corrupted (duplicate sections, malformed headings)
+- Memory directory: \`$MEMORY_MD_DIR\` (if set) or \`.pi-memory/\` (default)
+- Fix: \`read .pi-memory/<file>.md\`, identify structural issues, use \`edit\` tool to fix, then \`memory_validate_file\`
+- The daemon watches files and auto-reindexes after direct edits — this is a supported recovery path
 
 **Store:** decisions, constraints, architectural choices, discovered patterns, corrected assumptions.
 **Do not store:** transient thoughts, step-by-step logs, anything irrelevant across sessions.
