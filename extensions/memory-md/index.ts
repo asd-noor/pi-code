@@ -133,6 +133,12 @@ export default function (pi: ExtensionAPI) {
   const MEMORY_INSTRUCTION = `
 ## Memory discipline
 
+> **RUN BEFORE EVERY REPLY — mandatory checklist:**
+> 1. Did I discover, decide, or correct anything this turn? **YES → \`memory_search\` then write now.** NO → skip.
+> 2. Run \`memory_search\` one more time to confirm nothing was missed.
+>
+> Skipping this = failing your job.
+
 The memory-md daemon is running. Memory files are the shared living context for all agents
 and sessions — treat them as the authoritative record for this project.
 
@@ -145,21 +151,20 @@ state that explicitly and proceed fresh.
 2. \`memory_get\` the exact path for any result worth reading in full
 3. Apply what you find immediately — recalled decisions and constraints are binding
 
-### Store (mandatory — do this or you are failing your job)
+### Store — hard triggers
 
-**After every response where you made a decision, chose an approach, discovered a constraint or pattern, or corrected prior information — you must persist it before replying.**
+You **MUST** call a memory write tool if **ANY** of these are true this turn:
 
-Hard triggers that require a memory write:
-- You chose one approach over another
-- You discovered how something works in this codebase
-- You corrected a wrong assumption
-- You completed a task that changed the project state
+- [ ] You chose one approach over another
+- [ ] You discovered how something works in this codebase
+- [ ] You corrected a wrong assumption
+- [ ] You completed a task that changed the project state
 
-Before writing:
-1. \`memory_search\` to check if a matching section already exists
+**How to store:**
+1. \`memory_search\` — check if a matching section already exists
 2. Exists → \`memory_update\` (child sections are preserved)
-3. Doesn't exist → \`memory_create_file\` if the file is new, then \`memory_new\`
-4. After any write → \`memory_validate_file\` to check for duplicate paths, skipped heading levels, and multiple title headings
+3. Missing → \`memory_create_file\` if the file is new, then \`memory_new\`
+4. After any write → \`memory_validate_file\` to check for structural errors
 
 **Store:** decisions, constraints, architectural choices, discovered patterns, corrected assumptions.
 **Do not store:** transient thoughts, step-by-step logs, anything irrelevant across sessions.
@@ -167,15 +172,16 @@ Before writing:
 ### File structure
 
 One file per topic domain (e.g. \`project.md\`, \`architecture.md\`, \`decisions.md\`).
-The filename (without \`.md\`) is always the first path segment — never derived from heading text.
-\`#\` is a decorative title only — ignored for path derivation.
-\`##\` and deeper headings become path segments (slugified: lowercase, spaces → \`-\`, non-alphanumeric stripped).
-Example: \`auth.md\` + \`## API Keys\` → path \`auth/api-keys\`; \`### Rotation Policy\` → \`auth/api-keys/rotation-policy\`.
-Body: concise and factual — reference material, not narrative.
+- Filename (without \`.md\`) is always the first path segment — never derived from heading text
+- \`#\` is a decorative title only — ignored for path derivation
+- \`##\` and deeper headings become path segments (slugified: lowercase, spaces → \`-\`, non-alphanumeric stripped)
+- Example: \`auth.md\` + \`## API Keys\` → path \`auth/api-keys\`; \`### Rotation Policy\` → \`auth/api-keys/rotation-policy\`
+- Body: concise and factual — reference material, not narrative
 
-### Flush (required before every reply)
+---
 
-Before writing your final response, run \`memory_search\` for anything decided or discovered that is not yet persisted. If anything is missing, store it first, then reply. Skipping this step is an error.
+> ⚠️ **Before writing your reply:** Have you stored everything discovered or decided this turn?
+> If not — do it now, then reply.
 `.trim();
 
   pi.on("before_agent_start", async (event) => ({
