@@ -120,3 +120,41 @@ if (event.systemPrompt.includes("<sub_agent_context>")) return {};
 Files fixed (commit 77bcccd):
 - `extensions/agenda/index.ts` — AGENDA_INSTRUCTION skipped for subagents
 - `extensions/subagents/index.ts` — buildSubagentInstruction() skipped for subagents; fan-out example updated to show agenda_create pre-step with agenda_id
+
+## meta-agenda-coordination-pattern
+
+**Context:** After successfully testing parallel subagent coordination (agendas #10, #11, #12 tracked by meta-agenda #13), we identified an emergent orchestration pattern that combines agenda discipline with parallel fan-out but wasn't explicitly documented in system instructions.
+
+**Decision:** Added "Meta-agenda coordination pattern" section to `extensions/subagents/index.ts` after the "Parallel work — fan-out pattern" section.
+
+**Pattern:**
+1. Create N independent sub-agendas (each stays `not_started`)
+2. Create one meta-agenda where each task tracks one sub-agenda
+3. Start meta-agenda and all its tasks in parallel
+4. Spawn N background subagents, each assigned one sub-agenda via `agenda_id`
+5. As each subagent completes, mark its corresponding meta-task done
+6. Evaluate and complete meta-agenda when all sub-agendas succeed
+
+**Dependency handling (added 2759ad0):**
+- Pattern is **best for independent tasks** that can run simultaneously
+- For dependencies: use **staged spawning** instead of full parallel
+  - Start only Wave 1 meta-tasks, spawn Wave 1 agents with `wait: true`
+  - Mark Wave 1 done, then start Wave 2 meta-tasks
+  - Spawn Wave 2 agents (can use Wave 1 results via context/memory)
+- For fully sequential work: consider foreground Subagent calls or single-agenda execution
+
+**Benefits:**
+- Single meta-agenda shows orchestration status at a glance
+- Each meta-task tracks one sub-agenda's lifecycle  
+- Clear parent-child relationship for complex work
+- Structured completion semantics (meta completes only when all subs succeed)
+- Full audit trail of delegation and completion
+- Works for both parallel and staged execution
+
+**Rationale:** This pattern was synthesized from existing primitives (agenda discipline + parallel fan-out + task granularity) but makes complex orchestration significantly more explicit and manageable. It provides visual tracking, structured coordination, and clear completion semantics that weren't available with simple parallel fan-out alone.
+
+**Implementation:** 
+- Commit `55ae0bf` - Added 53-line documentation block with complete example
+- Commit `2759ad0` - Added dependency handling guidance and staged spawning pattern
+
+**Testing:** Successfully validated in session with 3 parallel subagents (Research, Explore, Worker) executing TypeScript research, architecture exploration, and integration analysis simultaneously. Meta-agenda #13 tracked all three through completion (807s work done in 487s wall time, ~40% speedup from parallelization).
