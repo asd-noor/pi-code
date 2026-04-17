@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-04-17
+
+### Removed
+
+- **Subagents footer/status bar**: Removed all `setStatus` calls from `extensions/subagents/widget.ts`. The subagents extension now only displays the widget above the editor and no longer creates status bar/footer entries. Useful when using a custom dedicated widget to avoid duplicate information.
+
 ## [1.6.0] - 2026-04-17
 
 ### Added
