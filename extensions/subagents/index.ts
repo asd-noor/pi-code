@@ -162,6 +162,10 @@ export default function (pi: ExtensionAPI) {
     widget.onTurnStart();
   });
 
+  pi.on("before_agent_start", async (event) => ({
+    systemPrompt: event.systemPrompt + "\n\n" + buildSubagentInstruction(),
+  }));
+
   pi.on("session_shutdown", async () => {
     manager.abortAll();
     widget.dispose();
@@ -199,9 +203,64 @@ export default function (pi: ExtensionAPI) {
     return lines.join("\n");
   }
 
+  // ── System instruction: subagent usage ──────────────────────────────────────
+
+  /**
+   * Builds the always-on subagent system-prompt section.
+   *
+   * Base block: when to delegate + parallel-work pattern (always injected).
+   * Custom-agents block: live list of user-defined agents + selection policy
+   *   (appended only when custom agents are installed).
+   */
+  function buildSubagentInstruction(): string {
+    const lines: string[] = [
+      "## Subagents",
+      "",
+      "Spawning a subagent should be your default instinct for any non-trivial task." +
+      " Prefer delegation over handling work inline — subagents get a clean context window," +
+      " can run in parallel, and keep the parent session uncluttered.",
+      "",
+      "### Parallel work",
+      "",
+      "Launch independent subtasks simultaneously with `run_in_background: true`." +
+      " Don't wait for one to finish before starting another.",
+      "- `get_subagent_result` — retrieve output when done (`wait: true` to block)",
+      "- `steer_subagent` — redirect a running agent mid-run",
+      "- `resume` param — continue a previous agent from where it left off",
+      "",
+      "### Available agents",
+      "",
+      "Read each agent's description and pick the best fit for the task.",
+    ];
+
+    const global  = getAllTypes().filter((n) => getConfig(n)?.source === "global");
+    const project = getAllTypes().filter((n) => getConfig(n)?.source === "project");
+
+    if (project.length > 0) {
+      lines.push("", "Project agents (.pi/agents/):");
+      for (const name of project) {
+        const cfg = getConfig(name);
+        const modelSuffix = cfg?.model ? ` [${modelLabel(cfg.model)}]` : "";
+        lines.push(`- **${name}**${modelSuffix}: ${cfg?.description ?? name}`);
+      }
+    }
+
+    if (global.length > 0) {
+      lines.push("", "Global agents (~/.pi/agent/agents/):");
+      for (const name of global) {
+        const cfg = getConfig(name);
+        const modelSuffix = cfg?.model ? ` [${modelLabel(cfg.model)}]` : "";
+        lines.push(`- **${name}**${modelSuffix}: ${cfg?.description ?? name}`);
+      }
+    }
+
+    return lines.join("\n");
+  }
+
   // =====================================================================
   // Tool: Subagent
   // =====================================================================
+
 
   pi.registerTool({
     name: "Subagent",
@@ -214,10 +273,9 @@ Available subagent types:
 ${buildTypeListText()}
 
 Guidelines:
+- Spawning a subagent should be your default instinct for any non-trivial task — prefer delegation over handling work inline.
+- Read each agent's description and pick the best fit. The available agents are listed in the system prompt.
 - For parallel work, use run_in_background: true on each subagent. Foreground calls run sequentially — only one executes at a time.
-- Use Explore for codebase searches and code understanding.
-- Use Plan for architecture and implementation planning.
-- Use general-purpose for complex tasks that need file editing.
 - Provide clear, detailed prompts so the subagent can work autonomously.
 - Subagent results are returned as text — summarize them for the user.
 - Use run_in_background for work you don't need immediately. You will be notified when it completes.

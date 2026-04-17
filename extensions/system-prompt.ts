@@ -30,7 +30,6 @@ Before any non-trivial action, run a deterministic skill-routing pass:
 4. Read the selected \`SKILL.md\` in full before using its tools.
 
 **Hard triggers (always activate the named skill):**
-- Task requires parallel or autonomous work → activate \`subagents\`
 - Task requires library API references, code examples, or tool docs → activate \`doc-library\` (never hallucinate APIs)
 - Task requires real-time web data, news, or research → activate \`web-scout\`
 

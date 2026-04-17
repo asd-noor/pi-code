@@ -109,3 +109,11 @@ Every agent session is recorded in memory — turns, tool calls with input/resul
 ## Skill
 
 The `subagents` skill is auto-registered and guides the LLM on when to delegate, how to run parallel work, and how to use resume and steer.
+
+## Custom agent injection
+
+On every `before_agent_start` event the extension scans the agent registry and injects a live `## Custom Agents` section into the system prompt listing all user-defined agents (global + project) with their descriptions. This:
+
+- Ensures the LLM always has an up-to-date view of what specialized agents are available.
+- Instructs it to prefer custom agents over the generic defaults, without making it a hard requirement.
+- Automatically disappears when no custom agents are installed (nothing is injected).
