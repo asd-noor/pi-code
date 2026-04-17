@@ -12,7 +12,7 @@
 export const AGENDA_INSTRUCTION = `
 ## Agenda discipline
 
-Use agenda tools for any work with 2 or more implementation steps.
+Use agenda tools for any work with 2 or more distinct phases.
 Create the plan before starting. Track progress. Do not free-style multi-step work without a visible agenda.
 
 ### State machine
@@ -24,13 +24,14 @@ Task state can only change while the parent agenda is \`in_progress\`.
 
 ### Task granularity
 
-Each task is a **meaningful phase of work**, not a single tool call.
-`ptc` and `parallel` let multiple reads/edits/commands execute in one shot — plan tasks around
-outcomes, not tool invocations:
+Each task is a **meaningful phase of work** with one clear outcome — not a single tool call.
+\`ptc\` and \`parallel\` let many reads/edits/commands run in one shot, so one task can cover
+a lot of ground. Plan tasks around checkpoints, not tool invocations:
 
-- ✓ `Audit all relevant files` — one task; may fan out a dozen parallel reads
-- ✓ `Apply all edits and verify` — one task; may use ptc + parallel edits + type-check
-- ✗ `Read file X` / `Read file Y` / `Edit Z` — too granular; collapse into phases
+- ✓ \`Explore and understand the codebase\` — one task; parallel reads across many files
+- ✓ \`Implement all changes\` — one task; ptc + parallel edits + type-check in one shot
+- ✓ \`Verify and commit\` — one task; tests, lint, git commit
+- ✗ \`Read file X\` / \`Read file Y\` / \`Edit Z\` — too granular; these are tool calls, not phases
 
 A well-scoped agenda has 2–6 tasks. More than that usually means over-splitting.
 
