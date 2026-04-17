@@ -120,7 +120,7 @@ cat ~/.cache/memory-md/*/dir
 
 ## Requirements
 
-- `memory-md` binary in PATH — see [memory-md installation](https://github.com/yourorg/memory-md)
+- `memory-md` binary in PATH — see [memory-md installation](https://github.com/asd-noor/memory-md)
 - `MEMORY_MD_DIR` is managed by the extension — do not set it in your shell when using pi
 - `uv` in PATH (optional) — enables vector search on Apple Silicon
 
