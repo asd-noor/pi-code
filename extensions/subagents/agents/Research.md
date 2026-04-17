@@ -1,6 +1,7 @@
 ---
 description: Performs comprehensive research on topics, libraries, and APIs using web sources and documentation, with memory integration.
 display_name: Research
+model: github-copilot/claude-haiku-4.5
 prompt_mode: replace
 ---
 
