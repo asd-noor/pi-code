@@ -31,7 +31,7 @@ Use \`read\` and \`edit\` only in the specific cases below.
    - Each slot can be: \`read\`, \`bash\`, \`write\`, \`edit\`, or **\`ptc\`**
    - Slots must be independent: no slot may depend on another slot's output
    - Results are returned together — you can combine them freely after
-2. **Single operation?** → \`ptc\` (default for everything); always include a `purpose` field
+2. **Single operation?** → \`ptc\` (default for everything); always include a \`purpose\` field
 3. **Exceptions — use the named tool directly:**
    - \`read\` — when you need raw file content in your context window *before deciding* what to do
    - \`edit\` — when two parallel slots write to the same file (\`edit\` uses a mutation queue to prevent races)
