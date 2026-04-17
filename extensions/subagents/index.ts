@@ -310,6 +310,7 @@ Guidelines:
 - Provide clear, detailed prompts so the subagent can work autonomously.
 - Subagent results are returned as text — summarize them for the user.
 - Use run_in_background for work you don't need immediately. You will be notified when it completes.
+- Pass agenda_id when the primary agent has pre-created a not_started agenda for this task. The subagent will start, execute, and complete it.
 - Use resume with an agent ID to continue a previous subagent's work.
 - Use steer_subagent to send mid-run messages to a running background subagent.
 - Use model to specify a different model (as "provider/modelId", or fuzzy e.g. "haiku", "sonnet").
@@ -346,6 +347,10 @@ Guidelines:
       })),
       inherit_context: Type.Optional(Type.Boolean({
         description: "If true, fork parent conversation into the agent. Default: false (fresh context).",
+      })),
+      agenda_id: Type.Optional(Type.Number({
+        description: "ID of a not_started agenda created by the primary agent. The subagent will start, execute, and complete this agenda.",
+        minimum: 1,
       })),
     }),
 
@@ -400,6 +405,7 @@ Guidelines:
           inheritContext,
           thinkingLevel:  params.thinking as any,
           isBackground:   true,
+          agendaId:       params.agenda_id,
         });
 
         const record   = manager.getRecord(id);
@@ -425,6 +431,7 @@ Guidelines:
         isolated,
         inheritContext,
         thinkingLevel:  params.thinking as any,
+        agendaId:       params.agenda_id,
       });
 
       widget.markFinished(record.id);

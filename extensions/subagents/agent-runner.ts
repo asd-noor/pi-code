@@ -21,7 +21,7 @@ import {
   createWriteTool,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentActivity, AgentConfig, ThinkingLevel } from "./types.ts";
-import { AGENDA_INSTRUCTION } from "../agenda/instruction.ts";
+import { buildSubagentAgendaInstruction } from "../agenda/instruction.ts";
 
 // ---- Tool factories ----
 
@@ -123,7 +123,7 @@ function buildSystemPrompt(
     const custom = config.systemPrompt?.trim()
       ? `\n\n<agent_instructions>\n${config.systemPrompt}\n</agent_instructions>`
       : "";
-    return `${envBlock}\n\n<inherited_system_prompt>\n${base}\n</inherited_system_prompt>\n\n${SUBAGENT_BRIDGE}${custom}\n\n${AGENDA_INSTRUCTION}`;
+    return `${envBlock}\n\n<inherited_system_prompt>\n${base}\n</inherited_system_prompt>\n\n${SUBAGENT_BRIDGE}${custom}`;
   }
 
   // "replace" mode — env header + config's full system prompt
@@ -134,8 +134,6 @@ function buildSystemPrompt(
     envBlock,
     "",
     config.systemPrompt,
-    "",
-    AGENDA_INSTRUCTION,
   ].join("\n");
 }
 
@@ -244,6 +242,7 @@ export interface SpawnOptions {
   signal?: AbortSignal;
   activity: AgentActivity;
   onSessionCreated?: (session: any) => void;
+  agendaId?: number;
 }
 
 /**
@@ -263,7 +262,10 @@ export async function spawnAndRun(
   // SYSTEM_INSTRUCTION injected by before_agent_start. Passing it here would embed
   // it inside <inherited_system_prompt>, and before_agent_start would then append it
   // a second time for this subagent session. Let before_agent_start inject it once.
-  const systemPrompt = buildSystemPrompt(agentConfig, cwd);
+  let systemPrompt = buildSystemPrompt(agentConfig, cwd);
+  if (options.agendaId != null) {
+    systemPrompt += "\n\n" + buildSubagentAgendaInstruction(options.agendaId);
+  }
   const tools = buildTools(agentConfig, cwd);
 
   const loader = new DefaultResourceLoader({

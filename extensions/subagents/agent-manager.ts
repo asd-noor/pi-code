@@ -25,6 +25,7 @@ export interface SpawnOptions {
   thinkingLevel?: ThinkingLevel;
   isBackground?: boolean;
   onSessionCreated?: (session: any) => void;
+  agendaId?: number;
 }
 
 interface QueueItem {
@@ -123,6 +124,7 @@ export class AgentManager {
       thinkingLevel: options.thinkingLevel,
       signal: record.abortController!.signal,
       activity,
+      agendaId: options.agendaId,
       onSessionCreated: (session) => {
         record.session = session;
         // Flush steers that arrived before session was ready
