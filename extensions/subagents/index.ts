@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFile
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { AgentManager } from "./agent-manager.ts";
@@ -920,6 +921,92 @@ Guidelines:
     description: "Manage subagents — list running, browse types, create, configure",
     handler: async (_args, ctx) => {
       await showAgentsMenu(ctx);
+    },
+  });
+
+  // =====================================================================
+  // Command: /delegate
+  // =====================================================================
+
+  pi.registerCommand("delegate", {
+    description: "Delegate a task directly to a named subagent. Usage: /delegate <agent> <task>",
+
+    getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+      // Only offer completions while the user is still typing the agent name
+      // (no space yet in the prefix).
+      if (prefix.includes(" ")) return null;
+      rebuildRegistry(currentCwd);
+      return getAvailableTypes()
+        .filter((name) => name.toLowerCase().startsWith(prefix.toLowerCase()))
+        .map((name) => {
+          const cfg = getConfig(name);
+          return {
+            value: name + " ",
+            label: name,
+            description: cfg?.description,
+          };
+        });
+    },
+
+    handler: async (args, ctx) => {
+      const trimmed = (args ?? "").trim();
+      const spaceIdx = trimmed.indexOf(" ");
+
+      if (!trimmed || spaceIdx === -1) {
+        ctx.ui.notify("Usage: /delegate <agent-name> <task>", "error");
+        return;
+      }
+
+      const agentName = trimmed.slice(0, spaceIdx);
+      const task = trimmed.slice(spaceIdx + 1).trim();
+
+      if (!task) {
+        ctx.ui.notify("Usage: /delegate <agent-name> <task>", "error");
+        return;
+      }
+
+      rebuildRegistry(ctx.cwd);
+      const agentConfig = getConfig(agentName);
+
+      if (!agentConfig) {
+        const available = getAvailableTypes().join(", ") || "none";
+        ctx.ui.notify(`Unknown agent: "${agentName}". Available: ${available}`, "error");
+        return;
+      }
+
+      ctx.ui.notify(`Delegating to ${agentName}…`, "info");
+
+      const description = task.length > 50 ? task.slice(0, 50) + "…" : task;
+      const record = await manager.spawnAndWait(ctx, task, {
+        description,
+        agentConfig,
+      });
+
+      widget.markFinished(record.id);
+
+      if (record.status === "error") {
+        ctx.ui.notify(
+          `${agentName} failed: ${record.error?.slice(0, 200) ?? "unknown error"}`,
+          "error",
+        );
+        return;
+      }
+
+      const output = record.result?.trim() || "(no output)";
+      const duration = record.completedAt
+        ? formatMs(record.completedAt - record.startedAt)
+        : "?";
+      const stats = `${agentName} · ${duration} · ${record.toolUses} tool use${record.toolUses !== 1 ? "s" : ""}`;
+
+      pi.sendMessage(
+        {
+          customType: "delegate:result",
+          content: `[${stats}]\n\n${output}`,
+          display: true,
+          details: { agentName, agentId: record.id, status: record.status },
+        },
+        { deliverAs: "followUp" },
+      );
     },
   });
 }
