@@ -33,7 +33,7 @@ async function runWithInput(memDir: string, args: string[], body: string): Promi
     env:     { ...process.env, MEMORY_MD_DIR: memDir },
     timeout: 15_000,
   } as any);
-  return result.stdout;
+  return String(result.stdout);
 }
 
 function text(t: string) {
