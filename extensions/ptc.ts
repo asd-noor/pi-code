@@ -151,7 +151,7 @@ On failure: fix the script and call ptc again — do not fall back to individual
         ? ["run", file, ...(params.args ?? [])]
         : [file,        ...(params.args ?? [])];
 
-      onUpdate?.({ content: [{ type: "text", text: `Running ${file}…` }] });
+      onUpdate?.({ content: [{ type: "text", text: `Running ${file}…` }], details: undefined });
 
       try {
         const result = await execFileAsync(cmd, args, {
@@ -159,7 +159,7 @@ On failure: fix the script and call ptc again — do not fall back to individual
           timeout:   120_000,
           signal,
           maxBuffer: 10 * 1024 * 1024,
-        });
+        } as any);
 
         const out = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
         return {

@@ -138,10 +138,7 @@ async function main() {
   // ── 5. Start socket server + file watcher ─────────────────────────────────
 
   const watcher = new FileWatcher(rootPath, serverDef.extensions, async (changedFile) => {
-    await indexer.reindexFile(
-      changedFile,
-      client.getDiagnostics() as Map<string, import("../lsp/protocol.ts").Diagnostic[]>,
-    );
+    await indexer.reindexFile(changedFile);
   });
 
   const server = new DaemonServer(sockFile, graph, client, rootPath, () =>

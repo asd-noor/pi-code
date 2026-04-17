@@ -32,12 +32,12 @@ async function runWithInput(memDir: string, args: string[], body: string): Promi
     input:   body,
     env:     { ...process.env, MEMORY_MD_DIR: memDir },
     timeout: 15_000,
-  });
+  } as any);
   return result.stdout;
 }
 
 function text(t: string) {
-  return { content: [{ type: "text" as const, text: t.trim() || "(no output)" }] };
+  return { content: [{ type: "text" as const, text: t.trim() || "(no output)" }], details: undefined };
 }
 
 // ── Tool registration ─────────────────────────────────────────────────────────

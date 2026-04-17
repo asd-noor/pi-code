@@ -123,13 +123,15 @@ export class Indexer {
 
   // ── Incremental re-index ──────────────────────────────────────────────────
 
-  async reindexFile(absFile: string, rawDiags: Map<string, Diagnostic[]>): Promise<void> {
+  async reindexFile(absFile: string): Promise<void> {
     const relFile = relative(this.rootPath, absFile);
     this.log(`re-indexing: ${relFile}`);
     this.graph.removeFile(relFile);
 
     try {
-      this.client.openFile(absFile);
+      // Notify the LSP about the new file content so it type-checks the
+      // updated version rather than its stale in-memory copy.
+      this.client.updateFile(absFile);
       await sleep(800);
       const raw   = await this.client.documentSymbols(absFile);
       const nodes = flattenSymbols(raw, relFile);
@@ -139,7 +141,10 @@ export class Indexer {
       this.log(`  re-index symbols failed: ${err}`);
     }
 
+    // Read diagnostics fresh from the client — they have been updated by the
+    // LSP's publishDiagnostics push in response to the didChange above.
     const uri   = pathToFileURL(absFile).href;
+    const rawDiags = this.client.getDiagnostics() as Map<string, Diagnostic[]>;
     const diags = rawDiags.get(uri) ?? [];
     this.graph.diagnostics.set(relFile, diags.map((d) => ({
       severity: SEVERITY_NAMES[d.severity ?? DiagnosticSeverity.Error] ?? "unknown",

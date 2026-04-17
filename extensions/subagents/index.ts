@@ -86,7 +86,7 @@ function getAllTypes(): string[] {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function textResult(text: string) {
-  return { content: [{ type: "text" as const, text }] };
+  return { content: [{ type: "text" as const, text }], details: undefined };
 }
 
 function formatDuration(startedAt: number, completedAt?: number): string {

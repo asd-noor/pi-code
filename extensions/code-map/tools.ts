@@ -103,5 +103,5 @@ export function registerTools(pi: ExtensionAPI, getRoot: () => string | undefine
 }
 
 function text(t: string) {
-  return { content: [{ type: "text" as const, text: t }] };
+  return { content: [{ type: "text" as const, text: t }], details: undefined };
 }

@@ -33,6 +33,7 @@ export class LspClient extends EventEmitter {
   private pending = new Map<number, PendingRequest>();
   private diagnostics = new Map<string, Diagnostic[]>();
   private openFiles = new Set<string>();
+  private fileVersions = new Map<string, number>();
   private opts: LspClientOptions;
   /** Serializes heavy requests (workspace/symbol, references) to avoid LSP server starvation */
   private requestQueue: Promise<unknown> = Promise.resolve();
@@ -138,10 +139,29 @@ export class LspClient extends EventEmitter {
     const uri = pathToFileURL(filePath).href;
     if (this.openFiles.has(uri)) return;
     this.openFiles.add(uri);
+    this.fileVersions.set(uri, 1);
     let text = "";
     try { text = readFileSync(filePath, "utf8"); } catch (_) {}
     this.send("textDocument/didOpen", {
       textDocument: { uri, languageId: this.opts.languageId, version: 1, text },
+    });
+  }
+
+  /** Notify the LSP that an already-open file has changed on disk (full re-sync). */
+  updateFile(filePath: string): void {
+    const uri = pathToFileURL(filePath).href;
+    if (!this.openFiles.has(uri)) {
+      // Not yet open — use the normal open path.
+      this.openFile(filePath);
+      return;
+    }
+    let text = "";
+    try { text = readFileSync(filePath, "utf8"); } catch (_) {}
+    const version = (this.fileVersions.get(uri) ?? 1) + 1;
+    this.fileVersions.set(uri, version);
+    this.send("textDocument/didChange", {
+      textDocument: { uri, version },
+      contentChanges: [{ text }],
     });
   }
 
