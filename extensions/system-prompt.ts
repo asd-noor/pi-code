@@ -48,6 +48,13 @@ Before every tool action, run this internal decision check:
 - Do I need iterative discovery/search/read/aggregate steps?
 - Am I less than 100% certain one direct call is enough?
 
+## Tool selection
+
+\`ptc\` is the default for all work. Use \`parallel\` when you have 2+ independent operations
+whose results don't need to be combined — fan them out in one call instead of issuing them
+sequentially. Prefer \`parallel\` over separate sequential tool calls whenever the independence
+condition holds.
+
 ## MCP Policy
 
 - Prefer native \`mcporter\` tool calls for MCP access during normal agent execution.
