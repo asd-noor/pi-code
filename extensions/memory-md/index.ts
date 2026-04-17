@@ -141,7 +141,7 @@ Before writing:
 1. \`memory_search\` to check if a matching section already exists
 2. Exists → \`memory_update\` (child sections are preserved)
 3. Doesn't exist → \`memory_create_file\` if the file is new, then \`memory_new\`
-4. After bulk writes → \`memory_validate_file\`
+4. After any write → \`memory_validate_file\` to check for duplicate paths, skipped heading levels, and multiple title headings
 
 **Store:** decisions, constraints, architectural choices, discovered patterns, corrected assumptions.
 **Do not store:** transient thoughts, step-by-step logs, anything irrelevant across sessions.
@@ -149,8 +149,10 @@ Before writing:
 ### File structure
 
 One file per topic domain (e.g. \`project.md\`, \`architecture.md\`, \`decisions.md\`).
-Heading text is slugified to path segments: \`"API Keys"\` → \`api-keys\`, full path \`auth/api-keys\`.
-Heading level = path depth: \`##\` → 2 segments, \`###\` → 3.
+The filename (without \`.md\`) is always the first path segment — never derived from heading text.
+\`#\` is a decorative title only — ignored for path derivation.
+\`##\` and deeper headings become path segments (slugified: lowercase, spaces → \`-\`, non-alphanumeric stripped).
+Example: \`auth.md\` + \`## API Keys\` → path \`auth/api-keys\`; \`### Rotation Policy\` → \`auth/api-keys/rotation-policy\`.
 Body: concise and factual — reference material, not narrative.
 
 ### Flush (before finishing)

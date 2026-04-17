@@ -32,10 +32,16 @@ Use these memory file topics as a starting point:
 
 For each file:
    - Use `memory_create_file` to create each topic file
-   - Use `memory_new` to add sections with clear headings (slugified to paths automatically)
+   - Use `memory_new` to add sections. The path is derived from the **filename + heading nesting**:
+     - The filename (without `.md`) is always the first path segment
+     - `#` is a decorative title only — ignored for path derivation
+     - `##` headings become the second path segment: `file/heading-slug`
+     - `###` headings become the third: `file/parent-slug/heading-slug`
+     - Example: `project.md` + `## Tech Stack` → path `project/tech-stack`
    - Store factual, concise information suitable for future reference
    - Include paths, commands, and specific details where relevant
    - Use `memory_search` to check for related information when linking sections
+   - After writing to a file, run `memory_validate_file` to check for duplicate paths, skipped heading levels, and multiple title headings
 
 4. **Report back**:
 
