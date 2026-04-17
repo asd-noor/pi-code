@@ -5,6 +5,7 @@
     "keywords": [
         "pi-package"
     ],
+    "license": "GPL-3.0-only",
     "dependencies": {
         "pi-mcporter": "*",
         "pi-ask-tool-extension": "*"
