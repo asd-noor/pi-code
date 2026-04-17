@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-04-17
+
+### Added
+
+- **Research agent**: New built-in specialist subagent (`extensions/subagents/agents/research.md`) that performs comprehensive research using web-scout skill (Tavily search/research/extract/crawl), doc-library skill (Context7 API documentation), and memory tools. Uses `replace` prompt mode for focused research workflow with hard triggers for latest library versions and current web data.
+- **Meta-agenda coordination pattern**: Documented comprehensive pattern in subagent instructions for tracking multiple parallel sub-agendas. Primary agent creates N sub-agendas + one meta-agenda (each meta-task tracks one sub-agenda), starts all meta-tasks in parallel, spawns background subagents with `agenda_id` assignments, then marks meta-tasks done as subagents complete. Includes dependency handling via staged spawning (Wave 1 → wait → Wave 2).
+- **Code-map tools for Explore agent**: Added `code_map_outline`, `code_map_symbol`, `code_map_diagnostics`, `code_map_impact` to Explore agent's tool usage instructions for structural analysis during read-only codebase exploration.
+- **PTC purpose field**: Made `purpose` field mandatory on `ptc` tool (shown in UI when tool runs, replacing generic "Running..." message). Updated schema, tool description, and SYSTEM_INSTRUCTION.
+
+### Changed
+
+- **Worker agent** (renamed from `general`): Renamed `general.md` → `worker.md`, updated `display_name` and fallback reference in `extensions/subagents/index.ts`. Better describes the role: primary orchestrates, worker executes.
+- **Task granularity guidance**: Updated agenda instructions and tool schemas to emphasize tasks as meaningful phases/checkpoints (not individual tool calls). With `ptc`/`parallel`, many operations run in one shot. Target: 2-6 tasks per agenda.
+- **Subagent delegation triggers**: Replaced "3+ steps" quantitative trigger with qualitative phase-based criteria: multi-phase work, >2 files to understand, agenda-worthy complexity.
+- **Memory tool messages**: All memory tools (`memory_new`, `memory_update`, `memory_delete`) now include the affected path in result messages for better visibility.
+- **Parallel result collection**: Clarified in subagent instructions that all `get_subagent_result` calls in fan-out pattern should be issued simultaneously (not sequential waits).
+
+### Fixed
+
+- **Subagent guards for both prompt modes**: Updated guards in `agenda/index.ts` and `subagents/index.ts` to detect subagents via BOTH `<sub_agent_context>` (append mode) AND `startsWith("You are a pi coding agent sub-agent.")` (replace mode). Previously only detected append mode, causing Explore and Research agents to receive primary-agent instructions.
+- **PTC + parallel composition**: Fixed `ptc.ts` and `parallel.ts` documentation to clarify that `parallel` slots can include `ptc` scripts. Decision tree now explicit: 2+ independent ops → `parallel` (slots can be read/bash/write/edit/ptc), single op → `ptc`, exceptions: read (raw content before deciding), edit (parallel writes same file).
+- **Backtick escaping**: Fixed unescaped backticks in agenda instructions, ptc instructions, and subagent instructions that caused TypeScript string literal errors.
+
+### Removed
+
+- **Plan agent**: Removed bundled Plan agent as redundant with Worker agent's general-purpose capabilities.
+
 ## [1.5.0] - 2026-04-17
 
 ### Added
