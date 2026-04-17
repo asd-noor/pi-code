@@ -31,7 +31,7 @@ Use \`read\` and \`edit\` only in the specific cases below.
    - Each slot can be: \`read\`, \`bash\`, \`write\`, \`edit\`, or **\`ptc\`**
    - Slots must be independent: no slot may depend on another slot's output
    - Results are returned together — you can combine them freely after
-2. **Single operation?** → \`ptc\` (default for everything)
+2. **Single operation?** → \`ptc\` (default for everything); always include a `purpose` field
 3. **Exceptions — use the named tool directly:**
    - \`read\` — when you need raw file content in your context window *before deciding* what to do
    - \`edit\` — when two parallel slots write to the same file (\`edit\` uses a mutation queue to prevent races)
@@ -130,6 +130,9 @@ export default function (pi: ExtensionAPI) {
     label: "Run Script",
     description: `Default tool for all work. Run a Python (uv) or bash script in one call.
 
+Every ptc call must include a purpose field — a one-line description of what the script does.
+The purpose is shown in the UI when the tool runs.
+
 Use individual tools only when:
 - read: raw file content is needed in context to reason before deciding
 - edit: parallel calls may touch the same file (mutation queue safety)
@@ -147,6 +150,9 @@ MCP access: use the mcporter binary directly from within the script.
 On failure: fix the script and call ptc again — do not fall back to individual tool calls.`,
     promptSnippet: "Default tool for all work — runs Python or bash scripts. Use instead of read/write/bash/edit tool calls. MCP via mcporter binary.",
     parameters: Type.Object({
+      purpose: Type.String({
+        description: "One-line description of what this script does. Shown in the UI when the tool runs.",
+      }),
       type: StringEnum(["python", "bash"] as const, {
         description: "Script type. Prefer python unless the task is pure shell.",
       }),
@@ -173,7 +179,7 @@ On failure: fix the script and call ptc again — do not fall back to individual
         ? ["run", file, ...(params.args ?? [])]
         : [file,        ...(params.args ?? [])];
 
-      onUpdate?.({ content: [{ type: "text", text: `Running ${file}…` }], details: undefined });
+      onUpdate?.({ content: [{ type: "text", text: params.purpose }], details: undefined });
 
       try {
         const result = await execFileAsync(cmd, args, {
