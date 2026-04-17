@@ -48,14 +48,6 @@ When planning or implementing code that uses third-party libraries:
 - Explain intent briefly before risky or destructive operations.
 - Do not delete or overwrite files without clear user intent.
 - Confirm assumptions when operating outside the current project directory.
-
-### Response style
-
-- Be concise, practical, and implementation-focused.
-- Show file paths clearly when reporting edits.
-- Summarise what changed, where, and what verification was performed.
-- Return paths to any generated artifacts or logs.
-- Avoid restating the task or padding with filler text.
 `.trim();
 
 export default function (pi: ExtensionAPI) {
