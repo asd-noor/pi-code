@@ -175,9 +175,12 @@ Prefer code-map tools over grep / read / bash for structural understanding:
     // Load config
     const config = loadConfig();
 
-    // Set initial footer status
-    const existingStatus = readStatus(projectDir);
-    setFooterStatus(existingStatus === "ready" ? "ready" : "starting");
+    // Set initial footer status — always "starting"; never trust stale status file
+    setFooterStatus("starting");
+
+    // Reset the status file so the poller doesn't read a stale "ready" from the
+    // previous session and stop prematurely before the new daemon is actually up.
+    try { writeFileSync(join(projectDir, "daemon.status"), "starting", "utf-8"); } catch {}
 
     // Spawn daemon async (fire and forget — don't block session start)
     daemonChild = spawnDaemon(projectRoot, config);
