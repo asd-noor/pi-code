@@ -6,7 +6,7 @@ A curated pi package bundling custom extensions, skills, and system instructions
 
 | Instruction | Description |
 |---|---|
-| [system-prompt](./docs/system-prompt.md) | Package-wide runtime policy: skill routing, library versions, clarification, agenda discipline, change safety |
+| [system-prompt](./docs/system-prompt.md) | Package-wide runtime policy: skill routing, library versions, clarification, change safety |
 | [ptc](./docs/ptc.md) | Programmatic Tool Calling — always-on preference for scripts over multi-hop tool calls |
 | code-map | Code intelligence tool preferences — injected by the code-map extension |
 
@@ -23,8 +23,6 @@ A curated pi package bundling custom extensions, skills, and system instructions
 
 | Skill | Description |
 |---|---|
-| [agenda](./docs/agenda.md) | Multi-step task planning and progress tracking |
-| [memory-md](./docs/memory-md.md) | Store, retrieve, and search persistent memory across sessions |
 | [subagents](./docs/subagents.md) | Delegate parallel or autonomous work to sub-agents |
 | [doc-library](./docs/doc-library.md) | Look up latest library docs and API references via Context7 |
 | [web-scout](./docs/web-scout.md) | Real-time web research, content extraction, and site mapping via Tavily |

@@ -91,9 +91,9 @@ No config file needed. Directory resolved in order:
 
 | Status | Meaning |
 |---|---|
-| `☰ memory: starting…` | Daemon spawned, initialising |
-| `☰ memory: running` | Daemon ready, accepting queries |
-| `☰ memory: stopped` | Daemon not running |
+| `☰ memory: starting… (~/.pi/memory)` | Daemon spawned, initialising |
+| `☰ memory: running (~/.pi/memory)` | Daemon ready, accepting queries |
+| `☰ memory: stopped (~/.pi/memory)` | Daemon not running |
 
 ## Vector search
 
@@ -124,6 +124,3 @@ cat ~/.cache/memory-md/*/dir
 - `MEMORY_MD_DIR` is managed by the extension — do not set it in your shell when using pi
 - `uv` in PATH (optional) — enables vector search on Apple Silicon
 
-## Skill
-
-The `memory-md` skill is auto-registered and teaches the LLM when to use memory tools, path conventions, and the decision guide for choosing the right operation.

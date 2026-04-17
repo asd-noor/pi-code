@@ -12,7 +12,6 @@ Individual extensions own their own domain-specific instructions (ptc rules, cod
 | Skill routing | Deterministic pass before every non-trivial action to select the right skill |
 | Hard triggers | Named skills that must activate for specific task types |
 | Library versions | Use `doc-library` to confirm latest API before writing code; flag outdated pins |
-| Agenda discipline | Mandatory for any work with 2+ implementation steps |
 | Change safety | Minimal targeted changes; understand context before editing |
 | Response style | Concise, path-explicit, no filler |
 
@@ -22,8 +21,6 @@ These skills activate unconditionally when the condition is met:
 
 | Condition | Skill |
 |---|---|
-| 2+ implementation steps | `agenda` |
-| Remember / recall / persist across sessions | `memory-md` |
 | Parallel or autonomous work | `subagents` |
 | Library API references, code examples, tool docs | `doc-library` |
 | Real-time web data, news, research | `web-scout` |

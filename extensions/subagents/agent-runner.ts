@@ -256,7 +256,11 @@ export async function spawnAndRun(
   const { model, isolated, inheritContext, thinkingLevel, signal, activity } = options;
 
   const noExtensions = isolated || agentConfig.extensions === false;
-  const systemPrompt = buildSystemPrompt(agentConfig, cwd, ctx.getSystemPrompt?.());
+  // Do not forward the parent system prompt: it already contains the package-level
+  // SYSTEM_INSTRUCTION injected by before_agent_start. Passing it here would embed
+  // it inside <inherited_system_prompt>, and before_agent_start would then append it
+  // a second time for this subagent session. Let before_agent_start inject it once.
+  const systemPrompt = buildSystemPrompt(agentConfig, cwd);
   const tools = buildTools(agentConfig, cwd);
 
   const loader = new DefaultResourceLoader({

@@ -30,8 +30,6 @@ Before any non-trivial action, run a deterministic skill-routing pass:
 4. Read the selected \`SKILL.md\` in full before using its tools.
 
 **Hard triggers (always activate the named skill):**
-- Task has 2+ implementation steps → activate \`agenda\`
-- Task involves remembering, recalling, or persisting facts across sessions → activate \`memory-md\`
 - Task requires parallel or autonomous work → activate \`subagents\`
 - Task requires library API references, code examples, or tool docs → activate \`doc-library\` (never hallucinate APIs)
 - Task requires real-time web data, news, or research → activate \`web-scout\`
@@ -42,12 +40,6 @@ When planning or implementing code that uses third-party libraries:
 - Use \`doc-library\` to confirm the latest stable version and API before writing any code.
 - If the project already pins an older version, flag it and ask the user whether to upgrade before proceeding.
 - Never assume a library's API from training data — look it up. Hallucinated APIs waste implementation cycles.
-
-### Agenda discipline
-
-Use the \`agenda\` extension for any work with 2 or more implementation steps.
-Create the plan before starting. Track progress. Mark tasks done as you go.
-Do not free-style multi-step work without a visible agenda.
 
 ### Change safety
 

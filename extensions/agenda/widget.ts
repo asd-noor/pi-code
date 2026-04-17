@@ -57,18 +57,26 @@ export function buildInProgressAgendaWidgetLines(agenda: AgendaRow, tasks: TaskR
   return lines;
 }
 
-export function refreshAgendaWidget(ctx: ExtensionContext): void {
+export function refreshAgendaWidget(ctx: ExtensionContext, focusedAgendaId?: number): void {
   const handle = openDb(undefined, ctx.cwd);
   try {
-    const agenda = handle.db
-      .prepare(
-        `SELECT id, title, description, acceptance_guard, state, revision, created_at, updated_at
-         FROM agendas
-         WHERE state = 'in_progress'
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 1`,
-      )
-      .get() as AgendaRow | undefined;
+    const agenda = focusedAgendaId != null
+      ? handle.db
+          .prepare(
+            `SELECT id, title, description, acceptance_guard, state, revision, created_at, updated_at
+             FROM agendas
+             WHERE id = ? AND state = 'in_progress'`,
+          )
+          .get(focusedAgendaId) as AgendaRow | undefined
+      : handle.db
+          .prepare(
+            `SELECT id, title, description, acceptance_guard, state, revision, created_at, updated_at
+             FROM agendas
+             WHERE state = 'in_progress'
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 1`,
+          )
+          .get() as AgendaRow | undefined;
 
     if (!agenda) {
       ctx.ui.setWidget("agenda-widget", undefined);

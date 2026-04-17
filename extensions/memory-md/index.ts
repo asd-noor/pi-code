@@ -69,7 +69,9 @@ export default function (pi: ExtensionAPI) {
   function updateFooter(): void {
     if (!uiCtx || !memDir) return;
     const running = isDaemonRunning(memDir);
-    uiCtx.setStatus("memory-md", running ? "☰ memory: running   " : "☰ memory: stopped   ");
+    const shortDir = memDir.replace(homedir(), "~");
+    const label = running ? `☰ memory: running (${shortDir})   ` : `☰ memory: stopped (${shortDir})   `;
+    uiCtx.setStatus("memory-md", label);
   }
 
   function clearFooter(): void {
@@ -112,26 +114,84 @@ export default function (pi: ExtensionAPI) {
     daemonChild = undefined;
   }
 
-  // ── Events ────────────────────────────────────────────────────────────────
+
+  // ── System prompt injection ──────────────────────────────────────────────
+
+  const MEMORY_INSTRUCTION = `
+## Memory discipline
+
+The memory-md daemon is running. Memory files are the shared living context for all agents
+and sessions — treat them as the authoritative record for this project.
+
+**Never recall from training data.** Always query memory tools. If a search returns nothing,
+state that explicitly and proceed fresh.
+
+### Recall (before any work)
+
+1. \`memory_search\` with terms relevant to the task
+2. \`memory_get\` the exact path for any result worth reading in full
+3. Apply what you find immediately — recalled decisions and constraints are binding
+
+### Store (immediately when it happens)
+
+Persist when you: make a decision, choose an approach, discover a constraint or pattern,
+or correct prior information.
+
+Before writing:
+1. \`memory_search\` to check if a matching section already exists
+2. Exists → \`memory_update\` (child sections are preserved)
+3. Doesn't exist → \`memory_create_file\` if the file is new, then \`memory_new\`
+4. After bulk writes → \`memory_validate_file\`
+
+**Store:** decisions, constraints, architectural choices, discovered patterns, corrected assumptions.
+**Do not store:** transient thoughts, step-by-step logs, anything irrelevant across sessions.
+
+### File structure
+
+One file per topic domain (e.g. \`project.md\`, \`architecture.md\`, \`decisions.md\`).
+Heading text is slugified to path segments: \`"API Keys"\` → \`api-keys\`, full path \`auth/api-keys\`.
+Heading level = path depth: \`##\` → 2 segments, \`###\` → 3.
+Body: concise and factual — reference material, not narrative.
+
+### Flush (before finishing)
+
+\`memory_search\` for anything decided or discovered during the session that is not yet persisted.
+Store it before ending.
+`.trim();
+
+  pi.on("before_agent_start", async (event) => ({
+    systemPrompt: event.systemPrompt + "\n\n" + MEMORY_INSTRUCTION,
+  }));
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+  let isInteractive = false;
 
   pi.on("session_start", async (_event, ctx) => {
-    uiCtx  = ctx.ui;
+    // Always resolve memDir — tools must work in subagent sessions too.
     memDir = resolveMemDir(ctx.cwd);
     mkdirSync(memDir, { recursive: true });
+
+    if (!ctx.hasUI) return;
+    isInteractive = true;
+    uiCtx = ctx.ui;
 
     killDaemon();
     if (poller) { clearInterval(poller); poller = undefined; }
 
-    uiCtx.setStatus("memory-md", isDaemonRunning(memDir) ? "☰ memory: running   " : "☰ memory: starting…   ");
+    const shortDir = memDir.replace(homedir(), "~");
+    uiCtx.setStatus("memory-md", isDaemonRunning(memDir) ? `☰ memory: running (${shortDir})   ` : `☰ memory: starting… (${shortDir})   `);
     daemonChild = spawnDaemon(memDir);
     startPolling();
   });
 
   pi.on("tool_execution_start", async (_event, ctx) => {
-    uiCtx = ctx.ui;
+    if (ctx.hasUI) uiCtx = ctx.ui;
   });
 
   pi.on("session_shutdown", async () => {
+    if (!isInteractive) return;
+    isInteractive = false;
     if (poller) { clearInterval(poller); poller = undefined; }
     killDaemon();
     clearFooter();

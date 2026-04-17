@@ -49,7 +49,7 @@ function queryAgendaBrowserRows(cwd: string, filters: AgendaBrowserFilters): Age
   }
 }
 
-export async function openAgendaBrowserInteractive(ctx: ExtensionContext): Promise<void> {
+export async function openAgendaBrowserInteractive(ctx: ExtensionContext): Promise<number | undefined> {
   if (!ctx.hasUI) {
     throw new Error("/agenda-browser requires interactive UI mode (not available in print/json mode)");
   }
@@ -84,7 +84,7 @@ export async function openAgendaBrowserInteractive(ctx: ExtensionContext): Promi
     let selectedTasks: TaskRow[]        = [];
     let selectedTasksAgendaId: number | undefined;
     let selectedTasksError: string | undefined;
-    let errorMessage: string | undefined;
+    let selectedAgendaId: number | undefined;
     let contentLines: string[]          = [];
 
     // ── task reload ───────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ export async function openAgendaBrowserInteractive(ctx: ExtensionContext): Promi
     const buildLines = () => {
       const lines: string[] = [];
 
-      lines.push(dim("↑/↓ j/k move · t tasks · s state · u unfinished · r refresh · esc/q close"));
+    lines.push(dim("↑/↓ j/k move · t tasks · s state · u unfinished · r refresh · enter focus · esc/q close"));
 
       const stateTag = stateColor(filters.state)(`state=${filters.state}`);
       const unfinTag = filters.withUnfinishedTasks ? wrn("unfinished=yes") : dim("unfinished=no");
@@ -223,9 +223,12 @@ export async function openAgendaBrowserInteractive(ctx: ExtensionContext): Promi
       tui.requestRender();
     };
 
-    const close = () => {
+    const close = (selectCurrent = false) => {
       agendaBrowserFilters = { ...filters };
-      done(undefined);
+      if (selectCurrent && rows[selected]?.agenda.state === "in_progress") {
+        selectedAgendaId = rows[selected]!.agenda.id;
+      }
+      done(selectedAgendaId);
     };
 
     // initial load
@@ -237,6 +240,7 @@ export async function openAgendaBrowserInteractive(ctx: ExtensionContext): Promi
       invalidate:  () => {},
       handleInput: (data: string) => {
         if (matchesKey(data, Key.escape) || data === "q" || data === "Q") { close(); return; }
+        if (matchesKey(data, Key.return)) { close(true); return; }
         if (matchesKey(data, Key.down) || data === "j") {
           if (rows.length > 0) { selected = Math.min(rows.length - 1, selected + 1); reloadSelectedTasks(true); refresh(); }
           return;
