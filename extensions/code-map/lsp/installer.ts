@@ -75,16 +75,18 @@ const RECIPES: Record<string, InstallRecipe> = {
       });
     },
   },
-  "rust-analyzer": {
-    serverId: "rust-analyzer",
-    displayName: "rust-analyzer (Rust)",
-    systemBinary: "rust-analyzer",
-    localBinary: () => join(getLspDir(), "bin", "rust-analyzer"),
-    hint: "rustup component add rust-analyzer",
-    install: async (lspDir) => {
-      const binDir = join(lspDir, "bin");
-      mkdirSync(binDir, { recursive: true });
-      await downloadRustAnalyzer(join(binDir, "rust-analyzer"));
+  "zls": {
+    serverId: "zls",
+    displayName: "zls (Zig)",
+    systemBinary: "zls",
+    localBinary: () => join(getLspDir(), "bin", "zls"),
+    hint: "brew install zls  # or download from https://github.com/zigtools/zls/releases",
+    install: async (_lspDir) => {
+      throw new Error(
+        "ZLS has no auto-install recipe — please install it manually:\n" +
+        "  brew install zls\n" +
+        "  or download a prebuilt binary from https://github.com/zigtools/zls/releases"
+      );
     },
   },
   "lua-language-server": {
@@ -161,22 +163,6 @@ async function downloadFile(url: string, dest: string): Promise<void> {
   if (!res.ok) throw new Error(`HTTP ${res.status} downloading ${url}`);
   const buf = await res.arrayBuffer();
   writeFileSync(dest, Buffer.from(buf));
-}
-
-async function downloadRustAnalyzer(destPath: string): Promise<void> {
-  const plat = platform();
-  const ar   = arch();
-  let target: string;
-  if      (plat === "darwin" && ar === "arm64") target = "aarch64-apple-darwin";
-  else if (plat === "darwin")                   target = "x86_64-apple-darwin";
-  else if (plat === "linux" && ar === "arm64")  target = "aarch64-unknown-linux-gnu";
-  else if (plat === "linux")                    target = "x86_64-unknown-linux-gnu";
-  else throw new Error(`Unsupported platform for rust-analyzer: ${plat}/${ar}`);
-  const url = `https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-${target}.gz`;
-  const gz  = `${destPath}.gz`;
-  await downloadFile(url, gz);
-  runSync("gunzip", ["-f", gz]);
-  chmodSync(destPath, 0o755);
 }
 
 async function downloadLuaLs(binDir: string): Promise<void> {

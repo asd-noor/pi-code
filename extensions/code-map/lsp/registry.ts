@@ -48,13 +48,13 @@ const SERVER_DEFS: Array<{ detect: (root: string) => boolean; server: () => LspS
     }),
   },
   {
-    detect: (r) => existsSync(join(r, "Cargo.toml")),
+    detect: (r) => existsSync(join(r, "build.zig")),
     server: () => ({
-      command: resolveCmd("rust-analyzer"),
-      args: [],
-      languageId: "rust",
-      extensions: [".rs"],
-      installId: "rust-analyzer",
+      command: resolveCmd("zls"),
+      args: ["--stdio"],
+      languageId: "zig",
+      extensions: [".zig"],
+      installId: "zls",
     }),
   },
   {
