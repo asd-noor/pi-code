@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-04-18
+
+### Added
+
+- **code-map — SQLite persistent cache**: Replaced the in-memory `CodeGraph` Maps with a SQLite database (`bun:sqlite`) at `~/.pi/cache/code-map/<project>/codemap.db`. Schema: `nodes`, `reverse_refs`, `indexed_nodes`, `diagnostics`, `file_meta`. WAL mode + 64 MB page cache + foreign-key cascades. The `CodeGraph` class is removed; all reads and writes go through the new `CodeMapDB` class in `daemon/db.ts`.
+- **code-map — incremental startup**: `file_meta` table stores per-file `mtime_ms`. On daemon start, only files whose mtime differs from the stored value are re-parsed; unchanged files load from the DB instantly. Second-and-later session starts are near-instant for stable codebases.
+- **code-map — multi-LSP support**: `detectServers()` replaces `detectServer()` and returns all matching LSP server definitions (not just the first). A project with both `tsconfig.json` and `go.mod` now runs both `typescript-language-server` and `gopls` simultaneously. All clients are background-initialised in parallel; each client owns its file extensions.
+- **code-map — `language` field on all schema types**: `GraphNode`, `SymbolRow`, `SymbolDefRow`, `ImpactRow`, and `DiagRow` all carry a `language` string. Tree-sitter populates it from the file extension; LSP fallback derives it the same way.
+- **code-map — required `language` parameter on all tools**: `code_map_outline`, `code_map_symbol`, `code_map_diagnostics`, and `code_map_impact` now require a `language: string` parameter. Passing an unsupported language returns a descriptive error message pointing to the `ptc` fallback. All handlers filter results by language at the SQL level.
+- **code-map — eager reverse-ref recomputation after file changes**: When a file is re-indexed, `deleteFile` now also removes `reverse_refs` rows where `ref_file` matches and unmarks those parent symbols as indexed. `_updateReverseRefsForFile` then eagerly recomputes refs for both the changed file's own symbols and all affected external symbols — no lazy deferral to the next `code_map_impact` call.
+
+### Changed
+
+- **code-map — tree-sitter indexes all 6 languages unconditionally**: File collection now uses all tree-sitter-supported extensions (`.ts .tsx .js .jsx .mjs .cjs .py .go .zig .lua`) regardless of which LSPs are detected. Previously only the first-matched LSP's extensions were walked.
+- **code-map — tree-sitter-only mode**: If no LSP detection markers are found in the project root, the daemon starts without any LSP (no diagnostics or impact analysis). Previously it fell back to starting `typescript-language-server` unconditionally.
+- **code-map — `language` column drives SQL filtering**: `findByName`, `getDiagnostics`, and all other DB queries filter by `language` directly in SQL rather than post-filtering in application code.
+- **code-map — system prompt updated**: Injected code-map instructions now state that `language` is a required parameter and describe the `ptc` fallback for unsupported languages.
+- **docs/code-map.md**: Fully rewritten to reflect SQLite persistence, incremental startup, multi-LSP, required `language` param, corrected language support table (Rust removed, Zig added), and updated cache layout.
+
 ## [1.7.0] - 2026-04-18
 
 ### Changed
