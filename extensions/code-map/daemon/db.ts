@@ -120,6 +120,13 @@ export class CodeMapDB {
 
   deleteFile(relFile: string): void {
     const run = this.db.transaction(() => {
+      // Unmark as indexed any symbol whose callers included this file,
+      // so Phase 2 will recompute their reverse refs on next impact query.
+      this.db.prepare(
+        `DELETE FROM indexed_nodes WHERE node_id IN
+         (SELECT DISTINCT node_id FROM reverse_refs WHERE ref_file = ?)`,
+      ).run(relFile);
+      this.db.prepare(`DELETE FROM reverse_refs WHERE ref_file = ?`).run(relFile);
       this.db.prepare(`DELETE FROM nodes WHERE file = ?`).run(relFile);
       this.db.prepare(`DELETE FROM diagnostics WHERE file = ?`).run(relFile);
       this.db.prepare(`DELETE FROM file_meta WHERE file = ?`).run(relFile);
@@ -129,11 +136,18 @@ export class CodeMapDB {
 
   deleteFiles(relFiles: string[]): void {
     if (relFiles.length === 0) return;
+    const unmarkIndexed = this.db.prepare(
+      `DELETE FROM indexed_nodes WHERE node_id IN
+       (SELECT DISTINCT node_id FROM reverse_refs WHERE ref_file = ?)`,
+    );
+    const delCallerRefs = this.db.prepare(`DELETE FROM reverse_refs WHERE ref_file = ?`);
     const delNodes = this.db.prepare(`DELETE FROM nodes WHERE file = ?`);
     const delDiags = this.db.prepare(`DELETE FROM diagnostics WHERE file = ?`);
     const delMeta  = this.db.prepare(`DELETE FROM file_meta WHERE file = ?`);
     const run = this.db.transaction((files: string[]) => {
       for (const f of files) {
+        unmarkIndexed.run(f);
+        delCallerRefs.run(f);
         delNodes.run(f);
         delDiags.run(f);
         delMeta.run(f);
