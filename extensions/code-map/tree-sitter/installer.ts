@@ -49,12 +49,12 @@ function which(cmd: string): string | null {
 }
 
 function runNpm(dir: string, packages: string[]): void {
-  if (which("npm")) {
-    runSync("npm", ["install", "--prefix", dir, ...packages]);
-  } else if (which("bun")) {
+  if (which("bun")) {
     runSync("bun", ["add", "--cwd", dir, ...packages]);
+  } else if (which("npm")) {
+    runSync("npm", ["install", "--prefix", dir, "--legacy-peer-deps", ...packages]);
   } else {
-    throw new Error("Neither npm nor bun found on PATH");
+    throw new Error("Neither bun nor npm found on PATH");
   }
 }
 

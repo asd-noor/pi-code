@@ -18,7 +18,7 @@ export function ensureState(value: string, allowed: readonly string[], label: st
 }
 
 function encodeProject(projectDir: string): string {
-  return projectDir.replace(/[:\\/]+/g, "=").replace(/^=+/, "");
+  return projectDir.replace(/[:\\/]+/g, "=");
 }
 
 function resolveProjectDir(project: string | undefined, cwd: string): string {
