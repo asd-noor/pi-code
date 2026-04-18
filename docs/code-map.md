@@ -1,6 +1,6 @@
 # code-map
 
-LSP-backed code intelligence for pi. Spawns a per-project daemon that indexes every symbol into an in-memory graph and answers queries in milliseconds.
+LSP-backed code intelligence for pi. Spawns a per-project daemon that indexes every symbol into a SQLite database and answers queries in milliseconds. The index persists across sessions — only changed files are re-parsed on restart.
 
 ## How it works
 
@@ -8,20 +8,34 @@ LSP-backed code intelligence for pi. Spawns a per-project daemon that indexes ev
 session_start
   └── resolve git root (or cwd)
   └── spawn daemon: bun run daemon/runner.ts <root> --auto-install --file-limit=N
-        1. detect + install LSP server if missing
-        2. init LSP, open all project files
-        3. Phase 1: documentSymbol every file → symbol graph  ← "ready"
-        4. Phase 2: references per fn/method/class → reverse refs (background)
+        1. open codemap.db (creates if new)
+        2. detect all applicable LSP servers from root markers
+        3. install any missing LSP servers (--auto-install)
+        4. load tree-sitter grammars for all 6 supported languages
+        5. Phase 1: parse all files
+               fresh files (mtime unchanged) → loaded from DB instantly
+               stale/new files → tree-sitter parse → insert into DB
+                                 (LSP documentSymbol fallback if no grammar)
+           → write "ready"
+        6. Phase 2 (background): start each LSP, open files, snapshot
+               diagnostics → DB; reverse refs per fn/method/class → DB
 
 Query (LLM tool call)
   └── SocketClient connects to ~/.pi/cache/code-map/<project>/daemon.sock
-  └── JSON query → result in ~50ms
+  └── JSON query → SQL → result in ~1ms
 
 File change
-  └── watcher fires (500ms debounce) → re-index that file only
+  └── watcher fires (500ms debounce)
+  └── deleteFile: removes nodes + diagnostics + stale reverse refs pointing
+      INTO this file; unmarks affected external symbols as indexed
+  └── tree-sitter re-parse → insert new nodes → update mtime
+  └── background: LSP updateFile → snapshot all diagnostics → recompute
+      reverse refs for changed file's symbols AND all affected external symbols
 ```
 
 ## LLM tools
+
+All tools require a `language` parameter. If the language is not natively supported, a descriptive error is returned pointing to the `ptc` fallback.
 
 | Tool | Description |
 |---|---|
@@ -33,36 +47,40 @@ File change
 ### `code_map_outline`
 
 ```
-file: string    — absolute or relative path
+file:     string  — absolute or relative path
+language: string  — typescript | javascript | python | go | zig | lua
 ```
 
-Returns all symbols in the file: functions, classes, methods, interfaces, types, enums, constants — with kind, name, and line range.
+Returns all symbols in the file: functions, classes, methods, interfaces, types, enums — with kind, name, line range, and language.
 
 ### `code_map_symbol`
 
 ```
-name:   string   — plain name, qualified (Store.Find), or Go receiver syntax
-source: boolean? — include source snippet (default: false)
+name:     string   — plain name, qualified (Store.Find), or Go receiver syntax
+language: string   — typescript | javascript | python | go | zig | lua
+source:   boolean? — include source snippet (default: false)
 ```
 
-Searches the whole workspace. Use the qualified form from `code_map_outline` output for precise results.
+Searches the whole workspace filtered by language. Use the qualified form from `code_map_outline` output for precise results.
 
 ### `code_map_diagnostics`
 
 ```
+language: string  — typescript | javascript | python | go | zig | lua
 file:     string? — filter to a specific file (omit for all files)
 severity: number? — 1=error, 2=warning, 3=info, 4=hint, 0=all (default: 0)
 ```
 
-Real LSP diagnostics — same errors the editor would show.
+Real LSP diagnostics — same errors the editor would show. Only available for languages whose LSP was detected and started for the project.
 
 ### `code_map_impact`
 
 ```
-name: string — symbol name to find callers for
+name:     string — symbol name to find callers for
+language: string — typescript | javascript | python | go | zig | lua
 ```
 
-Returns every reference to the symbol with the enclosing function at each call site. Instant once background indexing has reached the symbol; falls back to a live LSP call otherwise.
+Returns every reference to the symbol with the enclosing function at each call site. Results are stored in the DB after first computation; eager recomputation is triggered after any file change that affects the caller graph.
 
 ## Commands
 
@@ -108,23 +126,36 @@ Run `/code-map restart` after editing the config to apply changes.
     node_modules/.bin/          npm-installed servers
     bin/                        standalone binaries
     go/bin/                     gopls
+  tree-sitter/                  shared tree-sitter + grammar packages
   =Users=noor=project/          per-project state (/ → =)
     daemon.sock
     daemon.log
     daemon.status
+    daemon.pid
+    codemap.db                  SQLite: nodes, reverse_refs, diagnostics,
+                                        indexed_nodes, file_meta (mtime)
 ```
 
 ## Language support
 
-Auto-detected from project root files:
+All 6 languages are indexed via tree-sitter on every project regardless of which LSPs are running. LSP servers are started for every language whose detection marker is present in the project root — a project can run multiple LSPs simultaneously.
 
-| Language | Detection | Server |
-|---|---|---|
-| TypeScript / JavaScript | `tsconfig.json` or `package.json` | `typescript-language-server` |
-| Go | `go.mod` | `gopls` |
-| Rust | `Cargo.toml` | `rust-analyzer` |
-| Python | `pyproject.toml` / `setup.py` / `requirements.txt` | `pyright` → `pylsp` |
-| Lua | `.luarc.json` or `.luacheckrc` | `lua-language-server` |
+| Language | Tree-sitter | LSP detection marker | LSP server |
+|---|---|---|---|
+| TypeScript / JavaScript | ✅ | `tsconfig.json` or `package.json` | `typescript-language-server` |
+| Python | ✅ | `pyproject.toml` / `setup.py` / `requirements.txt` | `pyright` → `pylsp` |
+| Go | ✅ | `go.mod` | `gopls` |
+| Zig | ✅ | `build.zig` | `zls` |
+| Lua | ✅ | `.luarc.json` or `.luacheckrc` | `lua-language-server` |
+
+Tree-sitter provides: symbol outlines, symbol search.  
+LSP additionally provides: diagnostics, reverse refs / impact analysis.
+
+If no LSP markers are found, the daemon runs in **tree-sitter-only mode** (no diagnostics or impact analysis).
+
+For any other language, tools return a descriptive error. Fall back to:
+1. `ptc` with a Python uv script (PEP 723) — use language-specific AST libraries (e.g. `tree_sitter`, `libcst`)
+2. `ptc` with a bash script using `find`, `grep`, `awk` — pattern-match function/class signatures
 
 LSP servers are auto-installed to `~/.pi/cache/code-map/lsp/` on first run (`--auto-install`).
 
