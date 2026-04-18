@@ -422,7 +422,7 @@ Guidelines:
       })),
     }),
 
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       rebuildRegistry(ctx.cwd);
       widget.setUICtx(ctx.ui);
 

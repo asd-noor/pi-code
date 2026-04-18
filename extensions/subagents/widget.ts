@@ -23,7 +23,6 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 /** How many turns a finished agent stays visible (errors linger longer). */
-const LINGER_TURNS_SUCCESS = 0;
 const LINGER_TURNS_ERROR = 1;
 
 export class AgentWidget {

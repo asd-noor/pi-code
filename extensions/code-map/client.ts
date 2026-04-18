@@ -14,7 +14,7 @@ export class SocketClient {
   private sockPath: string;
   private statusPath: string;
 
-  constructor(private rootPath: string) {
+  constructor(rootPath: string) {
     const projectDir  = getProjectDir(rootPath);
     this.sockPath     = join(projectDir, "codemap-daemon.sock");
     this.statusPath   = join(projectDir, "codemap-daemon.status");

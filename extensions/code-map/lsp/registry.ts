@@ -11,7 +11,7 @@ export interface LspServerDef {
   installId: string;
 }
 
-function which(cmd: string): string | null {
+export function which(cmd: string): string | null {
   try {
     const out = execFileSync("which", [cmd], { stdio: "pipe", timeout: 3000 });
     return out.toString().trim() || null;
