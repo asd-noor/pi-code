@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-04-19
+
+### Changed
+
+- **code-map — cache path flattened**: Per-project state moved from `~/.pi/cache/code-map/<encoded-project>/` to `~/.pi/cache/<encoded-project>/`. Shared binaries follow: LSP servers at `~/.pi/cache/lsp/`, tree-sitter at `~/.pi/cache/tree-sitter/`.
+- **code-map — daemon files renamed**: All per-project runtime files renamed from `daemon.*` to `codemap-daemon.*` (`codemap-daemon.sock`, `codemap-daemon.pid`, `codemap-daemon.status`, `codemap-daemon.log`) to avoid ambiguity with other daemons sharing the same cache directory.
+
 ## [1.8.0] - 2026-04-18
 
 ### Added
