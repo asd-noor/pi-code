@@ -99,7 +99,7 @@ import socket, json
 from pathlib import Path
 
 def _code_map(method: str, params: dict, root: str) -> any:
-    sock = Path.home() / ".pi" / "cache" / "code-map" / root.replace("/", "=") / "daemon.sock"
+    sock = Path.home() / ".pi" / "cache" / root.replace("/", "=") / "codemap-daemon.sock"
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
         s.connect(str(sock))
         s.sendall((json.dumps({"id": 1, "method": method, "params": params}) + "\n").encode())
