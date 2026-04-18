@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.2] - 2026-04-19
+
+### Fixed
+
+- **code-map — `./`-prefixed paths return no symbols**: `handleOutline` and `handleDiagnostics` passed relative paths straight to `db.getByFile()` without normalizing. Paths like `./main.go` never matched DB entries stored as `main.go` (via `path.relative()`). Fixed by applying `path.normalize()` to non-absolute paths before the DB lookup.
+- **code-map — LSP early-init when tree-sitter unavailable**: When tree-sitter failed to install, `buildNodes` fell back to LSP document symbols — but the LSP hadn't been initialized yet, causing every file to time out at 15 s (~18 min blocked before the socket was created). The daemon now initializes all LSP clients before `buildNodes` when `tsParser` is null. `LspClient.initialize()` is now idempotent so Phase 8 doesn't double-initialize.
+- **code-map — tree-sitter native build failing on Node ≥ v22**: `node-gyp` failed to compile the `tree-sitter` native addon because Node v22+ v8 headers require C++20. The installer now sets `CC="zig cc" CXX="zig c++"` when zig is available (full LLVM toolchain, C++20 by default), falling back to `CXXFLAGS="-std=c++20"` with the system compiler.
+- **code-map — broken install detection retries on failed native build**: `isTreeSitterInstalled()` only checked for the package directory, not the compiled `.node` binary. A failed build left the directory in place, preventing retries. Now checks for `tree_sitter_runtime_binding.node` directly.
+- **code-map — npm peer dep conflict during tree-sitter install**: `tree-sitter-typescript` declares `peerOptional tree-sitter@^0.21.0` conflicting with `^0.25.0` required by other grammars. Fixed by preferring bun (ignores peer dep conflicts) over npm, and adding `--legacy-peer-deps` to the npm fallback.
+- **code-map — old cache path in injected system prompt**: `extensions/ptc.ts` still referenced `~/.pi/cache/code-map/<encoded>/daemon.sock` causing agents to look in the wrong directory. Updated to `~/.pi/cache/<encoded>/codemap-daemon.sock`.
+
 ## [1.8.1] - 2026-04-19
 
 ### Changed
