@@ -32,5 +32,8 @@
         "prompts": [
             "./prompts"
         ]
+    },
+    "devDependencies": {
+        "bun-types": "^1.3.12"
     }
 }

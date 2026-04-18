@@ -1,5 +1,5 @@
 /**
- * Unix socket server — pure graph reads + live LSP fallback for impact.
+ * Unix socket server — pure DB reads + live LSP fallback for impact.
  * Protocol: newline-delimited JSON
  *   → {"id":1,"method":"outline","params":{"file":"src/foo.ts","language":"typescript"}}
  *   ← {"id":1,"result":[...]}
@@ -10,19 +10,12 @@ import { resolve, relative, extname } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import type { CodeGraph, GraphNode, RefLocation } from "./graph.ts";
-import { REF_KINDS, SUPPORTED_LANGUAGES, EXT_TO_LANG } from "./graph.ts";
+import { type GraphNode, REF_KINDS, SUPPORTED_LANGUAGES, EXT_TO_LANG } from "./graph.ts";
+import { CodeMapDB, type DiagRow } from "./db.ts";
 import type { LspClient } from "../lsp/client.ts";
 
-export interface DiagRow {
-  severity: string;
-  language: string;
-  file: string;
-  line: number;
-  col: number;
-  source: string;
-  message: string;
-}
+// Re-export DiagRow so callers that previously imported it from server.ts still work.
+export type { DiagRow } from "./db.ts";
 
 export interface SymbolRow {
   kind: string;
@@ -61,7 +54,7 @@ export class DaemonServer {
 
   constructor(
     private socketPath: string,
-    private graph: CodeGraph,
+    private db: CodeMapDB,
     private lspClients: Map<string, LspClient>,
     private rootPath: string,
     private onShutdown: () => void,
@@ -134,8 +127,8 @@ export class DaemonServer {
 
   private async dispatch(method: string, params: Record<string, unknown>): Promise<unknown> {
     switch (method) {
-      case "ping":        return { pong: true, ...this.graph.stats() };
-      case "status":      return this.graph.stats();
+      case "ping":        return { pong: true, ...this.db.stats() };
+      case "status":      return this.db.stats();
       case "outline":     return this.handleOutline(String(params.file), String(params.language ?? ""));
       case "symbol":      return this.handleSymbol(String(params.name), !!params.withSource, String(params.language ?? ""));
       case "diagnostics": return this.handleDiagnostics(
@@ -152,7 +145,7 @@ export class DaemonServer {
   private handleOutline(file: string, language: string): SymbolRow[] {
     this.validateLanguage(language);
     const rel   = file.startsWith("/") ? relative(this.rootPath, file) : file;
-    const nodes = (this.graph.byFile.get(rel) ?? []).filter((n) => n.language === language);
+    const nodes = this.db.getByFile(rel).filter((n) => n.language === language);
     return nodes.map((n) => ({
       kind: n.kind, language: n.language, name: n.name,
       lineStart: n.lineStart, lineEnd: n.lineEnd, file: n.file,
@@ -161,88 +154,74 @@ export class DaemonServer {
 
   private handleSymbol(name: string, withSource: boolean, language: string): SymbolDefRow[] {
     this.validateLanguage(language);
-    return this.graph.findByName(name)
-      .filter((n) => n.language === language)
-      .map((n) => {
-        const row: SymbolDefRow = {
-          kind: n.kind, language: n.language, file: n.file,
-          lineStart: n.lineStart, lineEnd: n.lineEnd,
-          colStart: n.colStart, name: n.name,
-        };
-        if (withSource) {
-          row.source = extractSource(resolve(this.rootPath, n.file), n.lineStart, n.lineEnd);
-        }
-        return row;
-      });
+    return this.db.findByName(name, language).map((n) => {
+      const row: SymbolDefRow = {
+        kind: n.kind, language: n.language, file: n.file,
+        lineStart: n.lineStart, lineEnd: n.lineEnd,
+        colStart: n.colStart, name: n.name,
+      };
+      if (withSource) {
+        row.source = extractSource(resolve(this.rootPath, n.file), n.lineStart, n.lineEnd);
+      }
+      return row;
+    });
   }
 
   private handleDiagnostics(file: string | undefined, language: string, minSeverity: number): DiagRow[] {
     this.validateLanguage(language);
-    const SEV: Record<string, number> = { error: 1, warning: 2, info: 3, hint: 4 };
-    const rows: DiagRow[] = [];
-    for (const [relFile, diags] of this.graph.diagnostics) {
-      if (file) {
-        const rel = file.startsWith("/") ? relative(this.rootPath, file) : file;
-        if (relFile !== rel) continue;
-      }
-      for (const d of diags) {
-        if (d.language !== language) continue;
-        if (minSeverity > 0 && (SEV[d.severity] ?? 99) > minSeverity) continue;
-        rows.push(d);
-      }
-    }
-    return rows.sort((a, b) =>
-      a.file !== b.file ? a.file.localeCompare(b.file) : a.line - b.line,
-    );
+    const rel = file
+      ? (file.startsWith("/") ? relative(this.rootPath, file) : file)
+      : undefined;
+    return this.db.getDiagnostics(rel, language, minSeverity);
   }
 
   private async handleImpact(name: string, language: string): Promise<ImpactRow[]> {
     this.validateLanguage(language);
 
-    const nodes = this.graph.findByName(name).filter((n) => n.language === language);
+    const nodes = this.db.findByName(name, language);
     if (!nodes.length) throw new Error(`symbol not found: ${name} (language: ${language})`);
 
     const target = nodes.find((n) => REF_KINDS.has(n.kind)) ?? nodes[0];
 
     // Determine the LSP client for this node's file
-    const absFile  = resolve(this.rootPath, target.file);
-    const ext      = extname(absFile).toLowerCase();
-    const langId   = EXT_TO_LANG[ext] ?? language;
+    const absFile   = resolve(this.rootPath, target.file);
+    const ext       = extname(absFile).toLowerCase();
+    const langId    = EXT_TO_LANG[ext] ?? language;
     const lspClient = this.lspClients.get(ext);
 
-    if (!this.readyLangs.has(langId) && !this.graph.indexed.has(target.id)) {
+    if (!this.readyLangs.has(langId) && !this.db.isIndexed(target.id)) {
       if (!lspClient) {
         throw new Error(`No LSP running for language '${language}' — impact analysis unavailable`);
       }
       throw new Error("LSP still initializing — impact analysis available shortly");
     }
 
-    if (!this.graph.indexed.has(target.id)) {
+    if (!this.db.isIndexed(target.id)) {
       if (!lspClient) {
         throw new Error(`No LSP running for language '${language}'`);
       }
       try {
         const refs = await lspClient.references(absFile, target.lineStart - 1, target.colStart, false);
-        const locations: RefLocation[] = refs
+        const locations = refs
           .map((r) => ({
             file:      relative(this.rootPath, r.uri.startsWith("file://") ? fileURLToPath(r.uri) : r.uri),
             lineStart: r.range.start.line + 1,
             lineEnd:   r.range.end.line + 1,
           }))
           .filter((r) => !(r.file === target.file && r.lineStart === target.lineStart));
-        this.graph.setReverseRefs(target.id, locations);
+        this.db.setReverseRefs(target.id, locations);
       } catch (err) {
-        this.graph.indexed.add(target.id);
+        this.db.markIndexed(target.id);
         throw new Error(`references query failed: ${err}`);
       }
     }
 
-    const refs = this.graph.reverseRefs.get(target.id) ?? [];
+    const refs = this.db.getReverseRefs(target.id);
     return refs.map((r) => ({
       kind: "ref", language,
       file: r.file,
       lineStart: r.lineStart, lineEnd: r.lineEnd,
-      name: nameAtLocation(this.graph, r.file, r.lineStart),
+      name: nameAtLocation(this.db, r.file, r.lineStart),
     }));
   }
 }
@@ -255,8 +234,8 @@ function extractSource(absPath: string, lineStart: number, lineEnd: number): str
   } catch { return undefined; }
 }
 
-function nameAtLocation(graph: CodeGraph, relFile: string, line: number): string {
-  const nodes = graph.byFile.get(relFile) ?? [];
+function nameAtLocation(db: CodeMapDB, relFile: string, line: number): string {
+  const nodes = db.getByFile(relFile);
   let best: GraphNode | undefined;
   for (const n of nodes) {
     if (n.lineStart <= line && n.lineEnd >= line) {

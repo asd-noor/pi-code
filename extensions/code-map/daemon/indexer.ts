@@ -1,10 +1,11 @@
 /**
- * Indexer — builds and incrementally updates the CodeGraph.
+ * Indexer — builds and incrementally updates the CodeMapDB.
  *
  * Phase 1 (blocking, before "ready"):
  *   If a TreeSitterParser is available, each file is parsed synchronously
  *   with tree-sitter (fast — no LSP round-trips, no sleep).
  *   For files whose grammar is unavailable, falls back to LSP documentSymbol.
+ *   Incremental: files whose mtime matches file_meta are skipped entirely.
  *
  * Phase 2 (background, after "ready"):
  *   textDocument/references per fn/method/class → populate reverseRefs
@@ -16,7 +17,9 @@ import { fileURLToPath } from "node:url";
 
 import type { LspClient } from "../lsp/client.ts";
 import type { TreeSitterParser } from "../tree-sitter/parser.ts";
-import { CodeGraph, REF_KINDS, nodeId, EXT_TO_LANG, type RefLocation, type GraphNode } from "./graph.ts";
+import { REF_KINDS, nodeId, EXT_TO_LANG, type RefLocation, type GraphNode } from "./graph.ts";
+import { type CodeMapDB } from "./db.ts";
+import type { DiagRow } from "./db.ts";
 import {
   SYMBOL_KIND_NAMES,
   SEVERITY_NAMES,
@@ -49,7 +52,7 @@ export class Indexer {
 
   constructor(
     private clients: Map<string, LspClient>,
-    private graph: CodeGraph,
+    private db: CodeMapDB,
     private rootPath: string,
     private extensions: Set<string>,
     private log: Log,
@@ -67,10 +70,46 @@ export class Indexer {
 
   async buildNodes(files: string[], tsParser?: TreeSitterParser): Promise<void> {
     const parser = tsParser ?? this.tsParser;
-    this.log(`building node graph from ${files.length} files (${parser ? "tree-sitter" : "lsp"})...`);
-    let count = 0;
+
+    // ── Remove files that are in DB but no longer on disk ───────────────────
+    const dbFiles  = this.db.getTrackedFiles();
+    const diskFiles = new Set(files.map((f) => relative(this.rootPath, f)));
+    const removedFiles = [...dbFiles].filter((f) => !diskFiles.has(f));
+    if (removedFiles.length > 0) {
+      this.log(`removing ${removedFiles.length} deleted files from DB...`);
+      this.db.deleteFiles(removedFiles);
+    }
+
+    // ── Split files into stale (need re-index) and fresh (skip) ─────────────
+    type StaleFile = { abs: string; mtimeMs: number };
+    const staleFiles: StaleFile[] = [];
+    let freshCount = 0;
 
     for (const absFile of files) {
+      const relFile = relative(this.rootPath, absFile);
+      try {
+        const { mtimeMs } = statSync(absFile);
+        if (this.db.getMtime(relFile) === mtimeMs) {
+          freshCount++;
+        } else {
+          staleFiles.push({ abs: absFile, mtimeMs });
+        }
+      } catch (_) {
+        // stat failed — treat as stale so it gets a proper error below
+        try {
+          staleFiles.push({ abs: absFile, mtimeMs: statSync(absFile).mtimeMs });
+        } catch (_2) {}
+      }
+    }
+
+    this.log(
+      `building node graph from ${staleFiles.length} stale files ` +
+      `(${freshCount} fresh, skipping)...`,
+    );
+
+    let count = 0;
+
+    for (const { abs: absFile, mtimeMs } of staleFiles) {
       if (this.aborted) return;
       const relFile = relative(this.rootPath, absFile);
 
@@ -79,7 +118,8 @@ export class Indexer {
         try {
           const nodes = parser.parseFile(absFile, relFile);
           if (nodes.length > 0) {
-            for (const node of nodes) this.graph.addNode(node);
+            this.db.insertNodes(nodes);
+            this.db.setMtime(relFile, mtimeMs);
             count += nodes.length;
             continue;
           }
@@ -101,21 +141,26 @@ export class Indexer {
         client.openFile(absFile);
         const raw   = await client.documentSymbols(absFile);
         const nodes = flattenSymbols(raw, relFile, language);
-        for (const node of nodes) this.graph.addNode(node);
+        this.db.insertNodes(nodes);
+        this.db.setMtime(relFile, mtimeMs);
         count += nodes.length;
       } catch (err) {
         this.log(`  skip ${relFile}: ${err}`);
       }
     }
-    this.log(`node graph ready: ${count} symbols across ${files.length} files`);
+
+    this.log(
+      `node graph ready: ${count} new symbols indexed across ${staleFiles.length} files`,
+    );
   }
 
   snapshotDiagnostics(rawDiags: Map<string, Diagnostic[]>): void {
+    let fileCount = 0;
     for (const [uri, diags] of rawDiags) {
-      const fp      = uri.startsWith("file://") ? fileURLToPath(uri) : uri;
-      const relFile = relative(this.rootPath, fp);
+      const fp       = uri.startsWith("file://") ? fileURLToPath(uri) : uri;
+      const relFile  = relative(this.rootPath, fp);
       const language = EXT_TO_LANG[extname(fp).toLowerCase()] ?? "unknown";
-      this.graph.diagnostics.set(relFile, diags.map((d) => ({
+      const rows: DiagRow[] = diags.map((d) => ({
         severity: SEVERITY_NAMES[d.severity ?? DiagnosticSeverity.Error] ?? "unknown",
         language,
         file:     relFile,
@@ -123,17 +168,17 @@ export class Indexer {
         col:      d.range.start.character + 1,
         source:   String(d.source ?? ""),
         message:  d.message,
-      })));
+      }));
+      this.db.setDiagnostics(relFile, language, rows);
+      fileCount++;
     }
-    this.log(`diagnostics snapshotted for ${this.graph.diagnostics.size} files`);
+    this.log(`diagnostics snapshotted for ${fileCount} files`);
   }
 
   // ── Phase 2 ───────────────────────────────────────────────────────────────
 
   async buildReverseRefs(): Promise<void> {
-    const targets = [...this.graph.nodes.values()].filter(
-      (n) => REF_KINDS.has(n.kind) && !this.graph.indexed.has(n.id),
-    );
+    const targets = this.db.getNodesForReverseRefs(REF_KINDS);
     this.log(`building reverse refs for ${targets.length} symbols (background)...`);
 
     let done = 0;
@@ -142,7 +187,7 @@ export class Indexer {
       const absFile = resolve(this.rootPath, node.file);
       const client = this.clientFor(absFile);
       if (!client) {
-        this.graph.indexed.add(node.id);
+        this.db.markIndexed(node.id);
         done++;
         if (done % 10 === 0 || done === targets.length) {
           this.log(`  reverse refs: ${done}/${targets.length}`);
@@ -158,9 +203,9 @@ export class Indexer {
             lineEnd:   r.range.end.line + 1,
           }))
           .filter((r) => !(r.file === node.file && r.lineStart === node.lineStart));
-        this.graph.setReverseRefs(node.id, locations);
+        this.db.setReverseRefs(node.id, locations);
       } catch (_) {
-        this.graph.indexed.add(node.id);
+        this.db.markIndexed(node.id);
       }
       done++;
       if (done % 10 === 0 || done === targets.length) {
@@ -184,14 +229,15 @@ export class Indexer {
   private async _reindexFile(absFile: string): Promise<void> {
     const relFile = relative(this.rootPath, absFile);
     this.log(`re-indexing: ${relFile}`);
-    this.graph.removeFile(relFile);
+    this.db.deleteFile(relFile);
 
     // ── Tree-sitter path: instant, synchronous symbol update ─────────────────
     if (this.tsParser) {
       try {
         const nodes = this.tsParser.parseFile(absFile, relFile);
         if (nodes.length > 0) {
-          for (const node of nodes) this.graph.addNode(node);
+          this.db.insertNodes(nodes);
+          this.db.setMtime(relFile, statSync(absFile).mtimeMs);
           this.log(`  re-indexed ${nodes.length} symbols (tree-sitter)`);
 
           // Notify LSP async — diagnostics update in background, don't block.
@@ -218,7 +264,8 @@ export class Indexer {
     try {
       const raw   = await client.documentSymbols(absFile);
       const nodes = flattenSymbols(raw, relFile, language);
-      for (const node of nodes) this.graph.addNode(node);
+      this.db.insertNodes(nodes);
+      this.db.setMtime(relFile, statSync(absFile).mtimeMs);
       this.log(`  re-indexed ${nodes.length} symbols (lsp)`);
     } catch (err) {
       this.log(`  re-index symbols failed: ${err}`);
@@ -249,12 +296,12 @@ export class Indexer {
   private async _updateReverseRefsForFile(absFile: string, relFile: string): Promise<void> {
     const client = this.clientFor(absFile);
     if (!client) return;
-    const newNodes = this.graph.byFile.get(relFile) ?? [];
+    const newNodes = this.db.getByFile(relFile);
     for (const node of newNodes.filter((n) => REF_KINDS.has(n.kind))) {
       if (this.aborted) return;
       try {
         const refs = await client.references(absFile, node.lineStart - 1, node.colStart, false);
-        this.graph.setReverseRefs(node.id, refs
+        this.db.setReverseRefs(node.id, refs
           .map((r) => ({
             file:      relative(this.rootPath, r.uri.startsWith("file://") ? fileURLToPath(r.uri) : r.uri),
             lineStart: r.range.start.line + 1,
@@ -263,7 +310,7 @@ export class Indexer {
           .filter((r) => !(r.file === node.file && r.lineStart === node.lineStart)),
         );
       } catch (_) {
-        this.graph.indexed.add(node.id);
+        this.db.markIndexed(node.id);
       }
     }
   }

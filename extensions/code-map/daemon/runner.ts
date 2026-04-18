@@ -11,7 +11,7 @@
  *   2. Load grammars → create TreeSitterParser
  *   3. Detect ALL matching LSP servers for the project
  *   4. Collect files (all tree-sitter-supported extensions)
- *   5. buildNodes(files, tsParser)   ← tree-sitter fast parse (no LSP)
+ *   5. buildNodes(files, tsParser)   ← tree-sitter fast parse, mtime-gated
  *   6. Start socket server + file watcher → write "ready"
  *   7. Background: init each LSP in parallel → open its files → wait diagnostics
  *      → snapshot merged diagnostics → mark each language ready → buildReverseRefs
@@ -30,7 +30,8 @@ import { isTreeSitterInstalled, installTreeSitter, getTreeSitterDir } from "../t
 import { loadGrammars } from "../tree-sitter/loader.ts";
 import { TreeSitterParser } from "../tree-sitter/parser.ts";
 import { getProjectDir, ensureDir } from "../paths.ts";
-import { CodeGraph, EXT_TO_LANG } from "./graph.ts";
+import { EXT_TO_LANG } from "./graph.ts";
+import { CodeMapDB } from "./db.ts";
 import { Indexer } from "./indexer.ts";
 import { DaemonServer } from "./server.ts";
 import { FileWatcher } from "./watcher.ts";
@@ -55,6 +56,7 @@ const projectDir = ensureDir(getProjectDir(rootPath));
 const pidFile    = join(projectDir, "daemon.pid");
 const sockFile   = join(projectDir, "daemon.sock");
 const statusFile = join(projectDir, "daemon.status");
+const dbPath     = join(projectDir, "codemap.db");
 
 function log(msg: string) { process.stderr.write(`[code-map] ${msg}\n`); }
 
@@ -74,6 +76,7 @@ async function shutdown(
   server: DaemonServer,
   watcher: FileWatcher,
   indexer: Indexer,
+  db: CodeMapDB,
 ) {
   log("shutting down");
   indexer.abort();
@@ -81,6 +84,7 @@ async function shutdown(
   writeFileSync(statusFile, "stopped", "utf8");
   await server.close();
   await Promise.all(uniqueClients.map(({ client }) => client.shutdown()));
+  db.close();
   try { unlinkSync(sockFile); } catch (_) {}
   try { unlinkSync(pidFile); } catch (_) {}
   process.exit(0);
@@ -180,13 +184,13 @@ async function main() {
     process.exit(1);
   }
 
-  // ── 4. Build core objects ─────────────────────────────────────────────────
+  // ── 4. Open SQLite DB + build core objects ────────────────────────────────
 
-  const graph   = new CodeGraph();
-  const indexer = new Indexer(lspClients, graph, rootPath, ALL_EXTENSIONS, log);
+  const db      = new CodeMapDB(dbPath);
+  const indexer = new Indexer(lspClients, db, rootPath, ALL_EXTENSIONS, log);
   if (tsParser) indexer.tsParser = tsParser;
 
-  // ── 5. Collect files + build node graph with tree-sitter ──────────────────
+  // ── 5. Collect files + build node graph (incremental via mtime) ───────────
 
   writeFileSync(statusFile, "indexing", "utf8");
 
@@ -203,15 +207,16 @@ async function main() {
     writeFileSync(statusFile, "ready", "utf8");
   });
 
-  const server = new DaemonServer(sockFile, graph, lspClients, rootPath, () =>
-    shutdown(uniqueClients, server, watcher, indexer),
+  const server = new DaemonServer(sockFile, db, lspClients, rootPath, () =>
+    shutdown(uniqueClients, server, watcher, indexer, db),
   );
 
   await server.listen();
   watcher.start();
 
+  const { nodes } = db.stats() as { nodes: number };
   writeFileSync(statusFile, "ready", "utf8");
-  log(`ready — ${graph.nodes.size} symbols indexed, listening on ${sockFile}`);
+  log(`ready — ${nodes} symbols indexed, listening on ${sockFile}`);
 
   // ── 7. Background: init each LSP → diagnostics → reverse refs ────────────
 
@@ -258,8 +263,8 @@ async function main() {
 
   // ── Signal handlers ───────────────────────────────────────────────────────
 
-  process.on("SIGTERM", () => shutdown(uniqueClients, server, watcher, indexer));
-  process.on("SIGINT",  () => shutdown(uniqueClients, server, watcher, indexer));
+  process.on("SIGTERM", () => shutdown(uniqueClients, server, watcher, indexer, db));
+  process.on("SIGINT",  () => shutdown(uniqueClients, server, watcher, indexer, db));
 }
 
 main().catch((err) => {
