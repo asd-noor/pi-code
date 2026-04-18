@@ -1,12 +1,16 @@
 /**
- * parallel.ts — Parallel tool calling.
+ * _parallel.ts — Parallel tool calling with dynamic extension tool support.
+ *
+ * Named with a leading underscore so it is loaded before other extensions
+ * (alphabetical order: `_` sorts before any letter). This ensures the
+ * monkey-patch on `pi.registerTool` is in place before other extensions
+ * register their tools, letting us capture every extension-provided
+ * execute function.
  *
  * Registers a single `parallel` tool that fans out multiple operations
- * (read, bash, write, edit, ptc) in one call, executing them concurrently via
- * Promise.all and returning all results together.
- *
- * Use when operations are independent of each other. For dependent operations,
- * use sequential individual tool calls.
+ * (read, bash, write, edit, ptc, or any extension-registered tool) in one
+ * call, executing them concurrently via Promise.all and returning all results
+ * together.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -20,6 +24,25 @@ import { promisify } from "node:util";
 const execAsync     = promisify(exec);
 const execFileAsync = promisify(execFile);
 const SANDBOX_DIR   = "/tmp/pi-sandbox";
+
+// ── Extension tool registry ──────────────────────────────────────────────────
+
+type ToolExecuteFn = (
+  toolCallId: string,
+  params: any,
+  signal: AbortSignal | undefined,
+  onUpdate: ((update: any) => void) | undefined,
+  ctx: any,
+) => Promise<any>;
+
+/**
+ * Captured execute functions from extension-registered tools.
+ * Populated via the monkey-patch on pi.registerTool below.
+ */
+const extensionTools = new Map<string, ToolExecuteFn>();
+
+/** Tools implemented natively in this file — never delegated to extensionTools. */
+const NATIVE_TOOLS = new Set(["read", "bash", "write", "edit", "ptc", "parallel"]);
 
 // ── Call spec schemas ────────────────────────────────────────────────────────
 
@@ -66,7 +89,24 @@ const PtcCall = Type.Object({
   stdin:  Type.Optional(Type.String({ description: "Data to pipe to the script's stdin." })),
 });
 
-const CallSpec = Type.Union([ReadCall, BashCall, WriteCall, EditCall, PtcCall]);
+/**
+ * Catch-all for any extension-registered tool.
+ * The `tool` field names the tool; all other fields are passed as params.
+ * The LLM already knows each extension tool's parameter schema from the
+ * system prompt — it should use that schema directly, adding a `tool` field.
+ */
+const ExtCall = Type.Object(
+  {
+    tool: Type.String({
+      description:
+        "Name of an extension-provided tool available in this session (e.g. 'memory_new', 'agenda_create'). " +
+        "Pass the tool's normal arguments as additional fields alongside `tool`.",
+    }),
+  },
+  { additionalProperties: true },
+);
+
+const CallSpec = Type.Union([ReadCall, BashCall, WriteCall, EditCall, PtcCall, ExtCall]);
 
 // ── Operation implementations ────────────────────────────────────────────────
 
@@ -128,9 +168,33 @@ async function opPtc(
   return [result.stdout, result.stderr].filter(Boolean).join("\n").trim() || "(no output)";
 }
 
+async function opExtension(
+  toolName: string,
+  call: Record<string, any>,
+  toolCallId: string,
+  index: number,
+  signal: AbortSignal | undefined,
+  ctx: any,
+): Promise<string> {
+  const fn = extensionTools.get(toolName);
+  if (!fn) {
+    const available = [...extensionTools.keys()].join(", ") || "none";
+    throw new Error(`Unknown tool: "${toolName}". Available extension tools: ${available}`);
+  }
+  // Strip the 'tool' discriminator field; pass remaining fields as the tool's params.
+  const { tool: _name, ...params } = call;
+  const result = await fn(`${toolCallId}-${index}`, params, signal, undefined, ctx);
+  // Extract text content from the result.
+  const text = (result?.content ?? [])
+    .filter((c: any) => c.type === "text")
+    .map((c: any) => c.text as string)
+    .join("\n");
+  return text || JSON.stringify(result?.content ?? result ?? "(no output)");
+}
+
 // ── System prompt ────────────────────────────────────────────────────────────
 
-const SYSTEM_INSTRUCTION = `
+const BASE_INSTRUCTION = `
 ## Parallel tool calls
 
 \`parallel\` is a meta tool. \`ptc\` remains the default for all work.
@@ -140,6 +204,7 @@ combined or processed — just returned together. Supported ops:
 
 - \`read\` / \`bash\` / \`write\` / \`edit\` — native ops, run directly
 - \`ptc\` — run a Python or bash script as one slot in the parallel fan-out (same semantics as the \`ptc\` tool)
+- Any extension-provided tool — pass \`tool: "<name>"\` plus the tool's normal args as additional fields
 
 Typical pattern: fan out several \`read\` or \`ptc\` calls that are each independent, get all
 results back in one shot, then decide what to do.
@@ -152,28 +217,41 @@ calls targeting the same file in one \`parallel\` invocation — use the native 
 // ── Extension ────────────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
+  // ── Monkey-patch pi.registerTool to capture extension execute functions ──
+  //
+  // Because _parallel.ts is loaded first (underscore sorts before letters),
+  // this patch is in place before any other extension's factory function runs.
+  // Every subsequent pi.registerTool() call passes through here, letting us
+  // stash the execute function for later dispatch.
+  const _origRegisterTool = pi.registerTool.bind(pi);
+  (pi as any).registerTool = function (def: any) {
+    if (def?.name && typeof def.execute === "function" && !NATIVE_TOOLS.has(def.name)) {
+      extensionTools.set(def.name, def.execute);
+    }
+    return _origRegisterTool(def);
+  };
+
+  // ── Register the parallel tool ──────────────────────────────────────────
   pi.registerTool({
-    name:          "parallel",
-    label:         "Parallel Calls",
-    description:   `Fan out multiple operations (read, bash, write, edit, ptc) in one tool call. All run concurrently; results are returned together. Use when calls are independent of each other.`,
-    promptSnippet: "Run multiple independent read/bash/write/edit/ptc operations concurrently in a single call.",
+    name:  "parallel",
+    label: "Parallel Calls",
+    description:
+      "Fan out multiple operations (read, bash, write, edit, ptc) in one tool call. All run concurrently; results are returned together. Use when calls are independent of each other.",
+    promptSnippet:
+      "Run multiple independent read/bash/write/edit/ptc operations concurrently in a single call.",
     parameters: Type.Object({
       calls: Type.Array(CallSpec, {
-        description: "Operations to execute in parallel. Each item must specify a tool and its arguments.",
+        description:
+          "Operations to execute in parallel. Each item must specify a tool and its arguments.",
         minItems: 2,
       }),
     }),
 
-
-    async execute(toolCallId, params, _signal, onUpdate, ctx) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
       const calls = params.calls as any[];
+      const toolNames = calls.map((c) => String(c.tool)).join(", ");
 
-      const toolNames = calls.map((call) => String(call.tool)).join(", ");
-
-      onUpdate?.({
-        content: [{ type: "text", text: "Running..." }],
-        details: undefined,
-      });
+      onUpdate?.({ content: [{ type: "text", text: "Running..." }], details: undefined });
 
       type CallResult = { tool: string; index: number; ok: boolean; output: string; error?: string };
 
@@ -187,7 +265,7 @@ export default function (pi: ExtensionAPI) {
               case "write": output = opWrite(call.path, call.content, ctx.cwd); break;
               case "edit":  output = opEdit(call.path, call.edits, ctx.cwd); break;
               case "ptc":   output = await opPtc(call.type, call.script, `${toolCallId.slice(0, 8)}-${index}`, call.args, call.stdin); break;
-              default:      throw new Error(`Unknown tool: ${call.tool}`);
+              default:      output = await opExtension(call.tool, call, toolCallId, index, signal, ctx); break;
             }
             return { tool: call.tool, index, ok: true, output };
           } catch (err: any) {
@@ -207,14 +285,24 @@ export default function (pi: ExtensionAPI) {
       const header = `parallel: ${calls.length} tools\nRunning: ${toolNames}`;
 
       return {
-        content:  [{ type: "text", text: `${header}\n\n${parts.join("\n\n---\n\n")}` }],
-        details:  { totalCalls: calls.length, errors: errorCount, results },
-        isError:  allFailed,
+        content: [{ type: "text", text: `${header}\n\n${parts.join("\n\n---\n\n")}` }],
+        details: { totalCalls: calls.length, errors: errorCount, results },
+        isError: allFailed,
       };
     },
   });
 
-  pi.on("before_agent_start", async (event) => ({
-    systemPrompt: `${event.systemPrompt}\n\n${SYSTEM_INSTRUCTION}`,
-  }));
+  // ── Inject system prompt instruction ────────────────────────────────────
+  pi.on("before_agent_start", async (event) => {
+    // Build the extension tool list at turn-start time — captures any tools
+    // registered late (e.g. via commands like /add-echo-tool).
+    const extNames = [...extensionTools.keys()];
+    const extLine  = extNames.length > 0
+      ? `\nCurrently available extension tools for use in \`parallel\`: ${extNames.join(", ")}`
+      : "";
+
+    return {
+      systemPrompt: `${event.systemPrompt}\n\n${BASE_INSTRUCTION}${extLine}`,
+    };
+  });
 }
