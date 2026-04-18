@@ -170,7 +170,7 @@ export default function (pi: ExtensionAPI) {
       const toolNames = calls.map((call) => String(call.tool)).join(", ");
 
       onUpdate?.({
-        content: [{ type: "text", text: `Invoking parallel: ${toolNames}` }],
+        content: [{ type: "text", text: `\x1b[1;90mInvoking parallel: ${toolNames}\x1b[0m` }],
         details: undefined,
       });
 
@@ -203,7 +203,7 @@ export default function (pi: ExtensionAPI) {
 
       const errorCount = results.filter((r) => !r.ok).length;
       const allFailed  = errorCount === results.length;
-      const header     = `Parallel operations: ${toolNames}`;
+      const header     = `\x1b[1;90mParallel operations: ${toolNames}\x1b[0m`;
 
       return {
         content:  [{ type: "text", text: `${header}\n\n${parts.join("\n\n---\n\n")}` }],
