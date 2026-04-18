@@ -99,3 +99,11 @@ export function detectServer(rootPath: string): LspServerDef {
     installId: "typescript-language-server",
   };
 }
+
+/**
+ * Returns ALL matching server defs for the given project root.
+ * An empty array means no LSP markers were found (tree-sitter-only mode).
+ */
+export function detectServers(rootPath: string): LspServerDef[] {
+  return SERVER_DEFS.filter((rule) => rule.detect(rootPath)).map((rule) => rule.server());
+}

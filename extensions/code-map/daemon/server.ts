@@ -1,21 +1,22 @@
 /**
  * Unix socket server — pure graph reads + live LSP fallback for impact.
  * Protocol: newline-delimited JSON
- *   → {"id":1,"method":"outline","params":{"file":"src/foo.ts"}}
+ *   → {"id":1,"method":"outline","params":{"file":"src/foo.ts","language":"typescript"}}
  *   ← {"id":1,"result":[...]}
  */
 
 import { createServer, type Server, type Socket } from "node:net";
-import { resolve, relative } from "node:path";
+import { resolve, relative, extname } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import type { CodeGraph, GraphNode, RefLocation } from "./graph.ts";
-import { REF_KINDS } from "./graph.ts";
+import { REF_KINDS, SUPPORTED_LANGUAGES, EXT_TO_LANG } from "./graph.ts";
 import type { LspClient } from "../lsp/client.ts";
 
 export interface DiagRow {
   severity: string;
+  language: string;
   file: string;
   line: number;
   col: number;
@@ -25,6 +26,7 @@ export interface DiagRow {
 
 export interface SymbolRow {
   kind: string;
+  language: string;
   name: string;
   lineStart: number;
   lineEnd: number;
@@ -33,6 +35,7 @@ export interface SymbolRow {
 
 export interface SymbolDefRow {
   kind: string;
+  language: string;
   file: string;
   lineStart: number;
   lineEnd: number;
@@ -43,6 +46,7 @@ export interface SymbolDefRow {
 
 export interface ImpactRow {
   kind: string;
+  language: string;
   file: string;
   lineStart: number;
   lineEnd: number;
@@ -52,17 +56,22 @@ export interface ImpactRow {
 export class DaemonServer {
   private server: Server;
   private activeConnections = 0;
-  /** Set to true by runner once the background LSP init completes. */
-  lspReady = false;
+  /** Set of language ids whose LSP has finished initializing. */
+  private readyLangs = new Set<string>();
 
   constructor(
     private socketPath: string,
     private graph: CodeGraph,
-    private lspClient: LspClient,
+    private lspClients: Map<string, LspClient>,
     private rootPath: string,
     private onShutdown: () => void,
   ) {
     this.server = createServer((s) => this.handleConnection(s));
+  }
+
+  /** Called by runner once LSP for a given language has initialized. */
+  setLangReady(languageId: string): void {
+    this.readyLangs.add(languageId);
   }
 
   listen(): Promise<void> {
@@ -113,46 +122,62 @@ export class DaemonServer {
     try { socket.write(JSON.stringify(payload) + "\n"); } catch (_) {}
   }
 
+  private validateLanguage(lang: string): void {
+    if (!SUPPORTED_LANGUAGES.has(lang)) {
+      throw new Error(
+        `Language '${lang}' is not natively indexed by code-map. ` +
+        `Supported: typescript, javascript, python, go, zig, lua. ` +
+        `For other languages use ptc with a language-specific AST library as described in the system instructions.`,
+      );
+    }
+  }
+
   private async dispatch(method: string, params: Record<string, unknown>): Promise<unknown> {
     switch (method) {
       case "ping":        return { pong: true, ...this.graph.stats() };
       case "status":      return this.graph.stats();
-      case "outline":     return this.handleOutline(String(params.file));
-      case "symbol":      return this.handleSymbol(String(params.name), !!params.withSource);
+      case "outline":     return this.handleOutline(String(params.file), String(params.language ?? ""));
+      case "symbol":      return this.handleSymbol(String(params.name), !!params.withSource, String(params.language ?? ""));
       case "diagnostics": return this.handleDiagnostics(
         params.file ? String(params.file) : undefined,
+        String(params.language ?? ""),
         typeof params.severity === "number" ? params.severity : 0,
       );
-      case "impact":      return this.handleImpact(String(params.name));
+      case "impact":      return this.handleImpact(String(params.name), String(params.language ?? ""));
       case "shutdown":    setTimeout(() => this.onShutdown(), 100); return { ok: true };
       default:            throw new Error(`unknown method: ${method}`);
     }
   }
 
-  private handleOutline(file: string): SymbolRow[] {
+  private handleOutline(file: string, language: string): SymbolRow[] {
+    this.validateLanguage(language);
     const rel   = file.startsWith("/") ? relative(this.rootPath, file) : file;
-    const nodes = this.graph.byFile.get(rel) ?? [];
+    const nodes = (this.graph.byFile.get(rel) ?? []).filter((n) => n.language === language);
     return nodes.map((n) => ({
-      kind: n.kind, name: n.name,
+      kind: n.kind, language: n.language, name: n.name,
       lineStart: n.lineStart, lineEnd: n.lineEnd, file: n.file,
     }));
   }
 
-  private handleSymbol(name: string, withSource: boolean): SymbolDefRow[] {
-    return this.graph.findByName(name).map((n) => {
-      const row: SymbolDefRow = {
-        kind: n.kind, file: n.file,
-        lineStart: n.lineStart, lineEnd: n.lineEnd,
-        colStart: n.colStart, name: n.name,
-      };
-      if (withSource) {
-        row.source = extractSource(resolve(this.rootPath, n.file), n.lineStart, n.lineEnd);
-      }
-      return row;
-    });
+  private handleSymbol(name: string, withSource: boolean, language: string): SymbolDefRow[] {
+    this.validateLanguage(language);
+    return this.graph.findByName(name)
+      .filter((n) => n.language === language)
+      .map((n) => {
+        const row: SymbolDefRow = {
+          kind: n.kind, language: n.language, file: n.file,
+          lineStart: n.lineStart, lineEnd: n.lineEnd,
+          colStart: n.colStart, name: n.name,
+        };
+        if (withSource) {
+          row.source = extractSource(resolve(this.rootPath, n.file), n.lineStart, n.lineEnd);
+        }
+        return row;
+      });
   }
 
-  private handleDiagnostics(file: string | undefined, minSeverity: number): DiagRow[] {
+  private handleDiagnostics(file: string | undefined, language: string, minSeverity: number): DiagRow[] {
+    this.validateLanguage(language);
     const SEV: Record<string, number> = { error: 1, warning: 2, info: 3, hint: 4 };
     const rows: DiagRow[] = [];
     for (const [relFile, diags] of this.graph.diagnostics) {
@@ -161,6 +186,7 @@ export class DaemonServer {
         if (relFile !== rel) continue;
       }
       for (const d of diags) {
+        if (d.language !== language) continue;
         if (minSeverity > 0 && (SEV[d.severity] ?? 99) > minSeverity) continue;
         rows.push(d);
       }
@@ -170,20 +196,33 @@ export class DaemonServer {
     );
   }
 
-  private async handleImpact(name: string): Promise<ImpactRow[]> {
-    const nodes = this.graph.findByName(name);
-    if (!nodes.length) throw new Error(`symbol not found: ${name}`);
+  private async handleImpact(name: string, language: string): Promise<ImpactRow[]> {
+    this.validateLanguage(language);
+
+    const nodes = this.graph.findByName(name).filter((n) => n.language === language);
+    if (!nodes.length) throw new Error(`symbol not found: ${name} (language: ${language})`);
 
     const target = nodes.find((n) => REF_KINDS.has(n.kind)) ?? nodes[0];
 
-    if (!this.lspReady && !this.graph.indexed.has(target.id)) {
+    // Determine the LSP client for this node's file
+    const absFile  = resolve(this.rootPath, target.file);
+    const ext      = extname(absFile).toLowerCase();
+    const langId   = EXT_TO_LANG[ext] ?? language;
+    const lspClient = this.lspClients.get(ext);
+
+    if (!this.readyLangs.has(langId) && !this.graph.indexed.has(target.id)) {
+      if (!lspClient) {
+        throw new Error(`No LSP running for language '${language}' — impact analysis unavailable`);
+      }
       throw new Error("LSP still initializing — impact analysis available shortly");
     }
 
     if (!this.graph.indexed.has(target.id)) {
-      const absFile = resolve(this.rootPath, target.file);
+      if (!lspClient) {
+        throw new Error(`No LSP running for language '${language}'`);
+      }
       try {
-        const refs = await this.lspClient.references(absFile, target.lineStart - 1, target.colStart, false);
+        const refs = await lspClient.references(absFile, target.lineStart - 1, target.colStart, false);
         const locations: RefLocation[] = refs
           .map((r) => ({
             file:      relative(this.rootPath, r.uri.startsWith("file://") ? fileURLToPath(r.uri) : r.uri),
@@ -200,7 +239,8 @@ export class DaemonServer {
 
     const refs = this.graph.reverseRefs.get(target.id) ?? [];
     return refs.map((r) => ({
-      kind: "ref", file: r.file,
+      kind: "ref", language,
+      file: r.file,
       lineStart: r.lineStart, lineEnd: r.lineEnd,
       name: nameAtLocation(this.graph, r.file, r.lineStart),
     }));

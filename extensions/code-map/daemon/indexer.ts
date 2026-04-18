@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import type { LspClient } from "../lsp/client.ts";
 import type { TreeSitterParser } from "../tree-sitter/parser.ts";
-import { CodeGraph, REF_KINDS, nodeId, type RefLocation, type GraphNode } from "./graph.ts";
+import { CodeGraph, REF_KINDS, nodeId, EXT_TO_LANG, type RefLocation, type GraphNode } from "./graph.ts";
 import {
   SYMBOL_KIND_NAMES,
   SEVERITY_NAMES,
@@ -48,7 +48,7 @@ export class Indexer {
   private reindexQueue: Promise<void> = Promise.resolve();
 
   constructor(
-    private client: LspClient,
+    private clients: Map<string, LspClient>,
     private graph: CodeGraph,
     private rootPath: string,
     private extensions: Set<string>,
@@ -56,6 +56,12 @@ export class Indexer {
   ) {}
 
   abort() { this.aborted = true; }
+
+  /** Returns the LspClient for a given absolute file path, or undefined. */
+  private clientFor(absFile: string): LspClient | undefined {
+    const ext = extname(absFile).toLowerCase();
+    return this.clients.get(ext);
+  }
 
   // ── Phase 1 ───────────────────────────────────────────────────────────────
 
@@ -83,10 +89,18 @@ export class Indexer {
       }
 
       // LSP fallback — for files whose grammar is unavailable or on parse error
+      const client = this.clientFor(absFile);
+      if (!client) {
+        this.log(`  skip ${relFile}: no LSP client for this file type`);
+        continue;
+      }
+
+      const language = EXT_TO_LANG[extname(absFile).toLowerCase()] ?? "unknown";
+
       try {
-        this.client.openFile(absFile);
-        const raw   = await this.client.documentSymbols(absFile);
-        const nodes = flattenSymbols(raw, relFile);
+        client.openFile(absFile);
+        const raw   = await client.documentSymbols(absFile);
+        const nodes = flattenSymbols(raw, relFile, language);
         for (const node of nodes) this.graph.addNode(node);
         count += nodes.length;
       } catch (err) {
@@ -100,8 +114,10 @@ export class Indexer {
     for (const [uri, diags] of rawDiags) {
       const fp      = uri.startsWith("file://") ? fileURLToPath(uri) : uri;
       const relFile = relative(this.rootPath, fp);
+      const language = EXT_TO_LANG[extname(fp).toLowerCase()] ?? "unknown";
       this.graph.diagnostics.set(relFile, diags.map((d) => ({
         severity: SEVERITY_NAMES[d.severity ?? DiagnosticSeverity.Error] ?? "unknown",
+        language,
         file:     relFile,
         line:     d.range.start.line + 1,
         col:      d.range.start.character + 1,
@@ -124,8 +140,17 @@ export class Indexer {
     for (const node of targets) {
       if (this.aborted) return;
       const absFile = resolve(this.rootPath, node.file);
+      const client = this.clientFor(absFile);
+      if (!client) {
+        this.graph.indexed.add(node.id);
+        done++;
+        if (done % 10 === 0 || done === targets.length) {
+          this.log(`  reverse refs: ${done}/${targets.length}`);
+        }
+        continue;
+      }
       try {
-        const refs = await this.client.references(absFile, node.lineStart - 1, node.colStart, false);
+        const refs = await client.references(absFile, node.lineStart - 1, node.colStart, false);
         const locations: RefLocation[] = refs
           .map((r) => ({
             file:      relative(this.rootPath, r.uri.startsWith("file://") ? fileURLToPath(r.uri) : r.uri),
@@ -179,12 +204,20 @@ export class Indexer {
     }
 
     // ── LSP fallback path (no tree-sitter grammar for this file type) ─────────
-    this.client.updateFile(absFile);
-    await this.client.waitForQuietDiagnostics(600, 6000);
+    const client = this.clientFor(absFile);
+    if (!client) {
+      this.log(`  skip LSP re-index for ${relFile}: no client for this file type`);
+      return;
+    }
+
+    const language = EXT_TO_LANG[extname(absFile).toLowerCase()] ?? "unknown";
+
+    client.updateFile(absFile);
+    await client.waitForQuietDiagnostics(600, 6000);
 
     try {
-      const raw   = await this.client.documentSymbols(absFile);
-      const nodes = flattenSymbols(raw, relFile);
+      const raw   = await client.documentSymbols(absFile);
+      const nodes = flattenSymbols(raw, relFile, language);
       for (const node of nodes) this.graph.addNode(node);
       this.log(`  re-indexed ${nodes.length} symbols (lsp)`);
     } catch (err) {
@@ -192,7 +225,7 @@ export class Indexer {
     }
 
     this.snapshotDiagnostics(
-      this.client.getDiagnostics() as Map<string, Diagnostic[]>,
+      client.getDiagnostics() as Map<string, Diagnostic[]>,
     );
 
     // Update reverse refs for new nodes (background, best-effort).
@@ -201,22 +234,26 @@ export class Indexer {
 
   /** Fire-and-forget LSP diagnostic + reverse-ref update after a tree-sitter re-index. */
   private async _lspReindexBackground(absFile: string, relFile: string): Promise<void> {
+    const client = this.clientFor(absFile);
+    if (!client) return;
     try {
-      this.client.updateFile(absFile);
-      await this.client.waitForQuietDiagnostics(600, 6000);
+      client.updateFile(absFile);
+      await client.waitForQuietDiagnostics(600, 6000);
       this.snapshotDiagnostics(
-        this.client.getDiagnostics() as Map<string, Diagnostic[]>,
+        client.getDiagnostics() as Map<string, Diagnostic[]>,
       );
     } catch (_) {}
     void this._updateReverseRefsForFile(absFile, relFile);
   }
 
   private async _updateReverseRefsForFile(absFile: string, relFile: string): Promise<void> {
+    const client = this.clientFor(absFile);
+    if (!client) return;
     const newNodes = this.graph.byFile.get(relFile) ?? [];
     for (const node of newNodes.filter((n) => REF_KINDS.has(n.kind))) {
       if (this.aborted) return;
       try {
-        const refs = await this.client.references(absFile, node.lineStart - 1, node.colStart, false);
+        const refs = await client.references(absFile, node.lineStart - 1, node.colStart, false);
         this.graph.setReverseRefs(node.id, refs
           .map((r) => ({
             file:      relative(this.rootPath, r.uri.startsWith("file://") ? fileURLToPath(r.uri) : r.uri),
@@ -259,6 +296,7 @@ export class Indexer {
 function flattenSymbols(
   raw: DocumentSymbol[] | SymbolInformation[],
   relFile: string,
+  language: string,
   out: GraphNode[] = [],
 ): GraphNode[] {
   if (!raw.length) return out;
@@ -271,13 +309,14 @@ function flattenSymbols(
           id:        nodeId(relFile, sym.name, SYMBOL_KIND_NAMES[sym.kind] ?? ""),
           name:      sym.name,
           kind:      SYMBOL_KIND_NAMES[sym.kind] ?? `kind${sym.kind}`,
+          language,
           file:      relFile,
           lineStart: sym.range.start.line + 1,
           lineEnd:   sym.range.end.line + 1,
           colStart:  sym.selectionRange.start.character,
         });
       }
-      if (sym.children?.length) flattenSymbols(sym.children, relFile, out);
+      if (sym.children?.length) flattenSymbols(sym.children, relFile, language, out);
     }
   } else {
     for (const sym of raw as SymbolInformation[]) {
@@ -286,6 +325,7 @@ function flattenSymbols(
           id:        nodeId(relFile, sym.name, SYMBOL_KIND_NAMES[sym.kind] ?? ""),
           name:      sym.name,
           kind:      SYMBOL_KIND_NAMES[sym.kind] ?? `kind${sym.kind}`,
+          language,
           file:      relFile,
           lineStart: sym.location.range.start.line + 1,
           lineEnd:   sym.location.range.end.line + 1,

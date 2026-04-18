@@ -17,21 +17,7 @@ import { extname } from "node:path";
 
 import type { LoadedGrammars } from "./loader.ts";
 import { QUERIES } from "./queries.ts";
-import { nodeId, type GraphNode } from "../daemon/graph.ts";
-
-/** Extension → language id */
-const EXT_TO_LANG: Record<string, string> = {
-  ".ts":  "typescript",
-  ".tsx": "typescript",
-  ".js":  "javascript",
-  ".jsx": "javascript",
-  ".mjs": "javascript",
-  ".cjs": "javascript",
-  ".py":  "python",
-  ".go":  "go",
-  ".zig": "zig",
-  ".lua": "lua",
-};
+import { nodeId, EXT_TO_LANG, type GraphNode } from "../daemon/graph.ts";
 
 /** Language id → extension for language lookup in LoadedGrammars.languages */
 const LANG_TO_EXT: Record<string, string> = {
@@ -62,29 +48,31 @@ export class TreeSitterParser {
     try { source = readFileSync(absPath, "utf8"); }
     catch { return []; }
 
-    return this.parseSource(source, relPath, langId);
+    return this.parseSource(source, relPath, langId, langId);
   }
 
   /**
    * Parse source text for a given language id.
    * Returns [] if the grammar is unavailable or the query fails.
    */
-  parseSource(source: string, relPath: string, langId: string): GraphNode[] {
+  parseSource(source: string, relPath: string, langId: string, language?: string): GraphNode[] {
     const ext      = LANG_TO_EXT[langId] ?? `.${langId}`;
-    const language = this.grammars.languages.get(ext);
-    if (!language) return [];
+    const lang     = this.grammars.languages.get(ext);
+    if (!lang) return [];
 
     const queryDef = QUERIES[langId];
     if (!queryDef) return [];
 
+    const resolvedLanguage = language ?? langId;
+
     try {
       const parser = new this.grammars.Parser();
-      parser.setLanguage(language);
+      parser.setLanguage(lang);
       const tree    = parser.parse(source);
-      const query   = this.getQuery(langId, language, queryDef.query);
+      const query   = this.getQuery(langId, lang, queryDef.query);
       if (!query) return [];
       const matches = query.matches(tree.rootNode);
-      return this.matchesToNodes(matches, relPath);
+      return this.matchesToNodes(matches, relPath, resolvedLanguage);
     } catch {
       return [];
     }
@@ -106,6 +94,7 @@ export class TreeSitterParser {
   private matchesToNodes(
     matches: Array<{ pattern: number; captures: Array<{ name: string; node: any }> }>,
     relPath: string,
+    language: string,
   ): GraphNode[] {
     const nodes: GraphNode[] = [];
     /** Deduplicate: "lineStart:name" → true (first match wins) */
@@ -149,6 +138,7 @@ export class TreeSitterParser {
         id: nodeId(relPath, name, kind),
         name,
         kind,
+        language,
         file:      relPath,
         lineStart,
         lineEnd,

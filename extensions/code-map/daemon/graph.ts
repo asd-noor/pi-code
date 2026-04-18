@@ -10,10 +10,28 @@
 
 import type { DiagRow } from "./server.ts";
 
+/** Extension → language id (canonical mapping shared across the codebase) */
+export const EXT_TO_LANG: Record<string, string> = {
+  ".ts":  "typescript",
+  ".tsx": "typescript",
+  ".js":  "javascript",
+  ".jsx": "javascript",
+  ".mjs": "javascript",
+  ".cjs": "javascript",
+  ".py":  "python",
+  ".go":  "go",
+  ".zig": "zig",
+  ".lua": "lua",
+};
+
+/** All language ids supported by tree-sitter */
+export const SUPPORTED_LANGUAGES: Set<string> = new Set(Object.values(EXT_TO_LANG));
+
 export interface GraphNode {
   id: string;       // sha256(file:name:kind)[:16]
   name: string;
   kind: string;     // function | method | class | interface | …
+  language: string; // typescript | javascript | python | go | zig | lua
   file: string;     // relative to rootPath
   lineStart: number;
   lineEnd: number;

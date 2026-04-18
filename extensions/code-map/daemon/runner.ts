@@ -9,29 +9,32 @@
  * Startup sequence:
  *   1. Check / install tree-sitter grammars (if --auto-install)
  *   2. Load grammars → create TreeSitterParser
- *   3. Collect files
- *   4. buildNodes(files, tsParser)   ← tree-sitter fast parse (no LSP)
- *   5. Start socket server + file watcher → write "ready"
- *   6. Background: init LSP → open files → wait diagnostics → snapshot → buildReverseRefs
+ *   3. Detect ALL matching LSP servers for the project
+ *   4. Collect files (all tree-sitter-supported extensions)
+ *   5. buildNodes(files, tsParser)   ← tree-sitter fast parse (no LSP)
+ *   6. Start socket server + file watcher → write "ready"
+ *   7. Background: init each LSP in parallel → open its files → wait diagnostics
+ *      → snapshot merged diagnostics → mark each language ready → buildReverseRefs
  *
  * The "ready" status is written BEFORE LSP initializes.
- * LSP failure after step 5 is non-fatal — the tree-sitter index stays available.
+ * LSP failure after step 6 is non-fatal — the tree-sitter index stays available.
  */
 
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { LspClient } from "../lsp/client.ts";
-import { detectServer } from "../lsp/registry.ts";
+import { detectServers } from "../lsp/registry.ts";
 import { installServer, isInstalled, getInstallHint } from "../lsp/installer.ts";
 import { isTreeSitterInstalled, installTreeSitter, getTreeSitterDir } from "../tree-sitter/installer.ts";
 import { loadGrammars } from "../tree-sitter/loader.ts";
 import { TreeSitterParser } from "../tree-sitter/parser.ts";
 import { getProjectDir, ensureDir } from "../paths.ts";
-import { CodeGraph } from "./graph.ts";
+import { CodeGraph, EXT_TO_LANG } from "./graph.ts";
 import { Indexer } from "./indexer.ts";
 import { DaemonServer } from "./server.ts";
 import { FileWatcher } from "./watcher.ts";
+import type { LspServerDef } from "../lsp/registry.ts";
 import type { Diagnostic } from "../lsp/protocol.ts";
 
 // ── Args ──────────────────────────────────────────────────────────────────────
@@ -61,10 +64,13 @@ writeFileSync(pidFile, String(process.pid), "utf8");
 writeFileSync(statusFile, "starting", "utf8");
 if (existsSync(sockFile)) { try { unlinkSync(sockFile); } catch (_) {} }
 
+// All file extensions tracked by tree-sitter (regardless of LSP availability)
+const ALL_EXTENSIONS = new Set(Object.keys(EXT_TO_LANG));
+
 // ── Shutdown ──────────────────────────────────────────────────────────────────
 
 async function shutdown(
-  client: LspClient,
+  uniqueClients: Array<{ client: LspClient; def: LspServerDef }>,
   server: DaemonServer,
   watcher: FileWatcher,
   indexer: Indexer,
@@ -74,7 +80,7 @@ async function shutdown(
   watcher.stop();
   writeFileSync(statusFile, "stopped", "utf8");
   await server.close();
-  await client.shutdown();
+  await Promise.all(uniqueClients.map(({ client }) => client.shutdown()));
   try { unlinkSync(sockFile); } catch (_) {}
   try { unlinkSync(pidFile); } catch (_) {}
   process.exit(0);
@@ -83,9 +89,6 @@ async function shutdown(
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const serverDef = detectServer(rootPath);
-  log(`language: ${serverDef.languageId}  lsp: ${serverDef.command}`);
-
   // ── 0. Tree-sitter: check / install ───────────────────────────────────────
 
   if (!isTreeSitterInstalled()) {
@@ -116,55 +119,74 @@ async function main() {
     log(`tree-sitter load error (falling back to LSP): ${err}`);
   }
 
-  // ── 2. LSP server check ───────────────────────────────────────────────────
+  // ── 2. Detect all matching LSP servers ────────────────────────────────────
 
-  if (!isInstalled(serverDef.installId)) {
-    if (autoInstall) {
-      log(`LSP server not found (${serverDef.installId}), installing…`);
-      try {
-        await installServer(serverDef.installId, log);
-        const updated = detectServer(rootPath);
-        serverDef.command = updated.command;
-      } catch (err) {
-        log(`LSP auto-install failed: ${err}`);
-        log(`Hint: ${getInstallHint(serverDef.installId)}`);
-        if (!tsParser) {
-          writeFileSync(statusFile, "error", "utf8");
-          process.exit(1);
+  const serverDefs = detectServers(rootPath);
+  log(`detected languages: ${serverDefs.map((s) => s.languageId).join(", ") || "none (tree-sitter only)"}`);
+
+  // ── 3. Build ext→LspClient map ────────────────────────────────────────────
+
+  const lspClients = new Map<string, LspClient>();
+  const uniqueClients: Array<{ client: LspClient; def: LspServerDef }> = [];
+
+  for (const def of serverDefs) {
+    if (!isInstalled(def.installId)) {
+      if (autoInstall) {
+        log(`LSP server not found (${def.installId}), installing…`);
+        try {
+          await installServer(def.installId, log);
+          const updated = detectServers(rootPath).find((d) => d.installId === def.installId);
+          if (updated) def.command = updated.command;
+        } catch (err) {
+          log(`LSP auto-install failed for ${def.installId}: ${err}`);
+          log(`Hint: ${getInstallHint(def.installId)}`);
+          if (!tsParser) {
+            log(`Skipping ${def.languageId} LSP — no tree-sitter fallback available`);
+          } else {
+            log(`Continuing ${def.languageId} in tree-sitter-only mode.`);
+          }
+          continue;
         }
-        // If tree-sitter loaded, we can continue without LSP
-        log("Continuing in tree-sitter-only mode (no LSP).");
+      } else {
+        log(`LSP server not found: ${def.installId}`);
+        log(`Hint: ${getInstallHint(def.installId)}`);
+        if (tsParser) {
+          log(`Continuing ${def.languageId} in tree-sitter-only mode.`);
+        }
+        continue;
       }
-    } else {
-      log(`LSP server not found: ${serverDef.installId}`);
-      log(`Hint: ${getInstallHint(serverDef.installId)}`);
-      if (!tsParser) {
-        writeFileSync(statusFile, "error", "utf8");
-        process.exit(1);
-      }
-      log("Continuing in tree-sitter-only mode (no LSP).");
     }
+
+    const client = new LspClient({
+      command:        def.command.split(" ")[0],
+      args:           [...def.command.split(" ").slice(1), ...def.args],
+      rootPath,
+      languageId:     def.languageId,
+      initTimeout:    30000,
+      requestTimeout: 20000,
+    });
+
+    client.on("error", (err: Error) => log(`lsp error [${def.languageId}]: ${err.message}`));
+
+    for (const ext of def.extensions) {
+      lspClients.set(ext, client);
+    }
+    uniqueClients.push({ client, def });
   }
 
-  // ── 3. Build core objects ─────────────────────────────────────────────────
+  if (uniqueClients.length === 0 && !tsParser) {
+    log("No LSP and no tree-sitter — cannot index. Exiting.");
+    writeFileSync(statusFile, "error", "utf8");
+    process.exit(1);
+  }
 
-  const graph = new CodeGraph();
+  // ── 4. Build core objects ─────────────────────────────────────────────────
 
-  const client = new LspClient({
-    command:        serverDef.command.split(" ")[0],
-    args:           [...serverDef.command.split(" ").slice(1), ...serverDef.args],
-    rootPath,
-    languageId:     serverDef.languageId,
-    initTimeout:    30000,
-    requestTimeout: 20000,
-  });
-
-  client.on("error", (err: Error) => log(`lsp error: ${err.message}`));
-
-  const indexer = new Indexer(client, graph, rootPath, new Set(serverDef.extensions), log);
+  const graph   = new CodeGraph();
+  const indexer = new Indexer(lspClients, graph, rootPath, ALL_EXTENSIONS, log);
   if (tsParser) indexer.tsParser = tsParser;
 
-  // ── 4. Collect files + build node graph with tree-sitter ──────────────────
+  // ── 5. Collect files + build node graph with tree-sitter ──────────────────
 
   writeFileSync(statusFile, "indexing", "utf8");
 
@@ -173,16 +195,16 @@ async function main() {
 
   await indexer.buildNodes(files, tsParser);
 
-  // ── 5. Start socket server + file watcher → write "ready" ─────────────────
+  // ── 6. Start socket server + file watcher → write "ready" ─────────────────
 
-  const watcher = new FileWatcher(rootPath, serverDef.extensions, async (changedFile) => {
+  const watcher = new FileWatcher(rootPath, [...ALL_EXTENSIONS], async (changedFile) => {
     writeFileSync(statusFile, "indexing", "utf8");
     await indexer.reindexFile(changedFile);
     writeFileSync(statusFile, "ready", "utf8");
   });
 
-  const server = new DaemonServer(sockFile, graph, client, rootPath, () =>
-    shutdown(client, server, watcher, indexer),
+  const server = new DaemonServer(sockFile, graph, lspClients, rootPath, () =>
+    shutdown(uniqueClients, server, watcher, indexer),
   );
 
   await server.listen();
@@ -191,37 +213,53 @@ async function main() {
   writeFileSync(statusFile, "ready", "utf8");
   log(`ready — ${graph.nodes.size} symbols indexed, listening on ${sockFile}`);
 
-  // ── 6. Background: init LSP → diagnostics → reverse refs ─────────────────
+  // ── 7. Background: init each LSP → diagnostics → reverse refs ────────────
 
   void (async () => {
+    if (uniqueClients.length === 0) {
+      log("No LSP servers — running in tree-sitter-only mode (no diagnostics/impact)");
+      return;
+    }
+
     try {
-      log("initializing LSP (background)…");
-      await client.initialize();
+      log("initializing LSP servers (background)…");
 
-      // Open all files so the LSP can provide diagnostics and references.
-      for (const f of files) client.openFile(f);
+      // Init all clients in parallel
+      await Promise.all(
+        uniqueClients.map(async ({ client, def }) => {
+          try {
+            await client.initialize();
 
-      log("waiting for diagnostics…");
-      await client.waitForDiagnostics(4000);
+            // Open files matching this client's extensions
+            const clientFiles = files.filter((f) => def.extensions.some((ext) => f.endsWith(ext)));
+            for (const f of clientFiles) client.openFile(f);
 
-      indexer.snapshotDiagnostics(
-        client.getDiagnostics() as Map<string, Diagnostic[]>,
+            log(`waiting for diagnostics [${def.languageId}]…`);
+            await client.waitForDiagnostics(4000);
+
+            indexer.snapshotDiagnostics(
+              client.getDiagnostics() as Map<string, Diagnostic[]>,
+            );
+
+            server.setLangReady(def.languageId);
+            log(`LSP ready [${def.languageId}] — diagnostics and impact analysis available`);
+          } catch (err) {
+            log(`LSP background init failed [${def.languageId}]: ${err}`);
+          }
+        }),
       );
-
-      server.lspReady = true;
-      log("LSP ready — diagnostics and impact analysis available");
 
       // Phase 2: reverse refs (background within background)
       void indexer.buildReverseRefs();
     } catch (err) {
-      log(`LSP background init failed (tree-sitter index still available): ${err}`);
+      log(`LSP background init error (tree-sitter index still available): ${err}`);
     }
   })();
 
   // ── Signal handlers ───────────────────────────────────────────────────────
 
-  process.on("SIGTERM", () => shutdown(client, server, watcher, indexer));
-  process.on("SIGINT",  () => shutdown(client, server, watcher, indexer));
+  process.on("SIGTERM", () => shutdown(uniqueClients, server, watcher, indexer));
+  process.on("SIGINT",  () => shutdown(uniqueClients, server, watcher, indexer));
 }
 
 main().catch((err) => {
