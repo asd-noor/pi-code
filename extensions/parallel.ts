@@ -12,6 +12,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
+import { Text } from "@mariozechner/pi-tui";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { exec, execFile } from "node:child_process";
@@ -164,13 +165,36 @@ export default function (pi: ExtensionAPI) {
       }),
     }),
 
+    renderCall(args, theme, _context) {
+      const toolNames = args.calls.map((call: any) => String(call.tool)).join(", ");
+      let text = theme.fg("toolTitle", theme.bold("parallel "));
+      text += theme.fg("accent", toolNames);
+      return new Text(text, 0, 0);
+    },
+
+    renderResult(result, { isPartial }, theme, context) {
+      if (isPartial) return new Text(theme.fg("warning", "Running..."), 0, 0);
+
+      const toolNames = context.args.calls.map((call: any) => String(call.tool)).join(", ");
+      const content = result.content.find((entry) => entry.type === "text");
+      const rawText = content?.type === "text" ? content.text : "(no output)";
+      const lines = rawText.split("\n");
+      if (lines[0]?.startsWith("Parallel operations:")) lines.shift();
+      const body = lines.join("\n").trim();
+
+      let text = theme.fg("toolTitle", theme.bold("Parallel operations: "));
+      text += theme.fg("accent", toolNames);
+      if (body) text += `\n\n${theme.fg("toolOutput", body)}`;
+      return new Text(text, 0, 0);
+    },
+
     async execute(toolCallId, params, _signal, onUpdate, ctx) {
       const calls = params.calls as any[];
 
       const toolNames = calls.map((call) => String(call.tool)).join(", ");
 
       onUpdate?.({
-        content: [{ type: "text", text: `\x1b[1;90mInvoking parallel: ${toolNames}\x1b[0m` }],
+        content: [{ type: "text", text: `Invoking parallel: ${toolNames}` }],
         details: undefined,
       });
 
@@ -203,7 +227,7 @@ export default function (pi: ExtensionAPI) {
 
       const errorCount = results.filter((r) => !r.ok).length;
       const allFailed  = errorCount === results.length;
-      const header     = `\x1b[1;90mParallel operations: ${toolNames}\x1b[0m`;
+      const header     = `Parallel operations: ${toolNames}`;
 
       return {
         content:  [{ type: "text", text: `${header}\n\n${parts.join("\n\n---\n\n")}` }],

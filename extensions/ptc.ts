@@ -12,6 +12,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
+import { Text } from "@mariozechner/pi-tui";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -167,6 +168,27 @@ On failure: fix the script and call ptc again — do not fall back to individual
       })),
     }),
 
+    renderCall(args, theme, _context) {
+      let text = theme.fg("toolTitle", theme.bold("ptc "));
+      text += theme.fg("accent", args.purpose);
+      return new Text(text, 0, 0);
+    },
+
+    renderResult(result, { isPartial }, theme, context) {
+      if (isPartial) return new Text(theme.fg("warning", "Running..."), 0, 0);
+
+      const content = result.content.find((entry) => entry.type === "text");
+      const rawText = content?.type === "text" ? content.text : "(no output)";
+      const lines = rawText.split("\n");
+      if (lines[0]?.startsWith("Purpose:")) lines.shift();
+      const output = lines.join("\n").trim();
+
+      let text = theme.fg("toolTitle", theme.bold("Purpose: "));
+      text += theme.fg("accent", context.args.purpose);
+      if (output) text += `\n${theme.fg("toolOutput", output)}`;
+      return new Text(text, 0, 0);
+    },
+
     async execute(toolCallId, params, signal, onUpdate, _ctx) {
       mkdirSync(SANDBOX_DIR, { recursive: true });
 
@@ -179,12 +201,10 @@ On failure: fix the script and call ptc again — do not fall back to individual
         ? ["run", file, ...(params.args ?? [])]
         : [file,        ...(params.args ?? [])];
 
-      const purposeStyle = "\x1b[1;90m";
-      const resetStyle = "\x1b[0m";
-      const invocationLine = `${purposeStyle}Invoking ptc: ${params.purpose}${resetStyle}`;
+      const invocationLine = `Invoking ptc: ${params.purpose}`;
       onUpdate?.({ content: [{ type: "text", text: invocationLine }], details: undefined });
 
-      const purposeLine = `${purposeStyle}Purpose: ${params.purpose}${resetStyle}`;
+      const purposeLine = `Purpose: ${params.purpose}`;
 
       try {
         const result = await execFileAsync(cmd, args, {
