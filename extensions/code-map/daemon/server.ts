@@ -6,7 +6,7 @@
  */
 
 import { createServer, type Server, type Socket } from "node:net";
-import { resolve, relative, extname } from "node:path";
+import { resolve, relative, extname, normalize } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -144,7 +144,7 @@ export class DaemonServer {
 
   private handleOutline(file: string, language: string): SymbolRow[] {
     this.validateLanguage(language);
-    const rel   = file.startsWith("/") ? relative(this.rootPath, file) : file;
+    const rel   = file.startsWith("/") ? relative(this.rootPath, file) : normalize(file);
     const nodes = this.db.getByFile(rel).filter((n) => n.language === language);
     return nodes.map((n) => ({
       kind: n.kind, language: n.language, name: n.name,
@@ -170,7 +170,7 @@ export class DaemonServer {
   private handleDiagnostics(file: string | undefined, language: string, minSeverity: number): DiagRow[] {
     this.validateLanguage(language);
     const rel = file
-      ? (file.startsWith("/") ? relative(this.rootPath, file) : file)
+      ? (file.startsWith("/") ? relative(this.rootPath, file) : normalize(file))
       : undefined;
     return this.db.getDiagnostics(rel, language, minSeverity);
   }
