@@ -58,6 +58,12 @@ Skills in `./skills/` (SKILL.md definitions):
 - **web-scout** — Tavily MCP for real-time web research
 - **subagents** (skill) — guidance for spawning and managing subagents
 
+Skills in `./skills/` (SKILL.md definitions):
+
+- **doc-library** — Context7 MCP for library/API docs lookup
+- **web-scout** — Tavily MCP for real-time web research
+
+> Note: There is no bundled `subagents` skill. The subagents orchestration is handled entirely by the extension (`extensions/subagents/`).
 ## Documentation Status
 
 Last comprehensive audit: April 18, 2026
@@ -98,47 +104,29 @@ Evidence in source:
 
 ## ptc-purpose-visibility
 
-Formatting was migrated from ANSI-in-text to Pi-supported renderer hooks for reliable styling, then adjusted to eliminate duplication and enforce explicit plain-text output headers.
+Supported inlined tools:
+- Native: `read`, `bash`, `write`, `edit`
+- `ptc` — inlined: file write + execFileAsync
+- `code_map_outline/symbol/diagnostics/impact` — inlined via `SocketClient`
+- `memory_list`, `memory_get`, `memory_search`, `memory_validate_file` — read-only memory tools, safe for concurrent execution
 
-Current finalized behavior in source:
+**Excluded memory write tools** (`memory_new`, `memory_update`, `memory_delete`, `memory_create_file`, `memory_delete_file`): calling these in `parallel` returns an error with a hint to use them sequentially — concurrent writes can corrupt the memory file.
 
-`extensions/ptc.ts`
-- Removed custom `renderCall` / `renderResult` to avoid duplicate call/result presentation paths.
-- Output header is now exactly:
-  - `ptc: <script file name>`
-  - `Purpose: <purpose>`
-- Implemented as:
-  - `scriptName = basename(file)`
-  - `header = \`ptc: ${scriptName}\\nPurpose: ${params.purpose}\``
-- Header is included on both success and error output content.
-- `onUpdate` remains generic (`Running...`) to avoid duplicated descriptive lines.
+File renamed from `_parallel.ts` → `parallel.ts`. Underscore prefix was only needed for the (now-removed) monkey-patch load ordering.
+## parallel dispatch architecture
 
-`extensions/parallel.ts`
-- Removed custom `renderCall` / `renderResult` to avoid duplicate presentation.
-- Output header is now exactly:
-  - `parallel: <N> tools`
-  - `Running: <comma separated tool names>`
-- Implemented as:
-  - `header = \`parallel: ${calls.length} tools\\nRunning: ${toolNames}\``
-- Header is included before aggregated per-call bodies.
-- `onUpdate` remains generic (`Running...`).
+**Previous approach (broken)**: monkey-patched `pi.registerTool` to capture extension execute functions into an `extensionTools` map. Failed because pi gives each extension its own `ExtensionAPI` instance — the patch only affected `_parallel.ts`'s own instance, so the map was always empty.
 
-Why this change:
-- Duplicate display occurred from overlapping custom renderers and update/result text paths.
-- Using one plain-text path with exact headers keeps behavior deterministic.
+**Current approach**: Tool execution is **inlined** directly in `parallel.ts`. No monkey-patching, no dynamic dispatch.
 
-Validation:
-- `code_map_diagnostics` severity=1:
-  - `extensions/ptc.ts` -> no diagnostics
-  - `extensions/parallel.ts` -> no diagnostics
-- Post-reload runtime ptc test output:
-  - `ptc: call_tmu.sh`
-  - `Purpose: Verify exact ptc header format after reload`
-  - `ptc format check body`
-- Post-reload runtime parallel test output:
-  - `parallel: 2 tools`
-  - `Running: bash, bash`
-  - body includes `[0] bash -> alpha`, `[1] bash -> beta`.
+Supported inlined tools:
+- Native: `read`, `bash`, `write`, `edit`
+- `ptc` — inlined: file write + execFileAsync (same logic as ptc.ts)
+- `code_map_outline/symbol/diagnostics/impact` — inlined via `SocketClient` from `./code-map/client.ts`
+- `memory_list/get/search/new/update/delete/create_file/delete_file/validate_file` — inlined via `memory-md` CLI calls (same logic as memory-md/tools.ts)
+- Agenda tools (`agenda_*`) intentionally excluded — sequential by nature
+
+File renamed from `_parallel.ts` → `parallel.ts`. The underscore prefix was only needed to ensure load-before-others for the (now-removed) monkey-patch. Glob ordering no longer matters.
 ## Parallel Tool Names Visibility
 
 Final state after renderer migration for `extensions/parallel.ts`:

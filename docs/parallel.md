@@ -1,6 +1,6 @@
 # parallel
 
-Fan out multiple independent operations (read, bash, write, edit, ptc) in one tool call. All run concurrently via `Promise.all`; results are returned together.
+Fan out multiple independent operations (read, bash, write, edit, ptc, code_map_*, memory_*) in one tool call. All run concurrently via `Promise.all`; results are returned together.
 
 ## LLM tool
 
@@ -63,12 +63,40 @@ Each item in the `calls` array is one of:
 ```typescript
 {
   tool: "ptc",
+  purpose: string,     // one-line description shown in UI
   type: "python" | "bash",
   script: string,      // full script (Python needs PEP 723 block)
   args?: string[],     // command-line arguments
   stdin?: string       // pipe to script stdin
 }
 ```
+
+#### `code_map_outline` / `code_map_symbol` / `code_map_diagnostics` / `code_map_impact`
+```typescript
+// outline
+{ tool: "code_map_outline", file: string }
+
+// symbol
+{ tool: "code_map_symbol", name: string, source?: boolean }
+
+// diagnostics
+{ tool: "code_map_diagnostics", file?: string, severity?: number }
+
+// impact
+{ tool: "code_map_impact", name: string }
+```
+
+#### `memory_list` / `memory_get` / `memory_search` / `memory_validate_file`
+```typescript
+{ tool: "memory_list",          file?: string }
+{ tool: "memory_get",           path: string }
+{ tool: "memory_search",        query: string, top?: number }
+{ tool: "memory_validate_file", name: string }
+```
+
+> ⚠️ Write tools (`memory_new`, `memory_update`, `memory_delete`, `memory_create_file`,
+> `memory_delete_file`) are **not supported** in `parallel` — concurrent writes can corrupt
+> the memory file. Use them sequentially with the native memory tools.
 
 ## When to use
 
@@ -179,6 +207,10 @@ Pattern:
 ## Implementation details
 
 - All operations execute via `Promise.all` — truly concurrent
+- Extension tool support is implemented by **inlining** the tool logic directly into `parallel.ts` — no dynamic dispatch or monkey-patching
+- Supported inlined tools: `ptc`, `code_map_outline/symbol/diagnostics/impact`, read-only `memory_*` tools (`memory_list`, `memory_get`, `memory_search`, `memory_validate_file`)
+- Memory write tools (`memory_new`, `memory_update`, `memory_delete`, `memory_create_file`, `memory_delete_file`) are **excluded** — concurrent writes can corrupt the memory file; use them sequentially
+- Agenda tools (`agenda_*`) are intentionally **not** supported — those are sequential by nature
 - Sandbox for ptc scripts: `/tmp/pi-sandbox/`
 - Python scripts run via `uv run`
 - Bash scripts execute in `/bin/bash`

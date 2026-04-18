@@ -24,6 +24,9 @@ No automated test suite. Validation steps:
 - Changelog: `CHANGELOG.md` (Keep a Changelog format, semver)
 - Current version: 1.2.0 (released 2026-04-17)
 
+- Version file: `package.json` (`version` field)
+- Changelog: `CHANGELOG.md` (Keep a Changelog format, semver)
+- Current version: **1.6.2** (released 2026-04-17)
 ## Docs Maintenance
 
 - Each extension/skill has a matching doc in `docs/<name>.md`
