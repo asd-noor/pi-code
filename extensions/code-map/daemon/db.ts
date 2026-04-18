@@ -118,6 +118,15 @@ export class CodeMapDB {
     run(nodes);
   }
 
+  /** Returns node_ids of symbols in OTHER files whose caller list included relFile.
+   *  Call this BEFORE deleteFile so the ids can be eagerly recomputed. */
+  getAffectedNodeIds(relFile: string): string[] {
+    return this.db
+      .prepare(`SELECT DISTINCT node_id FROM reverse_refs WHERE ref_file = ?`)
+      .all(relFile)
+      .map((r: any) => r.node_id as string);
+  }
+
   deleteFile(relFile: string): void {
     const run = this.db.transaction(() => {
       // Unmark as indexed any symbol whose callers included this file,
@@ -196,6 +205,14 @@ export class CodeMapDB {
        FROM nodes WHERE file = ?`,
     ).all(relFile) as Record<string, unknown>[];
     return rows.map(rowToNode);
+  }
+
+  getNodeById(nodeId: string): GraphNode | undefined {
+    const row = this.db.prepare(
+      `SELECT id, name, kind, language, file, line_start, line_end, col_start
+       FROM nodes WHERE id = ?`,
+    ).get(nodeId) as Record<string, unknown> | undefined;
+    return row ? rowToNode(row) : undefined;
   }
 
   /** All nodes of REF_KINDS that have not yet been reverse-indexed. */

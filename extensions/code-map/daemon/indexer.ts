@@ -229,6 +229,10 @@ export class Indexer {
   private async _reindexFile(absFile: string): Promise<void> {
     const relFile = relative(this.rootPath, absFile);
     this.log(`re-indexing: ${relFile}`);
+
+    // Capture external symbols that had this file as a caller BEFORE deleting,
+    // so we can eagerly recompute their reverse refs in the background.
+    const affectedNodeIds = this.db.getAffectedNodeIds(relFile);
     this.db.deleteFile(relFile);
 
     // ── Tree-sitter path: instant, synchronous symbol update ─────────────────
@@ -241,7 +245,7 @@ export class Indexer {
           this.log(`  re-indexed ${nodes.length} symbols (tree-sitter)`);
 
           // Notify LSP async — diagnostics update in background, don't block.
-          void this._lspReindexBackground(absFile, relFile);
+          void this._lspReindexBackground(absFile, relFile, affectedNodeIds);
           return;
         }
       } catch (_) {
@@ -276,11 +280,11 @@ export class Indexer {
     );
 
     // Update reverse refs for new nodes (background, best-effort).
-    void this._updateReverseRefsForFile(absFile, relFile);
+    void this._updateReverseRefsForFile(absFile, relFile, affectedNodeIds);
   }
 
   /** Fire-and-forget LSP diagnostic + reverse-ref update after a tree-sitter re-index. */
-  private async _lspReindexBackground(absFile: string, relFile: string): Promise<void> {
+  private async _lspReindexBackground(absFile: string, relFile: string, affectedNodeIds: string[] = []): Promise<void> {
     const client = this.clientFor(absFile);
     if (!client) return;
     try {
@@ -290,12 +294,18 @@ export class Indexer {
         client.getDiagnostics() as Map<string, Diagnostic[]>,
       );
     } catch (_) {}
-    void this._updateReverseRefsForFile(absFile, relFile);
+    void this._updateReverseRefsForFile(absFile, relFile, affectedNodeIds);
   }
 
-  private async _updateReverseRefsForFile(absFile: string, relFile: string): Promise<void> {
+  private async _updateReverseRefsForFile(
+    absFile: string,
+    relFile: string,
+    affectedNodeIds: string[] = [],
+  ): Promise<void> {
     const client = this.clientFor(absFile);
     if (!client) return;
+
+    // Recompute refs for symbols defined IN the changed file.
     const newNodes = this.db.getByFile(relFile);
     for (const node of newNodes.filter((n) => REF_KINDS.has(n.kind))) {
       if (this.aborted) return;
@@ -311,6 +321,30 @@ export class Indexer {
         );
       } catch (_) {
         this.db.markIndexed(node.id);
+      }
+    }
+
+    // Eagerly recompute refs for external symbols that previously listed
+    // this file as a caller (their entries were cleared by deleteFile).
+    for (const nodeId of affectedNodeIds) {
+      if (this.aborted) return;
+      const node = this.db.getNodeById(nodeId);
+      if (!node) continue;
+      const nodeAbsFile = resolve(this.rootPath, node.file);
+      const nodeClient  = this.clientFor(nodeAbsFile);
+      if (!nodeClient) { this.db.markIndexed(nodeId); continue; }
+      try {
+        const refs = await nodeClient.references(nodeAbsFile, node.lineStart - 1, node.colStart, false);
+        this.db.setReverseRefs(nodeId, refs
+          .map((r) => ({
+            file:      relative(this.rootPath, r.uri.startsWith("file://") ? fileURLToPath(r.uri) : r.uri),
+            lineStart: r.range.start.line + 1,
+            lineEnd:   r.range.end.line + 1,
+          }))
+          .filter((r) => !(r.file === node.file && r.lineStart === node.lineStart)),
+        );
+      } catch (_) {
+        this.db.markIndexed(nodeId);
       }
     }
   }
