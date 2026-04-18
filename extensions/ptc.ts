@@ -179,7 +179,9 @@ On failure: fix the script and call ptc again — do not fall back to individual
         ? ["run", file, ...(params.args ?? [])]
         : [file,        ...(params.args ?? [])];
 
-      onUpdate?.({ content: [{ type: "text", text: params.purpose }], details: undefined });
+      onUpdate?.({ content: [{ type: "text", text: `Invoking ptc: ${params.purpose}` }], details: undefined });
+
+      const purposeLine = `Purpose: ${params.purpose}`;
 
       try {
         const result = await execFileAsync(cmd, args, {
@@ -191,7 +193,7 @@ On failure: fix the script and call ptc again — do not fall back to individual
 
         const out = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
         return {
-          content: [{ type: "text", text: out || "(no output)" }],
+          content: [{ type: "text", text: `${purposeLine}\n${out || "(no output)"}` }],
           details: { file, exitCode: 0 },
         };
       } catch (err: any) {
@@ -200,7 +202,7 @@ On failure: fix the script and call ptc again — do not fall back to individual
         const out    = [stdout, stderr].filter(Boolean).join("\n").trim();
         const code   = err.code ?? 1;
         return {
-          content: [{ type: "text", text: `Exit ${code}:\n${out || err.message}` }],
+          content: [{ type: "text", text: `${purposeLine}\nExit ${code}:\n${out || err.message}` }],
           details: { file, exitCode: code },
           isError: true,
         };

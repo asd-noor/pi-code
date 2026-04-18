@@ -167,8 +167,10 @@ export default function (pi: ExtensionAPI) {
     async execute(toolCallId, params, _signal, onUpdate, ctx) {
       const calls = params.calls as any[];
 
+      const toolNames = calls.map((call) => String(call.tool)).join(", ");
+
       onUpdate?.({
-        content: [{ type: "text", text: `Running ${calls.length} operations in parallel…` }],
+        content: [{ type: "text", text: `Invoking parallel: ${toolNames}` }],
         details: undefined,
       });
 
@@ -201,9 +203,10 @@ export default function (pi: ExtensionAPI) {
 
       const errorCount = results.filter((r) => !r.ok).length;
       const allFailed  = errorCount === results.length;
+      const header     = `Parallel operations: ${toolNames}`;
 
       return {
-        content:  [{ type: "text", text: parts.join("\n\n---\n\n") }],
+        content:  [{ type: "text", text: `${header}\n\n${parts.join("\n\n---\n\n")}` }],
         details:  { totalCalls: calls.length, errors: errorCount, results },
         isError:  allFailed,
       };
