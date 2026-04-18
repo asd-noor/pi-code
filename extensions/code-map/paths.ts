@@ -11,8 +11,9 @@ import { mkdirSync } from "node:fs";
 
 const CACHE_BASE = join(homedir(), ".pi", "cache", "code-map");
 
-export function getCacheDir(): string { return CACHE_BASE; }
-export function getLspDir(): string   { return join(CACHE_BASE, "lsp"); }
+export function getCacheDir(): string        { return CACHE_BASE; }
+export function getLspDir(): string          { return join(CACHE_BASE, "lsp"); }
+export function getTreeSitterDir(): string   { return join(CACHE_BASE, "tree-sitter"); }
 
 export function encodeProjectPath(rootPath: string): string {
   return rootPath.replace(/\//g, "=");

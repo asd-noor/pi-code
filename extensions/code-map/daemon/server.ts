@@ -52,6 +52,8 @@ export interface ImpactRow {
 export class DaemonServer {
   private server: Server;
   private activeConnections = 0;
+  /** Set to true by runner once the background LSP init completes. */
+  lspReady = false;
 
   constructor(
     private socketPath: string,
@@ -173,6 +175,10 @@ export class DaemonServer {
     if (!nodes.length) throw new Error(`symbol not found: ${name}`);
 
     const target = nodes.find((n) => REF_KINDS.has(n.kind)) ?? nodes[0];
+
+    if (!this.lspReady && !this.graph.indexed.has(target.id)) {
+      throw new Error("LSP still initializing — impact analysis available shortly");
+    }
 
     if (!this.graph.indexed.has(target.id)) {
       const absFile = resolve(this.rootPath, target.file);

@@ -3,8 +3,19 @@
  *
  * Args:
  *   argv[2]  <rootPath>         absolute project root
- *   argv[3+] --auto-install     install missing LSP before starting
+ *   argv[3+] --auto-install     install missing LSP + tree-sitter before starting
  *            --file-limit=<n>   max files for initial index (default 200)
+ *
+ * Startup sequence:
+ *   1. Check / install tree-sitter grammars (if --auto-install)
+ *   2. Load grammars → create TreeSitterParser
+ *   3. Collect files
+ *   4. buildNodes(files, tsParser)   ← tree-sitter fast parse (no LSP)
+ *   5. Start socket server + file watcher → write "ready"
+ *   6. Background: init LSP → open files → wait diagnostics → snapshot → buildReverseRefs
+ *
+ * The "ready" status is written BEFORE LSP initializes.
+ * LSP failure after step 5 is non-fatal — the tree-sitter index stays available.
  */
 
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
@@ -13,11 +24,15 @@ import { join } from "node:path";
 import { LspClient } from "../lsp/client.ts";
 import { detectServer } from "../lsp/registry.ts";
 import { installServer, isInstalled, getInstallHint } from "../lsp/installer.ts";
+import { isTreeSitterInstalled, installTreeSitter, getTreeSitterDir } from "../tree-sitter/installer.ts";
+import { loadGrammars } from "../tree-sitter/loader.ts";
+import { TreeSitterParser } from "../tree-sitter/parser.ts";
 import { getProjectDir, ensureDir } from "../paths.ts";
 import { CodeGraph } from "./graph.ts";
 import { Indexer } from "./indexer.ts";
 import { DaemonServer } from "./server.ts";
 import { FileWatcher } from "./watcher.ts";
+import type { Diagnostic } from "../lsp/protocol.ts";
 
 // ── Args ──────────────────────────────────────────────────────────────────────
 
@@ -27,9 +42,9 @@ if (!rootPath) {
   process.exit(1);
 }
 
-const autoInstall = process.argv.includes("--auto-install");
+const autoInstall  = process.argv.includes("--auto-install");
 const fileLimitArg = process.argv.find((a) => a.startsWith("--file-limit="));
-const fileLimit = fileLimitArg ? parseInt(fileLimitArg.split("=")[1], 10) || 200 : 200;
+const fileLimit    = fileLimitArg ? parseInt(fileLimitArg.split("=")[1], 10) || 200 : 200;
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -48,7 +63,12 @@ if (existsSync(sockFile)) { try { unlinkSync(sockFile); } catch (_) {} }
 
 // ── Shutdown ──────────────────────────────────────────────────────────────────
 
-async function shutdown(client: LspClient, server: DaemonServer, watcher: FileWatcher, indexer: Indexer) {
+async function shutdown(
+  client: LspClient,
+  server: DaemonServer,
+  watcher: FileWatcher,
+  indexer: Indexer,
+) {
   log("shutting down");
   indexer.abort();
   watcher.stop();
@@ -66,7 +86,37 @@ async function main() {
   const serverDef = detectServer(rootPath);
   log(`language: ${serverDef.languageId}  lsp: ${serverDef.command}`);
 
-  // ── 0. Auto-install ───────────────────────────────────────────────────────
+  // ── 0. Tree-sitter: check / install ───────────────────────────────────────
+
+  if (!isTreeSitterInstalled()) {
+    if (autoInstall) {
+      log("tree-sitter not found, installing…");
+      try {
+        await installTreeSitter(log);
+      } catch (err) {
+        log(`tree-sitter install failed (will use LSP fallback): ${err}`);
+      }
+    } else {
+      log("tree-sitter not installed — running in LSP-only mode");
+    }
+  }
+
+  // ── 1. Load tree-sitter grammars ──────────────────────────────────────────
+
+  let tsParser: TreeSitterParser | undefined;
+  try {
+    const grammars = loadGrammars(getTreeSitterDir());
+    if (grammars) {
+      tsParser = new TreeSitterParser(grammars);
+      log(`tree-sitter loaded (${grammars.languages.size} grammars)`);
+    } else {
+      log("tree-sitter grammars unavailable — falling back to LSP symbols");
+    }
+  } catch (err) {
+    log(`tree-sitter load error (falling back to LSP): ${err}`);
+  }
+
+  // ── 2. LSP server check ───────────────────────────────────────────────────
 
   if (!isInstalled(serverDef.installId)) {
     if (autoInstall) {
@@ -76,18 +126,27 @@ async function main() {
         const updated = detectServer(rootPath);
         serverDef.command = updated.command;
       } catch (err) {
-        log(`Auto-install failed: ${err}`);
+        log(`LSP auto-install failed: ${err}`);
         log(`Hint: ${getInstallHint(serverDef.installId)}`);
-        writeFileSync(statusFile, "error", "utf8");
-        process.exit(1);
+        if (!tsParser) {
+          writeFileSync(statusFile, "error", "utf8");
+          process.exit(1);
+        }
+        // If tree-sitter loaded, we can continue without LSP
+        log("Continuing in tree-sitter-only mode (no LSP).");
       }
     } else {
       log(`LSP server not found: ${serverDef.installId}`);
       log(`Hint: ${getInstallHint(serverDef.installId)}`);
-      writeFileSync(statusFile, "error", "utf8");
-      process.exit(1);
+      if (!tsParser) {
+        writeFileSync(statusFile, "error", "utf8");
+        process.exit(1);
+      }
+      log("Continuing in tree-sitter-only mode (no LSP).");
     }
   }
+
+  // ── 3. Build core objects ─────────────────────────────────────────────────
 
   const graph = new CodeGraph();
 
@@ -103,39 +162,18 @@ async function main() {
   client.on("error", (err: Error) => log(`lsp error: ${err.message}`));
 
   const indexer = new Indexer(client, graph, rootPath, new Set(serverDef.extensions), log);
+  if (tsParser) indexer.tsParser = tsParser;
 
-  // ── 1. Init LSP ───────────────────────────────────────────────────────────
+  // ── 4. Collect files + build node graph with tree-sitter ──────────────────
 
   writeFileSync(statusFile, "indexing", "utf8");
-  log("initializing LSP...");
-  try {
-    await client.initialize();
-  } catch (err) {
-    log(`LSP init failed: ${err}`);
-    writeFileSync(statusFile, "error", "utf8");
-    process.exit(1);
-  }
-
-  // ── 2. Collect + open files ───────────────────────────────────────────────
 
   const files = indexer.collectFiles(fileLimit);
   log(`found ${files.length} source files (limit: ${fileLimit})`);
-  for (const f of files) client.openFile(f);
 
-  log("waiting for diagnostics...");
-  await client.waitForDiagnostics(4000);
+  await indexer.buildNodes(files, tsParser);
 
-  // ── 3. Phase 1: build node graph ──────────────────────────────────────────
-
-  await indexer.buildNodes(files);
-
-  // ── 4. Snapshot diagnostics ───────────────────────────────────────────────
-
-  indexer.snapshotDiagnostics(
-    client.getDiagnostics() as Map<string, import("../lsp/protocol.ts").Diagnostic[]>,
-  );
-
-  // ── 5. Start socket server + file watcher ─────────────────────────────────
+  // ── 5. Start socket server + file watcher → write "ready" ─────────────────
 
   const watcher = new FileWatcher(rootPath, serverDef.extensions, async (changedFile) => {
     writeFileSync(statusFile, "indexing", "utf8");
@@ -153,9 +191,32 @@ async function main() {
   writeFileSync(statusFile, "ready", "utf8");
   log(`ready — ${graph.nodes.size} symbols indexed, listening on ${sockFile}`);
 
-  // ── 6. Background Phase 2: reverse refs ───────────────────────────────────
+  // ── 6. Background: init LSP → diagnostics → reverse refs ─────────────────
 
-  void indexer.buildReverseRefs();
+  void (async () => {
+    try {
+      log("initializing LSP (background)…");
+      await client.initialize();
+
+      // Open all files so the LSP can provide diagnostics and references.
+      for (const f of files) client.openFile(f);
+
+      log("waiting for diagnostics…");
+      await client.waitForDiagnostics(4000);
+
+      indexer.snapshotDiagnostics(
+        client.getDiagnostics() as Map<string, Diagnostic[]>,
+      );
+
+      server.lspReady = true;
+      log("LSP ready — diagnostics and impact analysis available");
+
+      // Phase 2: reverse refs (background within background)
+      void indexer.buildReverseRefs();
+    } catch (err) {
+      log(`LSP background init failed (tree-sitter index still available): ${err}`);
+    }
+  })();
 
   // ── Signal handlers ───────────────────────────────────────────────────────
 

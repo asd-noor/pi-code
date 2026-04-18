@@ -2,7 +2,9 @@
  * Indexer — builds and incrementally updates the CodeGraph.
  *
  * Phase 1 (blocking, before "ready"):
- *   documentSymbol for every file → populate nodes + diagnostics
+ *   If a TreeSitterParser is available, each file is parsed synchronously
+ *   with tree-sitter (fast — no LSP round-trips, no sleep).
+ *   For files whose grammar is unavailable, falls back to LSP documentSymbol.
  *
  * Phase 2 (background, after "ready"):
  *   textDocument/references per fn/method/class → populate reverseRefs
@@ -13,6 +15,7 @@ import { readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import type { LspClient } from "../lsp/client.ts";
+import type { TreeSitterParser } from "../tree-sitter/parser.ts";
 import { CodeGraph, REF_KINDS, nodeId, type RefLocation, type GraphNode } from "./graph.ts";
 import {
   SYMBOL_KIND_NAMES,
@@ -39,6 +42,8 @@ type Log = (msg: string) => void;
 
 export class Indexer {
   private aborted = false;
+  /** Optional tree-sitter parser — set by runner after grammar load. */
+  tsParser?: TreeSitterParser;
   /** Serialises concurrent file-change re-indexes so they never race. */
   private reindexQueue: Promise<void> = Promise.resolve();
 
@@ -54,15 +59,32 @@ export class Indexer {
 
   // ── Phase 1 ───────────────────────────────────────────────────────────────
 
-  async buildNodes(files: string[]): Promise<void> {
-    this.log(`building node graph from ${files.length} files...`);
+  async buildNodes(files: string[], tsParser?: TreeSitterParser): Promise<void> {
+    const parser = tsParser ?? this.tsParser;
+    this.log(`building node graph from ${files.length} files (${parser ? "tree-sitter" : "lsp"})...`);
     let count = 0;
+
     for (const absFile of files) {
       if (this.aborted) return;
       const relFile = relative(this.rootPath, absFile);
+
+      if (parser) {
+        // Tree-sitter path: synchronous, no sleep, no LSP open needed
+        try {
+          const nodes = parser.parseFile(absFile, relFile);
+          if (nodes.length > 0) {
+            for (const node of nodes) this.graph.addNode(node);
+            count += nodes.length;
+            continue;
+          }
+        } catch (_) {
+          // fall through to LSP
+        }
+      }
+
+      // LSP fallback — for files whose grammar is unavailable or on parse error
       try {
         this.client.openFile(absFile);
-        await sleep(50);
         const raw   = await this.client.documentSymbols(absFile);
         const nodes = flattenSymbols(raw, relFile);
         for (const node of nodes) this.graph.addNode(node);
@@ -139,9 +161,24 @@ export class Indexer {
     this.log(`re-indexing: ${relFile}`);
     this.graph.removeFile(relFile);
 
-    // Tell the LSP about the changed content, then wait until diagnostics
-    // have gone quiet (no new publishDiagnostics for 600 ms, hard cap 6 s).
-    // This replaces the blind sleep(800) and ensures symbols are fresh.
+    // ── Tree-sitter path: instant, synchronous symbol update ─────────────────
+    if (this.tsParser) {
+      try {
+        const nodes = this.tsParser.parseFile(absFile, relFile);
+        if (nodes.length > 0) {
+          for (const node of nodes) this.graph.addNode(node);
+          this.log(`  re-indexed ${nodes.length} symbols (tree-sitter)`);
+
+          // Notify LSP async — diagnostics update in background, don't block.
+          void this._lspReindexBackground(absFile, relFile);
+          return;
+        }
+      } catch (_) {
+        // fall through to LSP path
+      }
+    }
+
+    // ── LSP fallback path (no tree-sitter grammar for this file type) ─────────
     this.client.updateFile(absFile);
     await this.client.waitForQuietDiagnostics(600, 6000);
 
@@ -149,37 +186,49 @@ export class Indexer {
       const raw   = await this.client.documentSymbols(absFile);
       const nodes = flattenSymbols(raw, relFile);
       for (const node of nodes) this.graph.addNode(node);
-      this.log(`  re-indexed ${nodes.length} symbols`);
+      this.log(`  re-indexed ${nodes.length} symbols (lsp)`);
     } catch (err) {
       this.log(`  re-index symbols failed: ${err}`);
     }
 
-    // Re-snapshot ALL diagnostics — a single file change can invalidate
-    // diagnostics in any file that imports it.
     this.snapshotDiagnostics(
       this.client.getDiagnostics() as Map<string, Diagnostic[]>,
     );
 
     // Update reverse refs for new nodes (background, best-effort).
+    void this._updateReverseRefsForFile(absFile, relFile);
+  }
+
+  /** Fire-and-forget LSP diagnostic + reverse-ref update after a tree-sitter re-index. */
+  private async _lspReindexBackground(absFile: string, relFile: string): Promise<void> {
+    try {
+      this.client.updateFile(absFile);
+      await this.client.waitForQuietDiagnostics(600, 6000);
+      this.snapshotDiagnostics(
+        this.client.getDiagnostics() as Map<string, Diagnostic[]>,
+      );
+    } catch (_) {}
+    void this._updateReverseRefsForFile(absFile, relFile);
+  }
+
+  private async _updateReverseRefsForFile(absFile: string, relFile: string): Promise<void> {
     const newNodes = this.graph.byFile.get(relFile) ?? [];
-    void (async () => {
-      for (const node of newNodes.filter((n) => REF_KINDS.has(n.kind))) {
-        if (this.aborted) return;
-        try {
-          const refs = await this.client.references(absFile, node.lineStart - 1, node.colStart, false);
-          this.graph.setReverseRefs(node.id, refs
-            .map((r) => ({
-              file:      relative(this.rootPath, r.uri.startsWith("file://") ? fileURLToPath(r.uri) : r.uri),
-              lineStart: r.range.start.line + 1,
-              lineEnd:   r.range.end.line + 1,
-            }))
-            .filter((r) => !(r.file === node.file && r.lineStart === node.lineStart)),
-          );
-        } catch (_) {
-          this.graph.indexed.add(node.id);
-        }
+    for (const node of newNodes.filter((n) => REF_KINDS.has(n.kind))) {
+      if (this.aborted) return;
+      try {
+        const refs = await this.client.references(absFile, node.lineStart - 1, node.colStart, false);
+        this.graph.setReverseRefs(node.id, refs
+          .map((r) => ({
+            file:      relative(this.rootPath, r.uri.startsWith("file://") ? fileURLToPath(r.uri) : r.uri),
+            lineStart: r.range.start.line + 1,
+            lineEnd:   r.range.end.line + 1,
+          }))
+          .filter((r) => !(r.file === node.file && r.lineStart === node.lineStart)),
+        );
+      } catch (_) {
+        this.graph.indexed.add(node.id);
       }
-    })();
+    }
   }
 
   // ── File collection ───────────────────────────────────────────────────────
@@ -247,5 +296,3 @@ function flattenSymbols(
   }
   return out;
 }
-
-function sleep(ms: number) { return new Promise<void>((r) => setTimeout(r, ms)); }
