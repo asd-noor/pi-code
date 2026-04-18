@@ -201,8 +201,7 @@ On failure: fix the script and call ptc again — do not fall back to individual
         ? ["run", file, ...(params.args ?? [])]
         : [file,        ...(params.args ?? [])];
 
-      const invocationLine = `Invoking ptc: ${params.purpose}`;
-      onUpdate?.({ content: [{ type: "text", text: invocationLine }], details: undefined });
+      onUpdate?.({ content: [{ type: "text", text: "Running..." }], details: undefined });
 
       const purposeLine = `Purpose: ${params.purpose}`;
 

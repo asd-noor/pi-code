@@ -194,7 +194,7 @@ export default function (pi: ExtensionAPI) {
       const toolNames = calls.map((call) => String(call.tool)).join(", ");
 
       onUpdate?.({
-        content: [{ type: "text", text: `Invoking parallel: ${toolNames}` }],
+        content: [{ type: "text", text: "Running..." }],
         details: undefined,
       });
 
