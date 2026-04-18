@@ -12,8 +12,8 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
-import { Text } from "@mariozechner/pi-tui";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { basename } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -168,26 +168,6 @@ On failure: fix the script and call ptc again — do not fall back to individual
       })),
     }),
 
-    renderCall(args, theme, _context) {
-      let text = theme.fg("toolTitle", theme.bold("ptc "));
-      text += theme.fg("accent", args.purpose);
-      return new Text(text, 0, 0);
-    },
-
-    renderResult(result, { isPartial }, theme, context) {
-      if (isPartial) return new Text(theme.fg("warning", "Running..."), 0, 0);
-
-      const content = result.content.find((entry) => entry.type === "text");
-      const rawText = content?.type === "text" ? content.text : "(no output)";
-      const lines = rawText.split("\n");
-      if (lines[0]?.startsWith("Purpose:")) lines.shift();
-      const output = lines.join("\n").trim();
-
-      let text = theme.fg("toolTitle", theme.bold("Purpose: "));
-      text += theme.fg("accent", context.args.purpose);
-      if (output) text += `\n${theme.fg("toolOutput", output)}`;
-      return new Text(text, 0, 0);
-    },
 
     async execute(toolCallId, params, signal, onUpdate, _ctx) {
       mkdirSync(SANDBOX_DIR, { recursive: true });
@@ -203,7 +183,8 @@ On failure: fix the script and call ptc again — do not fall back to individual
 
       onUpdate?.({ content: [{ type: "text", text: "Running..." }], details: undefined });
 
-      const purposeLine = `Purpose: ${params.purpose}`;
+      const scriptName = basename(file);
+      const header = `ptc: ${scriptName}\nPurpose: ${params.purpose}`;
 
       try {
         const result = await execFileAsync(cmd, args, {
@@ -215,7 +196,7 @@ On failure: fix the script and call ptc again — do not fall back to individual
 
         const out = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
         return {
-          content: [{ type: "text", text: `${purposeLine}\n${out || "(no output)"}` }],
+          content: [{ type: "text", text: `${header}\n${out || "(no output)"}` }],
           details: { file, exitCode: 0 },
         };
       } catch (err: any) {
@@ -224,7 +205,7 @@ On failure: fix the script and call ptc again — do not fall back to individual
         const out    = [stdout, stderr].filter(Boolean).join("\n").trim();
         const code   = err.code ?? 1;
         return {
-          content: [{ type: "text", text: `${purposeLine}\nExit ${code}:\n${out || err.message}` }],
+          content: [{ type: "text", text: `${header}\nExit ${code}:\n${out || err.message}` }],
           details: { file, exitCode: code },
           isError: true,
         };
