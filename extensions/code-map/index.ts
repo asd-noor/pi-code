@@ -106,7 +106,13 @@ Prefer code-map tools over grep / read / bash for structural understanding:
 - Before editing a file → \`code_map_outline\`
 - Finding a definition → \`code_map_symbol\` (add \`source:true\` to skip a separate read call)
 - Checking for type errors → \`code_map_diagnostics\` with \`severity:1\` — scope to a \`file\` to reduce noise; omit \`file\` for full project diagnostics after cross-file changes or refactoring
-- Before refactoring → \`code_map_impact\` to find all callers first`,
+- Before refactoring → \`code_map_impact\` to find all callers first
+
+Natively indexed languages (tree-sitter): TypeScript (\`.ts\`, \`.tsx\`), JavaScript (\`.js\`, \`.jsx\`, \`.mjs\`, \`.cjs\`), Python (\`.py\`), Go (\`.go\`), Zig (\`.zig\`), Lua (\`.lua\`).
+
+For any other language, \`code_map_outline\` and \`code_map_symbol\` return empty. Fall back in order:
+1. \`ptc\` with a Python uv script (PEP 723) — use language-specific AST libraries (e.g. \`tree_sitter\`, \`libcst\`) for structured parsing
+2. \`ptc\` with a bash script using \`find\`, \`grep\`, \`awk\` — pattern-match function/class signatures directly`,
   }));
 
 
