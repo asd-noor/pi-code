@@ -1,6 +1,6 @@
 /**
  * Tree-sitter installer — installs tree-sitter + 6 grammar packages to
- * ~/.pi/cache/code-map/tree-sitter/ on demand.
+ * ~/.pi/cache/tree-sitter/ on demand.
  * Mirrors lsp/installer.ts — no bundled deps, pure runtime install.
  *
  * Supported languages: TypeScript, JavaScript, Python, Go, Lua, Zig

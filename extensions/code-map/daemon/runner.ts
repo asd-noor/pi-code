@@ -53,9 +53,9 @@ const fileLimit    = fileLimitArg ? parseInt(fileLimitArg.split("=")[1], 10) || 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
 const projectDir = ensureDir(getProjectDir(rootPath));
-const pidFile    = join(projectDir, "daemon.pid");
-const sockFile   = join(projectDir, "daemon.sock");
-const statusFile = join(projectDir, "daemon.status");
+const pidFile    = join(projectDir, "codemap-daemon.pid");
+const sockFile   = join(projectDir, "codemap-daemon.sock");
+const statusFile = join(projectDir, "codemap-daemon.status");
 const dbPath     = join(projectDir, "codemap.db");
 
 function log(msg: string) { process.stderr.write(`[code-map] ${msg}\n`); }

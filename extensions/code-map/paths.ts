@@ -1,15 +1,15 @@
 /**
  * Cache path helpers.
- * Layout: ~/.pi/cache/code-map/
+ * Layout: ~/.pi/cache/
  *   lsp/                       shared LSP binaries
- *   <encoded-project-path>/    per-project state (daemon.sock, daemon.pid, …)
+ *   <encoded-project-path>/    per-project state (codemap-daemon.sock, codemap-daemon.pid, …)
  */
 
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
 
-const CACHE_BASE = join(homedir(), ".pi", "cache", "code-map");
+const CACHE_BASE = join(homedir(), ".pi", "cache");
 
 export function getCacheDir(): string        { return CACHE_BASE; }
 export function getLspDir(): string          { return join(CACHE_BASE, "lsp"); }

@@ -1,6 +1,6 @@
 /**
  * LSP installer — discovers and installs language servers into
- * ~/.pi/cache/code-map/lsp/. No Bun APIs — pure Node.js.
+ * ~/.pi/cache/lsp/. No Bun APIs — pure Node.js.
  */
 
 import { spawnSync } from "node:child_process";

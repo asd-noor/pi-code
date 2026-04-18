@@ -21,7 +21,7 @@ session_start
                diagnostics → DB; reverse refs per fn/method/class → DB
 
 Query (LLM tool call)
-  └── SocketClient connects to ~/.pi/cache/code-map/<project>/daemon.sock
+  └── SocketClient connects to ~/.pi/cache/<project>/codemap-daemon.sock
   └── JSON query → SQL → result in ~1ms
 
 File change
@@ -121,17 +121,17 @@ Run `/code-map restart` after editing the config to apply changes.
 ## Cache layout
 
 ```
-~/.pi/cache/code-map/
+~/.pi/cache/
   lsp/                          shared LSP binaries (all projects)
     node_modules/.bin/          npm-installed servers
     bin/                        standalone binaries
     go/bin/                     gopls
   tree-sitter/                  shared tree-sitter + grammar packages
   =Users=noor=project/          per-project state (/ → =)
-    daemon.sock
-    daemon.log
-    daemon.status
-    daemon.pid
+    codemap-daemon.sock
+    codemap-daemon.log
+    codemap-daemon.status
+    codemap-daemon.pid
     codemap.db                  SQLite: nodes, reverse_refs, diagnostics,
                                         indexed_nodes, file_meta (mtime)
 ```
@@ -157,7 +157,7 @@ For any other language, tools return a descriptive error. Fall back to:
 1. `ptc` with a Python uv script (PEP 723) — use language-specific AST libraries (e.g. `tree_sitter`, `libcst`)
 2. `ptc` with a bash script using `find`, `grep`, `awk` — pattern-match function/class signatures
 
-LSP servers are auto-installed to `~/.pi/cache/code-map/lsp/` on first run (`--auto-install`).
+LSP servers are auto-installed to `~/.pi/cache/lsp/` on first run (`--auto-install`).
 
 ## Requirements
 

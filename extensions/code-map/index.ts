@@ -5,7 +5,7 @@
  * (outline, symbol, diagnostics, impact), and shows daemon status in the footer.
  *
  * Config: ~/.pi/agent/code-map.json
- * Cache:  ~/.pi/cache/code-map/<encoded-project>/
+ * Cache:  ~/.pi/cache/<encoded-project>/
  */
 
 import { existsSync, readFileSync, writeFileSync, openSync } from "node:fs";
@@ -50,12 +50,12 @@ function loadConfig(): CodeMapConfig {
 // ── Daemon status ─────────────────────────────────────────────────────────────
 
 function readStatus(projectDir: string): string {
-  try { return readFileSync(join(projectDir, "daemon.status"), "utf-8").trim(); }
+  try { return readFileSync(join(projectDir, "codemap-daemon.status"), "utf-8").trim(); }
   catch { return "stopped"; }
 }
 
 function readLogTail(projectDir: string, lines = 50): string {
-  const logFile = join(projectDir, "daemon.log");
+  const logFile = join(projectDir, "codemap-daemon.log");
   if (!existsSync(logFile)) return "(no log file)";
   try {
     const content = readFileSync(logFile, "utf-8");
@@ -141,7 +141,7 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
 
   function spawnDaemon(root: string, config: CodeMapConfig): ChildProcess {
     const dir     = ensureDir(getProjectDir(root));
-    const logPath = join(dir, "daemon.log");
+    const logPath = join(dir, "codemap-daemon.log");
     const logFd   = openSync(logPath, "a");
 
     const child = spawn(
@@ -182,7 +182,7 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
 
     // Reset the status file so the poller doesn't read a stale "ready" from the
     // previous session and stop prematurely before the new daemon is actually up.
-    try { writeFileSync(join(projectDir, "daemon.status"), "starting", "utf-8"); } catch {}
+    try { writeFileSync(join(projectDir, "codemap-daemon.status"), "starting", "utf-8"); } catch {}
 
     // Spawn daemon async (fire and forget — don't block session start)
     daemonChild = spawnDaemon(projectRoot, config);
@@ -225,7 +225,7 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
           [
             `Status:     ${status}`,
             `Project:    ${projectRoot}`,
-            `Socket:     ${join(projectDir, "daemon.sock")}`,
+            `Socket:     ${join(projectDir, "codemap-daemon.sock")}`,
             `File limit: ${cfg.fileLimit}`,
           ].join("\n"),
           "info",
