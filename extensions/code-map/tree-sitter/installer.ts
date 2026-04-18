@@ -52,8 +52,7 @@ function which(cmd: string): string | null {
 }
 
 function runNpm(dir: string, packages: string[]): void {
-  // CXXFLAGS=-std=c++20 is required on macOS with Node ≥ v22 whose v8 headers mandate C++20.
-  const env = { ...process.env, CXXFLAGS: "-std=c++20" };
+  const env = buildEnv();
   if (which("bun")) {
     runSync("bun", ["add", "--cwd", dir, ...packages], env);
   } else if (which("npm")) {
@@ -61,6 +60,23 @@ function runNpm(dir: string, packages: string[]): void {
   } else {
     throw new Error("Neither bun nor npm found on PATH");
   }
+}
+
+/**
+ * Build environment for native addon compilation.
+ * Prefer zig cc/c++ — ships a full LLVM toolchain, supports C++20 out of the box,
+ * and avoids macOS Xcode toolchain version mismatches.
+ * Fall back to system compiler with explicit -std=c++20 (required by Node ≥ v22 v8 headers).
+ */
+function buildEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  if (which("zig")) {
+    env.CC  = "zig cc";
+    env.CXX = "zig c++";
+  } else {
+    env.CXXFLAGS = ((env.CXXFLAGS ?? "") + " -std=c++20").trim();
+  }
+  return env;
 }
 
 function runSync(cmd: string, args: string[], env = process.env): void {
