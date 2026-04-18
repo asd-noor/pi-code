@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-04-18
+
+### Changed
+
+- **`parallel` extension — inlined tool dispatch**: Rewrote `extensions/_parallel.ts` → `extensions/parallel.ts`. The previous approach monkey-patched `pi.registerTool` to capture extension execute functions, but pi gives each extension its own `ExtensionAPI` instance so the map was always empty, causing `Unknown tool` errors for `ptc` and all other extension tools. Fixed by inlining the execute logic for all supported non-native tools directly in `parallel.ts`:
+  - `ptc` — inlined file write + `execFileAsync` (same logic as `ptc.ts`)
+  - `code_map_outline`, `code_map_symbol`, `code_map_diagnostics`, `code_map_impact` — inlined via `SocketClient`
+  - `memory_list`, `memory_get`, `memory_search`, `memory_validate_file` — read-only memory tools, inlined via `memory-md` CLI
+  - Memory write tools (`memory_new`, `memory_update`, `memory_delete`, `memory_create_file`, `memory_delete_file`) explicitly rejected with an error pointing to sequential use — concurrent writes can corrupt the memory file
+  - Agenda tools (`agenda_*`) intentionally not supported — sequential by nature
+- **`parallel` extension — underscore prefix removed**: `_parallel.ts` renamed to `parallel.ts`. The underscore was only needed to guarantee load-before-others for the monkey-patch; it is no longer required.
+
 ## [1.6.2] - 2026-04-17
 
 ### Changed
