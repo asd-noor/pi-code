@@ -179,9 +179,12 @@ On failure: fix the script and call ptc again — do not fall back to individual
         ? ["run", file, ...(params.args ?? [])]
         : [file,        ...(params.args ?? [])];
 
-      onUpdate?.({ content: [{ type: "text", text: `Invoking ptc: ${params.purpose}` }], details: undefined });
+      const purposeStyle = "\x1b[1;90m";
+      const resetStyle = "\x1b[0m";
+      const invocationLine = `${purposeStyle}Invoking ptc: ${params.purpose}${resetStyle}`;
+      onUpdate?.({ content: [{ type: "text", text: invocationLine }], details: undefined });
 
-      const purposeLine = `Purpose: ${params.purpose}`;
+      const purposeLine = `${purposeStyle}Purpose: ${params.purpose}${resetStyle}`;
 
       try {
         const result = await execFileAsync(cmd, args, {
