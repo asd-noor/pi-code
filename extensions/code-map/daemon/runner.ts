@@ -11,13 +11,16 @@
  *   2. Load grammars → create TreeSitterParser
  *   3. Detect ALL matching LSP servers for the project
  *   4. Collect files (all tree-sitter-supported extensions)
- *   5. buildNodes(files, tsParser)   ← tree-sitter fast parse, mtime-gated
- *   6. Start socket server + file watcher → write "ready"
- *   7. Background: init each LSP in parallel → open its files → wait diagnostics
+ *   5. If no tree-sitter: initialize each LSP now (blocking) so buildNodes
+ *      LSP fallback doesn't time out on uninitialized clients
+ *   6. buildNodes(files, tsParser)   ← tree-sitter fast parse, mtime-gated
+ *                                     (LSP documentSymbol fallback if no grammar)
+ *   7. Start socket server + file watcher → write "ready"
+ *   8. Background: init each LSP in parallel → open its files → wait diagnostics
  *      → snapshot merged diagnostics → mark each language ready → buildReverseRefs
  *
- * The "ready" status is written BEFORE LSP initializes.
- * LSP failure after step 6 is non-fatal — the tree-sitter index stays available.
+ * The "ready" status is written BEFORE LSP background work completes.
+ * LSP failure after step 7 is non-fatal — the tree-sitter index stays available.
  */
 
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
@@ -190,7 +193,23 @@ async function main() {
   const indexer = new Indexer(lspClients, db, rootPath, ALL_EXTENSIONS, log);
   if (tsParser) indexer.tsParser = tsParser;
 
-  // ── 5. Collect files + build node graph (incremental via mtime) ───────────
+  // ── 5. If no tree-sitter: initialize LSPs now so buildNodes fallback works ─
+
+  if (!tsParser && uniqueClients.length > 0) {
+    log("tree-sitter unavailable — initializing LSPs before indexing…");
+    await Promise.all(
+      uniqueClients.map(async ({ client, def }) => {
+        try {
+          await client.initialize();
+          log(`LSP early-init done [${def.languageId}]`);
+        } catch (err) {
+          log(`LSP early-init failed [${def.languageId}]: ${err}`);
+        }
+      }),
+    );
+  }
+
+  // ── 6. Collect files + build node graph (incremental via mtime) ───────────
 
   writeFileSync(statusFile, "indexing", "utf8");
 
@@ -199,7 +218,7 @@ async function main() {
 
   await indexer.buildNodes(files, tsParser);
 
-  // ── 6. Start socket server + file watcher → write "ready" ─────────────────
+  // ── 7. Start socket server + file watcher → write "ready" ─────────────────
 
   const watcher = new FileWatcher(rootPath, [...ALL_EXTENSIONS], async (changedFile) => {
     writeFileSync(statusFile, "indexing", "utf8");
@@ -218,7 +237,7 @@ async function main() {
   writeFileSync(statusFile, "ready", "utf8");
   log(`ready — ${nodes} symbols indexed, listening on ${sockFile}`);
 
-  // ── 7. Background: init each LSP → diagnostics → reverse refs ────────────
+  // ── 8. Background: init each LSP → diagnostics → reverse refs ────────────
 
   void (async () => {
     if (uniqueClients.length === 0) {

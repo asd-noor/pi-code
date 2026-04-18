@@ -38,6 +38,8 @@ export class LspClient extends EventEmitter {
   /** Serializes heavy requests (workspace/symbol, references) to avoid LSP server starvation */
   private requestQueue: Promise<unknown> = Promise.resolve();
 
+  private initialized = false;
+
   constructor(opts: LspClientOptions) {
     super();
     this.opts = opts;
@@ -115,6 +117,8 @@ export class LspClient extends EventEmitter {
   // ── Lifecycle ─────────────────────────────────────────────────────────
 
   async initialize(): Promise<void> {
+    if (this.initialized) return;
+    this.initialized = true;
     const rootUri = pathToFileURL(this.opts.rootPath).href;
     await this.request("initialize", {
       processId: process.pid,

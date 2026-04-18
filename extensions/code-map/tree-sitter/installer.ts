@@ -18,7 +18,10 @@ export { getTreeSitterDir };
 
 export function isTreeSitterInstalled(): boolean {
   const dir = getTreeSitterDir();
-  return existsSync(join(dir, "node_modules", "tree-sitter"));
+  // Check for the compiled native addon — not just the package directory.
+  // If the build failed (e.g. missing CXXFLAGS), the .node file won't exist
+  // and we must retry installation.
+  return existsSync(join(dir, "node_modules", "tree-sitter", "build", "Release", "tree_sitter_runtime_binding.node"));
 }
 
 export async function installTreeSitter(log: (msg: string) => void): Promise<void> {
@@ -49,17 +52,19 @@ function which(cmd: string): string | null {
 }
 
 function runNpm(dir: string, packages: string[]): void {
+  // CXXFLAGS=-std=c++20 is required on macOS with Node ≥ v22 whose v8 headers mandate C++20.
+  const env = { ...process.env, CXXFLAGS: "-std=c++20" };
   if (which("bun")) {
-    runSync("bun", ["add", "--cwd", dir, ...packages]);
+    runSync("bun", ["add", "--cwd", dir, ...packages], env);
   } else if (which("npm")) {
-    runSync("npm", ["install", "--prefix", dir, "--legacy-peer-deps", ...packages]);
+    runSync("npm", ["install", "--prefix", dir, "--legacy-peer-deps", ...packages], env);
   } else {
     throw new Error("Neither bun nor npm found on PATH");
   }
 }
 
-function runSync(cmd: string, args: string[]): void {
-  const result = spawnSync(cmd, args, { stdio: "inherit", env: process.env });
+function runSync(cmd: string, args: string[], env = process.env): void {
+  const result = spawnSync(cmd, args, { stdio: "inherit", env });
   if (result.status !== 0) {
     throw new Error(`Command failed (exit ${result.status}): ${cmd} ${args.join(" ")}`);
   }
