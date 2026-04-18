@@ -18,12 +18,10 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { exec, execFile } from "node:child_process";
+import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
-const execAsync     = promisify(exec);
-const execFileAsync = promisify(execFile);
-const SANDBOX_DIR   = "/tmp/pi-sandbox";
+const execAsync = promisify(exec);
 
 // ── Extension tool registry ──────────────────────────────────────────────────
 
@@ -42,7 +40,7 @@ type ToolExecuteFn = (
 const extensionTools = new Map<string, ToolExecuteFn>();
 
 /** Tools implemented natively in this file — never delegated to extensionTools. */
-const NATIVE_TOOLS = new Set(["read", "bash", "write", "edit", "ptc", "parallel"]);
+const NATIVE_TOOLS = new Set(["read", "bash", "write", "edit", "parallel"]);
 
 // ── Call spec schemas ────────────────────────────────────────────────────────
 
@@ -79,16 +77,6 @@ const EditCall = Type.Object({
   }),
 });
 
-const PtcCall = Type.Object({
-  tool:   Type.Literal("ptc"),
-  type:   StringEnum(["python", "bash"] as const, {
-    description: "Script type. Prefer python unless the task is pure shell.",
-  }),
-  script: Type.String({ description: "Full script content. Python scripts must include a PEP 723 metadata block." }),
-  args:   Type.Optional(Type.Array(Type.String(), { description: "Command-line arguments passed to the script." })),
-  stdin:  Type.Optional(Type.String({ description: "Data to pipe to the script's stdin." })),
-});
-
 /**
  * Catch-all for any extension-registered tool.
  * The `tool` field names the tool; all other fields are passed as params.
@@ -106,7 +94,7 @@ const ExtCall = Type.Object(
   { additionalProperties: true },
 );
 
-const CallSpec = Type.Union([ReadCall, BashCall, WriteCall, EditCall, PtcCall, ExtCall]);
+const CallSpec = Type.Union([ReadCall, BashCall, WriteCall, EditCall, ExtCall]);
 
 // ── Operation implementations ────────────────────────────────────────────────
 
@@ -147,27 +135,6 @@ function opEdit(path: string, edits: Array<{ oldText: string; newText: string }>
   return `Edited ${edits.length} replacement(s) in ${fullPath}`;
 }
 
-async function opPtc(
-  type: "python" | "bash",
-  script: string,
-  callKey: string,
-  args?: string[],
-  stdin?: string,
-): Promise<string> {
-  mkdirSync(SANDBOX_DIR, { recursive: true });
-  const ext  = type === "python" ? "py" : "sh";
-  const file = `${SANDBOX_DIR}/${callKey}.${ext}`;
-  writeFileSync(file, script, { mode: 0o755 });
-  const cmd  = type === "python" ? "uv" : "bash";
-  const argv = type === "python" ? ["run", file, ...(args ?? [])] : [file, ...(args ?? [])];
-  const result = await execFileAsync(cmd, argv, {
-    input:     stdin,
-    timeout:   120_000,
-    maxBuffer: 10 * 1024 * 1024,
-  } as any);
-  return [result.stdout, result.stderr].filter(Boolean).join("\n").trim() || "(no output)";
-}
-
 async function opExtension(
   toolName: string,
   call: Record<string, any>,
@@ -203,8 +170,7 @@ Reach for \`parallel\` when you have 2+ independent operations whose results don
 combined or processed — just returned together. Supported ops:
 
 - \`read\` / \`bash\` / \`write\` / \`edit\` — native ops, run directly
-- \`ptc\` — run a Python or bash script as one slot in the parallel fan-out (same semantics as the \`ptc\` tool)
-- Any extension-provided tool — pass \`tool: "<name>"\` plus the tool's normal args as additional fields
+- Any extension-provided tool (including \`ptc\`) — pass \`tool: "<name>"\` plus the tool's normal args as additional fields
 
 Typical pattern: fan out several \`read\` or \`ptc\` calls that are each independent, get all
 results back in one shot, then decide what to do.
@@ -236,9 +202,9 @@ export default function (pi: ExtensionAPI) {
     name:  "parallel",
     label: "Parallel Calls",
     description:
-      "Fan out multiple operations (read, bash, write, edit, ptc) in one tool call. All run concurrently; results are returned together. Use when calls are independent of each other.",
+      "Fan out multiple operations (read, bash, write, edit, or any extension-provided tool) in one tool call. All run concurrently; results are returned together. Use when calls are independent of each other.",
     promptSnippet:
-      "Run multiple independent read/bash/write/edit/ptc operations concurrently in a single call.",
+      "Run multiple independent read/bash/write/edit/ptc/extension-tool operations concurrently in a single call.",
     parameters: Type.Object({
       calls: Type.Array(CallSpec, {
         description:
@@ -264,7 +230,6 @@ export default function (pi: ExtensionAPI) {
               case "bash":  output = await opBash(call.command, call.timeout, call.stdin); break;
               case "write": output = opWrite(call.path, call.content, ctx.cwd); break;
               case "edit":  output = opEdit(call.path, call.edits, ctx.cwd); break;
-              case "ptc":   output = await opPtc(call.type, call.script, `${toolCallId.slice(0, 8)}-${index}`, call.args, call.stdin); break;
               default:      output = await opExtension(call.tool, call, toolCallId, index, signal, ctx); break;
             }
             return { tool: call.tool, index, ok: true, output };
