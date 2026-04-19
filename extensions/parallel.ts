@@ -199,24 +199,26 @@ async function opPtc(
 
 async function opCodeMap(toolName: string, params: Record<string, any>, cwd: string): Promise<string> {
   const client = new SocketClient(cwd);
+  const lang   = params.language ?? "";
   switch (toolName) {
     case "code_map_outline": {
-      const rows = await client.query<any[]>("outline", { file: params.file });
+      const rows = await client.query<any[]>("outline", { file: params.file, language: lang });
       return rows.length ? JSON.stringify(rows, null, 2) : "(no symbols found)";
     }
     case "code_map_symbol": {
-      const rows = await client.query<any[]>("symbol", { name: params.name, withSource: params.source ?? false });
+      const rows = await client.query<any[]>("symbol", { name: params.name, withSource: params.source ?? false, language: lang });
       return rows.length ? JSON.stringify(rows, null, 2) : `(no symbol found: ${params.name})`;
     }
     case "code_map_diagnostics": {
       const rows = await client.query<any[]>("diagnostics", {
         ...(params.file ? { file: params.file } : {}),
+        language: lang,
         severity: params.severity ?? 0,
       });
       return rows.length ? JSON.stringify(rows, null, 2) : "(no diagnostics)";
     }
     case "code_map_impact": {
-      const rows = await client.query<any[]>("impact", { name: params.name });
+      const rows = await client.query<any[]>("impact", { name: params.name, language: lang });
       return rows.length ? JSON.stringify(rows, null, 2) : `(no callers found for: ${params.name})`;
     }
     default:
