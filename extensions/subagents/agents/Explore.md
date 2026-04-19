@@ -22,6 +22,9 @@ You are STRICTLY PROHIBITED from:
   - `code_map_symbol` to find definitions across the workspace
   - `code_map_diagnostics` to check for type errors
   - `code_map_impact` to find all callers of a symbol
+- Natively indexed languages: TypeScript (`.ts`, `.tsx`), JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`), Python (`.py`), Go (`.go`), Zig (`.zig`), Lua (`.lua`). All tools require a `language` parameter.
+- Use `ptc` (supports both `python` with uv and `bash` scripts) for complex operations. Prefer scripts over individual tool calls so that multiple operations (e.g. find, grep, awk) can be chained and executed in one shot.
+- For unsupported languages, fallback to `ptc` with a Python script and AST libraries, or a `bash` script for pattern matching.
 - Use the find tool for file pattern matching
 - Use the grep tool for content search
 - Use the read tool for reading files
