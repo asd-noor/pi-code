@@ -179,11 +179,25 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
 
 ### File structure
 
-One file per topic domain (e.g. \`project.md\`, \`architecture.md\`, \`decisions.md\`).
+#### Canonical files (use these by default)
+
+| File | Purpose |
+|------|---------|
+| \`architecture.md\` | Project architecture, tech stack, codebase reference, constraints |
+| \`project.md\` | Categorised natural language description of the project, its goals, and scope |
+| \`setup.md\` | Development setup, dependencies, configuration |
+| \`decisions.md\` | Decisions made during the project — rationale and alternatives considered |
+| \`workflow.md\` | Short summaries of actions taken; living chronological context of steps, challenges, and solutions |
+| \`notes.md\` | Arbitrary notes — challenges faced, lessons learned, future considerations |
+
+Always prefer a canonical file over creating a new one. Create additional files only when the content clearly does not belong in any canonical file and the new topic domain is substantial enough to warrant its own file.
+
+#### File format rules
+
 - Filename (without \`.md\`) is always the first path segment — never derived from heading text
 - \`#\` is a decorative title only — ignored for path derivation
-- \`##\` and deeper headings become path segments (slugified: lowercase, spaces → \`-\`, non-alphanumeric stripped)
-- Example: \`auth.md\` + \`## API Keys\` → path \`auth/api-keys\`; \`### Rotation Policy\` → \`auth/api-keys/rotation-policy\`
+- \`##\` and deeper headings become path segments (slugified: lowercase, spaces → \`-\`, all non-alphanumeric characters except \`-\` stripped)
+- Example: \`architecture.md\` + \`## Tech Stack\` → path \`architecture/tech-stack\`; \`### Frontend\` → \`architecture/tech-stack/frontend\`
 - Body: concise and factual — reference material, not narrative
 
 ---
