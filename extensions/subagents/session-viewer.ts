@@ -217,10 +217,10 @@ export class SessionViewer {
       const thinking = turn.thinking?.trim();
       if (thinking) {
         const thinkWidth = Math.max(10, width - 6);
-        lines.push(`    ${t.fg("dim", "⟨thinking⟩")}`);
+        lines.push(truncateToWidth(`    ${t.fg("dim", "⟨thinking⟩")}`, width));
         const wrappedThinking = wrapTextWithAnsi(thinking, thinkWidth);
         for (const line of wrappedThinking) {
-          lines.push(`      ${t.fg("dim", line)}`);
+          lines.push(truncateToWidth(`      ${t.fg("dim", line)}`, width));
         }
         lines.push("");
       }
@@ -231,7 +231,7 @@ export class SessionViewer {
         const textWidth = Math.max(10, width - 4);
         const wrapped   = wrapTextWithAnsi(text, textWidth);
         for (const line of wrapped) {
-          lines.push(`    ${line}`);
+          lines.push(truncateToWidth(`    ${line}`, width));
         }
       }
 
