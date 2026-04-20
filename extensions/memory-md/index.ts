@@ -183,12 +183,12 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
 
 | File | Purpose |
 |------|---------|
-| \`architecture.md\` | Project architecture, tech stack, codebase reference, constraints |
-| \`project.md\` | Categorised natural language description of the project, its goals, and scope |
-| \`setup.md\` | Development setup, dependencies, configuration |
-| \`decisions.md\` | Decisions made during the project — rationale and alternatives considered |
-| \`workflow.md\` | Short summaries of actions taken; living chronological context of steps, challenges, and solutions |
-| \`notes.md\` | Arbitrary notes — challenges faced, lessons learned, future considerations |
+| \`architecture.md\` | Project architecture, tech stack, codebase reference, constraints. |
+| \`project.md\` | Categorised natural language description of the project, its goals, and scope. Technical jargons go to architecture. |
+| \`setup.md\` | Development setup, dependencies, configuration. |
+| \`decisions.md\` | Decisions made during the project — rationale and alternatives considered. |
+| \`workflow.md\` | Short summaries of actions taken; living chronological context of steps, challenges, and solutions. |
+| \`notes.md\` | Arbitrary notes — challenges faced, lessons learned, future considerations. |
 
 Always prefer a canonical file over creating a new one. Create additional files only when the content clearly does not belong in any canonical file and the new topic domain is substantial enough to warrant its own file.
 

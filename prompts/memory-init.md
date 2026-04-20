@@ -14,11 +14,11 @@ You are initializing the memory system for this project. Your task is to:
 2. **If initializing (no `.md` files found)**:
 
 Analyze the current project directory and extract key information:
-   - **Project Overview**: README, package.json, purpose, goals, scope
-   - **Architecture**: Directory structure, main entry points, key modules/components, tech stack, constraints
-   - **Dependencies**: Notable libraries, external services, APIs
-   - **Configuration**: Environment setup, build process, tooling
-   - **Development Workflow**: How to run, test, build, deploy
+   - **Project Overview**: README, package.json, purpose, goals, scope in natural language; technical jargons go to architecture file.
+   - **Architecture**: Directory structure, main entry points, key modules/components, tech stack, constraints.
+   - **Dependencies**: Notable libraries, external services, APIs.
+   - **Configuration**: Environment setup, build process, tooling.
+   - **Development Workflow**: How to run, test, build, deploy.
 
 3. **Store memories using the canonical files**:
 
