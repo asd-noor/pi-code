@@ -74,6 +74,8 @@ const ALL_EXTENSIONS = new Set(Object.keys(EXT_TO_LANG));
 
 // ── Shutdown ──────────────────────────────────────────────────────────────────
 
+let shuttingDown = false;
+
 async function shutdown(
   uniqueClients: Array<{ client: LspClient; def: LspServerDef }>,
   server: DaemonServer,
@@ -81,6 +83,8 @@ async function shutdown(
   indexer: Indexer,
   db: CodeMapDB,
 ) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   log("shutting down");
   indexer.abort();
   watcher.stop();
@@ -284,10 +288,13 @@ async function main() {
 
   process.on("SIGTERM", () => shutdown(uniqueClients, server, watcher, indexer, db));
   process.on("SIGINT",  () => shutdown(uniqueClients, server, watcher, indexer, db));
+  process.on("SIGHUP",  () => shutdown(uniqueClients, server, watcher, indexer, db));
 }
 
 main().catch((err) => {
   log(`fatal: ${err}`);
   writeFileSync(statusFile, "error", "utf8");
+  try { unlinkSync(sockFile); } catch (_) {}
+  try { unlinkSync(pidFile); } catch (_) {}
   process.exit(1);
 });
