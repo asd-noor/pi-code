@@ -82,6 +82,8 @@ export interface TurnEntry {
   completedAt?: number;
   /** Accumulated assistant text for this turn. */
   text: string;
+  /** Accumulated thinking/reasoning text for this turn (only when thinking is enabled). */
+  thinking: string;
   toolCalls: ToolCallEntry[];
 }
 

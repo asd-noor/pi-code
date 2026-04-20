@@ -213,6 +213,18 @@ export class SessionViewer {
         }
       }
 
+      // Thinking block (dimmed, prefixed with ⟨thinking⟩)
+      const thinking = turn.thinking?.trim();
+      if (thinking) {
+        const thinkWidth = Math.max(10, width - 6);
+        lines.push(`    ${t.fg("dim", "⟨thinking⟩")}`);
+        const wrappedThinking = wrapTextWithAnsi(thinking, thinkWidth);
+        for (const line of wrappedThinking) {
+          lines.push(`      ${t.fg("dim", line)}`);
+        }
+        lines.push("");
+      }
+
       // Assistant text
       const text = turn.text.trim();
       if (text) {

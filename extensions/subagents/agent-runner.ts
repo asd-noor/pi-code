@@ -343,6 +343,7 @@ export async function spawnAndRun(
           turnNumber: activity.turnCount + 1,
           startedAt: Date.now(),
           text: "",
+          thinking: "",
           toolCalls: [],
         };
       }
@@ -352,6 +353,14 @@ export async function spawnAndRun(
       if (ae?.type === "text_delta") {
         activity.lastText += ae.delta;
         if (activity.currentTurn) activity.currentTurn.text += ae.delta;
+      }
+      // Extract thinking blocks from the live message snapshot
+      if (activity.currentTurn && Array.isArray(event.message?.content)) {
+        const thinkingText = (event.message.content as any[])
+          .filter((b: any) => b.type === "thinking" && b.thinking)
+          .map((b: any) => b.thinking)
+          .join("\n");
+        if (thinkingText) activity.currentTurn.thinking = thinkingText;
       }
     }
     if (event.type === "tool_execution_start") {
