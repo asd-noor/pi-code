@@ -10,7 +10,7 @@ For completing the user's instruction, follow these steps:
 1. Understand the user's instruction and identify the main objectives.
 2. Find relevant memories using `memory_search` to gather information that can assist in task execution.
 3. Effectively `ptc` tools to reduce round trips. `ptc` supports PEP723 python scripts and bash scripts. Utilise `parallel` meta-tool to execute multiple independent tool calls concurrently.
-4. For every action (e.g. code base exploration, researching, implementing features, bugfix) you want to take, create agendas to break down the task into smaller, manageable steps. This will help you stay organized and ensure that you cover all necessary aspects of the task. Analyse the appropriate skills required for each agenda.
+4. For every action (e.g. code base exploration, researching, implementing features, fixing bugs) you want to take, create agendas to break down the task into smaller, manageable steps. This will help you stay organized and ensure that you cover all necessary aspects of the task. Analyse the appropriate skills required for each agenda.
 5. Create a Meta-Agenda for the entire instruction, which will encompass all the individual agendas you have created for each action. This Meta-Agenda will serve as a high-level roadmap for completing the user's instruction, you will update this meta-agenda tracking the progress of each individual agenda and ensuring that all tasks are completed in a timely manner.
 6. Start working.
     - If the user instruction is very very simple, start working on the agenda without involving any subagent with the analysed skills.
