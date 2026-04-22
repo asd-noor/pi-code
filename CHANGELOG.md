@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **code-map — `/code-map` command argument completions**: The `/code-map` command now provides tab-completion for its sub-commands (`status`, `restart`, `logs`) via `getArgumentCompletions`. Typing `/code-map <Tab>` presents matching suggestions; partial prefixes (e.g. `re`) narrow the list.
+- add mcporter skill
 
 ## [1.8.6] - 2026-04-22
 
