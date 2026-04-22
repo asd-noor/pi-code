@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.7] - 2026-04-22
+
+### Added
+
+- **code-map — `/code-map` command argument completions**: The `/code-map` command now provides tab-completion for its sub-commands (`status`, `restart`, `logs`) via `getArgumentCompletions`. Typing `/code-map <Tab>` presents matching suggestions; partial prefixes (e.g. `re`) narrow the list.
+
+## [1.8.6] - 2026-04-22
+
+### Fixed
+
+- **code-map — `parallel` slots pass empty `language`**: `opCodeMap()` in `extensions/parallel.ts` destructured `language` from `params` but never forwarded it to `client.query()`. All four code-map tools (`outline`, `symbol`, `diagnostics`, `impact`) received `language: ""`, triggering `validateLanguage()` errors in the daemon. Fixed by extracting `const lang = params.language ?? ""` and including `language: lang` in every `client.query()` call.
+
 ## [1.8.3] - 2026-04-19
 
 ### Changed
