@@ -209,6 +209,13 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
 
   pi.registerCommand("code-map", {
     description: "code-map daemon management: status | restart | logs",
+    getArgumentCompletions: (prefix: string) => {
+      const subs = ["status", "restart", "logs"];
+      const matches = subs
+        .filter((s) => s.startsWith(prefix.toLowerCase()))
+        .map((s) => ({ value: s, label: s }));
+      return matches.length > 0 ? matches : null;
+    },
     handler: async (args, ctx) => {
       uiCtx = ctx.ui;
       const sub = (args ?? "").trim().toLowerCase();
