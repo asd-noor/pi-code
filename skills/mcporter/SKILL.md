@@ -1,5 +1,5 @@
 ---
-name: pi-mcporter
+name: mcporter
 description: >
   Use MCP (Model Context Protocol) tools through a single, stable proxy tool. Acts as a thin bridge to search, describe, and call tools from external MCP servers without polluting the primary context window.
 ---
