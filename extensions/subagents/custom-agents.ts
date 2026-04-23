@@ -20,9 +20,10 @@ const ALL_BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"
  * Load custom agents from global and project directories.
  * Returns a Map keyed by agent name; project overrides global.
  */
-export function loadCustomAgents(cwd: string): Map<string, AgentConfig> {
+export function loadCustomAgents(cwd?: string): Map<string, AgentConfig> {
+  const baseCwd = typeof cwd === "string" && cwd ? cwd : process.cwd();
   const globalDir = join(homedir(), ".pi", "agent", "agents");
-  const projectDir = join(cwd, ".pi", "agents");
+  const projectDir = join(baseCwd, ".pi", "agents");
 
   const agents = new Map<string, AgentConfig>();
   loadFromDir(globalDir, agents, "global");   // lower priority

@@ -100,6 +100,10 @@ function formatDuration(startedAt: number, completedAt?: number): string {
 export default function (pi: ExtensionAPI) {
   let currentCwd = process.cwd();
 
+  function resolveCwd(ctx?: { cwd?: string }): string {
+    return typeof ctx?.cwd === "string" && ctx.cwd ? ctx.cwd : currentCwd;
+  }
+
   // Seed bundled agents and build registry on load
   seedBundledAgents();
   rebuildRegistry(currentCwd);
@@ -150,8 +154,8 @@ export default function (pi: ExtensionAPI) {
   // ── Events ──────────────────────────────────────────────────────────────────
 
   pi.on("session_start", async (event, ctx) => {
-    currentCwd = ctx.cwd;
-    rebuildRegistry(ctx.cwd);
+    currentCwd = resolveCwd(ctx);
+    rebuildRegistry(currentCwd);
     // Clear completed records on session switch (replaces the old session_switch event)
     if (event.reason === "new" || event.reason === "resume") {
       manager.clearCompleted();
@@ -423,7 +427,8 @@ Guidelines:
     }),
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      rebuildRegistry(ctx.cwd);
+      currentCwd = resolveCwd(ctx);
+      rebuildRegistry(currentCwd);
       widget.setUICtx(ctx.ui);
 
       const rawType = params.subagent_type as SubagentType;
@@ -635,7 +640,8 @@ Guidelines:
   }
 
   async function showAgentsMenu(ctx: any): Promise<void> {
-    rebuildRegistry(ctx.cwd);
+    currentCwd = resolveCwd(ctx);
+    rebuildRegistry(currentCwd);
 
     const records = manager.listRecords();
     const running = records.filter((r) => r.status === "running" || r.status === "queued");
@@ -788,21 +794,21 @@ Guidelines:
       const edited  = await ctx.ui.editor(`Edit ${name}`, current);
       if (edited !== undefined && edited !== current) {
         writeFileSync(file.path, edited, "utf-8");
-        rebuildRegistry(ctx.cwd);
+        rebuildRegistry(resolveCwd(ctx));
         ctx.ui.notify(`Saved ${file.path}`, "info");
       }
     } else if (choice === "Delete" && file) {
       const ok = await ctx.ui.confirm("Delete subagent", `Delete ${name} from ${file.location} (${file.path})?`);
       if (ok) {
         unlinkSync(file.path);
-        rebuildRegistry(ctx.cwd);
+        rebuildRegistry(resolveCwd(ctx));
         ctx.ui.notify(`Deleted ${file.path}`, "info");
       }
     } else if (choice === "Reset to default" && file) {
       const ok = await ctx.ui.confirm("Reset to default", `Remove override at ${file.path} and restore built-in defaults?`);
       if (ok) {
         unlinkSync(file.path);
-        rebuildRegistry(ctx.cwd);
+        rebuildRegistry(resolveCwd(ctx));
         ctx.ui.notify(`Restored default ${name}`, "info");
       }
     } else if (choice === "Eject (export as .md)") {
@@ -842,7 +848,7 @@ Guidelines:
 
     const content = `---\n${fm.join("\n")}\n---\n\n${cfg.systemPrompt}\n`;
     writeFileSync(targetPath, content, "utf-8");
-    rebuildRegistry(ctx.cwd);
+    rebuildRegistry(resolveCwd(ctx));
     ctx.ui.notify(`Ejected ${name} to ${targetPath}`, "info");
   }
 
@@ -855,7 +861,7 @@ Guidelines:
         return;
       }
       writeFileSync(file.path, content.replace(/^---\n/, "---\nenabled: false\n"), "utf-8");
-      rebuildRegistry(ctx.cwd);
+      rebuildRegistry(resolveCwd(ctx));
       ctx.ui.notify(`Disabled ${name}`, "info");
       return;
     }
@@ -867,7 +873,7 @@ Guidelines:
     const dir = loc.startsWith("Project") ? agentsDir("project") : agentsDir("global");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${name}.md`), "---\nenabled: false\n---\n", "utf-8");
-    rebuildRegistry(ctx.cwd);
+    rebuildRegistry(resolveCwd(ctx));
     ctx.ui.notify(`Disabled ${name}`, "info");
   }
 
@@ -878,11 +884,11 @@ Guidelines:
     const updated = content.replace(/^(---\n)enabled: false\n/, "$1");
     if (updated.trim() === "---\n---" || updated.trim() === "---\n---\n") {
       unlinkSync(file.path);
-      rebuildRegistry(ctx.cwd);
+      rebuildRegistry(resolveCwd(ctx));
       ctx.ui.notify(`Enabled ${name} (removed stub)`, "info");
     } else {
       writeFileSync(file.path, updated, "utf-8");
-      rebuildRegistry(ctx.cwd);
+      rebuildRegistry(resolveCwd(ctx));
       ctx.ui.notify(`Enabled ${name}`, "info");
     }
   }
@@ -985,7 +991,7 @@ Guidelines:
     }
 
     writeFileSync(targetPath, content, "utf-8");
-    rebuildRegistry(ctx.cwd);
+    rebuildRegistry(resolveCwd(ctx));
     ctx.ui.notify(`Created ${targetPath}`, "info");
   }
 
@@ -1065,7 +1071,8 @@ Guidelines:
       const agentName = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
       const task = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1).trim();
 
-      rebuildRegistry(ctx.cwd);
+      currentCwd = resolveCwd(ctx);
+      rebuildRegistry(currentCwd);
       const agentConfig = getConfig(agentName);
 
       if (!agentConfig) {

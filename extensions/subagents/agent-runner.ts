@@ -254,7 +254,7 @@ export async function spawnAndRun(
   prompt: string,
   options: SpawnOptions,
 ): Promise<SpawnResult> {
-  const cwd = ctx.cwd as string;
+  const cwd = typeof ctx?.cwd === "string" && ctx.cwd ? ctx.cwd : process.cwd();
   const { model, isolated, inheritContext, thinkingLevel, signal, activity } = options;
 
   const noExtensions = isolated || agentConfig.extensions === false;
