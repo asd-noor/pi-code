@@ -1,7 +1,5 @@
 # pi-code
 
-**Version 1.7.0**
-
 A curated pi package bundling custom extensions, skills, and system instructions for an enhanced coding experience with the Pi coding agent.
 
 ## Overview
