@@ -19,6 +19,7 @@ import {
   createLsTool,
   createReadTool,
   createWriteTool,
+  getAgentDir,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentActivity, AgentConfig, ThinkingLevel } from "./types.ts";
 import { buildSubagentAgendaInstruction } from "../agenda/instruction.ts";
@@ -267,10 +268,12 @@ export async function spawnAndRun(
   if (options.agendaId != null) {
     systemPrompt += "\n\n" + buildSubagentAgendaInstruction(options.agendaId);
   }
+  const agentDirPath = getAgentDir();
   const tools = buildTools(agentConfig, cwd);
 
   const loader = new DefaultResourceLoader({
     cwd,
+    agentDir: agentDirPath,
     noExtensions,
     noSkills: true,
     noPromptTemplates: true,
@@ -284,8 +287,9 @@ export async function spawnAndRun(
 
   const sessionOpts: any = {
     cwd,
+    agentDir: agentDirPath,
     sessionManager: SessionManager.inMemory(cwd),
-    settingsManager: SettingsManager.create(),
+    settingsManager: SettingsManager.create(cwd, agentDirPath),
     modelRegistry: ctx.modelRegistry,
     model: resolvedModel,
     tools,
