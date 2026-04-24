@@ -135,6 +135,7 @@ The following binaries must be in your `PATH`:
 |---|---|---|
 | `memory-md` | Memory daemon for persistent storage | memory-md extension |
 | `mcporter` | MCP bridge for tool access | doc-library and web-scout skills |
+| `uv` | Executes Python ptc scripts via `#!/usr/bin/env -S uv run --script` | ptc extension and parallel ptc slots |
 
 ### MCP Configuration
 
@@ -174,12 +175,18 @@ See the [doc-library](./docs/doc-library.md) and [web-scout](./docs/web-scout.md
 
 - Fan out 2+ independent operations in one call
 - Supports: read, bash, write, edit, ptc (scripts)
+- Use raw bash slots only for one-shot commands; otherwise prefer a script through ptc
 - All operations run concurrently via Promise.all
 - Mutation-safe edit queue for same-file writes
 
 ### Programmatic Tool Calling (ptc)
 
 - Run Python or bash scripts in a single tool call
+- Prefer ptc scripts by default; even for shell-heavy work, prefer a bash script through ptc instead of multiple raw bash calls
+- Use raw bash only when the command is genuinely one-shot
+- Prefer Python + uv by default
+- Uv-backed Python scripts execute directly by file path via `#!/usr/bin/env -S uv run --script`
+- uv is preferred because it provides robust dependency management and cached reruns are extremely fast
 - PEP 723 inline dependency management for Python
 - Direct MCP access via `mcporter` binary from within scripts
 - Direct code-map daemon access via Unix socket
