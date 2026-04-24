@@ -20,7 +20,7 @@ If meaningful ambiguity remains after one round, ask a follow-up rather than gue
 In non-interactive mode (print / JSON / RPC / SDK): proceed with the safest reasonable default
 and state assumptions explicitly.
 
-### Skill routing
+### Skill Routing
 
 Before any non-trivial action, run a deterministic skill-routing pass:
 
@@ -32,6 +32,8 @@ Before any non-trivial action, run a deterministic skill-routing pass:
 **Hard triggers (always activate the named skill):**
 - Task requires library API references, code examples, or tool docs → activate \`doc-library\` (never hallucinate APIs)
 - Task requires real-time web data, news, or research → activate \`web-scout\`
+- Task requires MCP server discovery, MCP tool schema inspection, or MCP tool invocation → activate \`mcporter\`
+- Task may benefit from external integrations, hosted services, remote systems, or tool ecosystems not yet identified → activate \`mcporter\` to discover whether an MCP server/tool can materially help before proceeding
 
 ### Library versions
 
@@ -57,8 +59,8 @@ the independence condition holds.
 
 ## MCP Policy
 
-- Prefer native \`mcporter\` tool calls for MCP access during normal agent execution.
-- In scripted workflows, call \`mcporter\` CLI directly from the script to keep retrieval consolidated and token-efficient.
+- During normal agent execution, prefer native \`mcporter\` tool calls for MCP access.
+- In scripted workflows, call the \`mcporter\` CLI directly from the script to keep retrieval consolidated and token-efficient.
 
 ### Change safety
 
