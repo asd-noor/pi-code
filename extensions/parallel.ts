@@ -84,7 +84,7 @@ const ReadCall = Type.Object({
 
 const BashCall = Type.Object({
   tool:    Type.Literal("bash"),
-  command: Type.String({ description: "Bash command to execute." }),
+  command: Type.String({ description: "One-shot bash command to execute. For non-trivial shell work, prefer a bash script through ptc instead." }),
   timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default: 120)." })),
   stdin:   Type.Optional(Type.String({ description: "Data to pipe to stdin." })),
 });
@@ -350,16 +350,20 @@ const BASE_INSTRUCTION = `
 
 \`parallel\` is a meta tool. \`ptc\` remains the default tool.
 
-Reach for \`parallel\` when you have 2+ independent operations to fan out in one call. Results come
-back together, and you can combine or process them after the call. For Python \`ptc\` slots, require
-\`#!/usr/bin/env -S uv run --script\` at the top of the script. Supported ops:
+Prefer creating scripts and executing them with \`ptc\` — including bash scripts for shell-heavy work — whenever the task would otherwise take multiple tool calls. Use a raw \`bash\` slot only when that command is genuinely one-shot.
 
-- Common native ops: \`read\` / \`bash\` / \`write\` / \`edit\`
+Reach for \`parallel\` when you have 2+ independent operations to fan out in one call. Results come
+back together, and you can combine or process them after the call. For Python \`ptc\` slots, prefer
+Python + uv by default and only choose bash when the task is clearly pure shell; require
+\`#!/usr/bin/env -S uv run --script\` at the top of Python scripts. Supported ops:
+
+- Common native ops: \`read\` / \`bash\` / \`write\` / \`edit\` (use raw \`bash\` only for one-shot commands)
 - Any supported extension tool (including \`ptc\`) — pass \`tool: "<name>"\` plus the tool's normal args as additional fields
 - Python \`ptc\` slots execute the saved script file directly so the shebang triggers \`uv run --script\`
+- Prefer uv-backed Python scripts because uv is robust at dependency management and its cache makes repeated runs very fast
 
 Typical pattern: fan out several independent \`read\`, \`ptc\`, or other extension-tool calls, get all
-results back in one shot, then decide what to do.
+results back in one shot, then decide what to do. Use a raw \`bash\` slot only for a one-shot shell command; otherwise prefer a bash script via \`ptc\`.
 
 ### edit safety
 \`parallel\`'s \`edit\` op does **not** use the native mutation queue. Do not include two \`edit\`
@@ -373,9 +377,9 @@ export default function (pi: ExtensionAPI) {
     name:  "parallel",
     label: "Parallel Calls",
     description:
-      "Fan out multiple independent operations in one tool call. Common slots are read, bash, write, edit, and ptc; any supported extension tool can also be inlined. Python ptc scripts are executed directly by file path and must start with `#!/usr/bin/env -S uv run --script`. All calls run concurrently and results are returned together.",
+      "Fan out multiple independent operations in one tool call. Common slots are read, bash, write, edit, and ptc; any supported extension tool can also be inlined. Prefer ptc scripts by default — including bash scripts for shell-heavy work — and use a raw bash slot only when the command is genuinely one-shot. Prefer Python + uv for ptc scripts by default: uv-backed Python scripts are executed directly by file path, must start with `#!/usr/bin/env -S uv run --script`, and benefit from robust dependency management plus fast cached reruns. All calls run concurrently and results are returned together.",
     promptSnippet:
-      "Run multiple independent operations concurrently in a single call, including ptc slots and other supported extension tools. Python ptc scripts are executed directly by file path and must start with `#!/usr/bin/env -S uv run --script`.",
+      "Run multiple independent operations concurrently in a single call, including ptc slots and other supported extension tools. Prefer ptc scripts by default — including bash scripts for shell-heavy work — and use a raw bash slot only when the command is genuinely one-shot. Prefer Python + uv for ptc scripts by default. Uv-backed Python ptc scripts execute directly by file path and must start with `#!/usr/bin/env -S uv run --script`.",
     parameters: Type.Object({
       calls: Type.Array(CallSpec, {
         description:
