@@ -20,7 +20,7 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { exec, execFile } from "node:child_process";
+import { exec, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { SocketClient } from "./code-map/client.ts";
 
@@ -52,6 +52,25 @@ async function memRun(
   } catch (err: any) {
     return { stdout: err.stdout ?? "", stderr: err.stderr ?? err.message, ok: false };
   }
+}
+
+function memRunWithInput(memDir: string, args: string[], body: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("memory-md", args, {
+      env: { ...process.env, MEMORY_MD_DIR: memDir },
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+    child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+    child.on("close", (code: number | null) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`Command failed: memory-md ${args.join(" ")}\n${stderr || stdout}`));
+    });
+    child.on("error", reject);
+    child.stdin.write(body);
+    child.stdin.end();
+  });
 }
 
 // ── Call spec schemas ────────────────────────────────────────────────────────
@@ -93,7 +112,7 @@ const PtcCall = Type.Object({
   tool:    Type.Literal("ptc"),
   purpose: Type.String({ description: "One-line description of what this script does. Shown in the UI when the tool runs." }),
   type:    StringEnum(["python", "bash"] as const, { description: "Script type. Prefer python unless the task is pure shell." }),
-  script:  Type.String({ description: "Full script content. Python scripts must include a PEP 723 metadata block." }),
+  script:  Type.String({ description: "Full script content. Python scripts must start with `#!/usr/bin/env -S uv run --script` and include PEP 723 metadata." }),
   args:    Type.Optional(Type.Array(Type.String(), { description: "Command-line arguments passed to the script." })),
   stdin:   Type.Optional(Type.String({ description: "Data to pipe to the script's stdin." })),
 });
@@ -108,9 +127,8 @@ const ExtCall = Type.Object(
       description:
         "Name of a supported inlined tool: " +
         "code_map_outline, code_map_symbol, code_map_diagnostics, code_map_impact, " +
-        "memory_list, memory_get, memory_search, memory_validate_file. " +
-        "Write tools (memory_new, memory_update, memory_delete, memory_create_file, memory_delete_file) " +
-        "must be called sequentially — concurrent writes can corrupt the memory file. " +
+        "memory_list, memory_get, memory_search, memory_new, memory_update, memory_delete, " +
+        "memory_create_file, memory_delete_file, memory_validate_file. " +
         "Pass the tool's normal arguments as additional fields alongside `tool`.",
     }),
   },
@@ -171,10 +189,10 @@ async function opPtc(
   const file = `${SANDBOX_DIR}/${toolCallId.slice(0, 8)}-${index}.${ext}`;
   writeFileSync(file, call.script, { mode: 0o755 });
 
-  const cmd  = call.type === "python" ? "uv" : "bash";
+  const cmd  = call.type === "python" ? file : "bash";
   const args = call.type === "python"
-    ? ["run", file, ...(call.args ?? [])]
-    : [file,        ...(call.args ?? [])];
+    ? [...(call.args ?? [])]
+    : [file, ...(call.args ?? [])];
 
   const scriptName = basename(file);
   const header     = `ptc: ${scriptName}\nPurpose: ${call.purpose}`;
@@ -245,6 +263,38 @@ async function opMemory(toolName: string, params: Record<string, any>, cwd: stri
       const res = await memRun(dir, ["search", params.query, "--top", String(params.top ?? 5)]);
       return res.ok ? (res.stdout.trim() || "(no output)") : `Error: ${res.stderr || res.stdout}`;
     }
+    case "memory_new": {
+      const args = ["new", params.path];
+      if (params.heading) args.push("--heading", params.heading);
+      try {
+        const out = await memRunWithInput(dir, args, params.body);
+        return out.trim() || `Section created: ${params.path}`;
+      } catch (err: any) {
+        return `Error: ${err.message}`;
+      }
+    }
+    case "memory_update": {
+      try {
+        const out = await memRunWithInput(dir, ["update", params.path], params.body);
+        return out.trim() || `Section updated: ${params.path}`;
+      } catch (err: any) {
+        return `Error: ${err.message}`;
+      }
+    }
+    case "memory_delete": {
+      const res = await memRun(dir, ["delete", params.path]);
+      return res.ok ? `Section deleted: ${params.path}` : `Error: ${res.stderr || res.stdout}`;
+    }
+    case "memory_create_file": {
+      const args = ["create-file", params.name, params.title];
+      if (params.description) args.push(params.description);
+      const res = await memRun(dir, args);
+      return res.ok ? `File created: ${params.name}.md` : `Error: ${res.stderr || res.stdout}`;
+    }
+    case "memory_delete_file": {
+      const res = await memRun(dir, ["delete-file", params.name]);
+      return res.ok ? `File deleted: ${params.name}.md` : `Error: ${res.stderr || res.stdout}`;
+    }
     case "memory_validate_file": {
       const res = await memRun(dir, ["validate-file", params.name]);
       return res.ok
@@ -262,15 +312,11 @@ const CODE_MAP_TOOLS = new Set([
   "code_map_outline", "code_map_symbol", "code_map_diagnostics", "code_map_impact",
 ]);
 
-/** Read-only memory tools safe for concurrent execution. */
+/** Memory tools supported for concurrent execution. */
 const MEMORY_TOOLS = new Set([
-  "memory_list", "memory_get", "memory_search", "memory_validate_file",
-]);
-
-/** Write memory tools that must NOT run concurrently — they can corrupt the file. */
-const MEMORY_WRITE_TOOLS = new Set([
+  "memory_list", "memory_get", "memory_search",
   "memory_new", "memory_update", "memory_delete",
-  "memory_create_file", "memory_delete_file",
+  "memory_create_file", "memory_delete_file", "memory_validate_file",
 ]);
 
 async function opExtension(
@@ -292,12 +338,6 @@ async function opExtension(
   if (MEMORY_TOOLS.has(toolName)) {
     return opMemory(toolName, params, cwd);
   }
-  if (MEMORY_WRITE_TOOLS.has(toolName)) {
-    throw new Error(
-      `"${toolName}" writes to the memory file and must not run concurrently — ` +
-      `call it sequentially with the native memory tool instead.`,
-    );
-  }
 
   const supported = ["ptc", ...CODE_MAP_TOOLS, ...MEMORY_TOOLS].join(", ");
   throw new Error(`Unsupported tool in parallel: "${toolName}". Supported: ${supported}`);
@@ -308,15 +348,17 @@ async function opExtension(
 const BASE_INSTRUCTION = `
 ## Parallel tool calls
 
-\`parallel\` is a meta tool. \`ptc\` remains the default for all work.
+\`parallel\` is a meta tool. \`ptc\` remains the default tool.
 
-Reach for \`parallel\` when you have 2+ independent operations whose results don't need to be
-combined or processed — just returned together. Supported ops:
+Reach for \`parallel\` when you have 2+ independent operations to fan out in one call. Results come
+back together, and you can combine or process them after the call. For Python \`ptc\` slots, require
+\`#!/usr/bin/env -S uv run --script\` at the top of the script. Supported ops:
 
-- \`read\` / \`bash\` / \`write\` / \`edit\` — native ops, run directly
-- Any extension-provided tool (including \`ptc\`) — pass \`tool: "<name>"\` plus the tool's normal args as additional fields
+- Common native ops: \`read\` / \`bash\` / \`write\` / \`edit\`
+- Any supported extension tool (including \`ptc\`) — pass \`tool: "<name>"\` plus the tool's normal args as additional fields
+- Python \`ptc\` slots execute the saved script file directly so the shebang triggers \`uv run --script\`
 
-Typical pattern: fan out several \`read\` or \`ptc\` calls that are each independent, get all
+Typical pattern: fan out several independent \`read\`, \`ptc\`, or other extension-tool calls, get all
 results back in one shot, then decide what to do.
 
 ### edit safety
@@ -331,9 +373,9 @@ export default function (pi: ExtensionAPI) {
     name:  "parallel",
     label: "Parallel Calls",
     description:
-      "Fan out multiple operations (read, bash, write, edit, ptc, or any supported extension tool) in one tool call. All run concurrently; results are returned together. Use when calls are independent of each other.",
+      "Fan out multiple independent operations in one tool call. Common slots are read, bash, write, edit, and ptc; any supported extension tool can also be inlined. Python ptc scripts are executed directly by file path and must start with `#!/usr/bin/env -S uv run --script`. All calls run concurrently and results are returned together.",
     promptSnippet:
-      "Run multiple independent read/bash/write/edit/ptc/extension-tool operations concurrently in a single call.",
+      "Run multiple independent operations concurrently in a single call, including ptc slots and other supported extension tools. Python ptc scripts are executed directly by file path and must start with `#!/usr/bin/env -S uv run --script`.",
     parameters: Type.Object({
       calls: Type.Array(CallSpec, {
         description:

@@ -23,15 +23,16 @@ const SANDBOX_DIR   = "/tmp/pi-sandbox";
 const SYSTEM_INSTRUCTION = `
 ## Programmatic Tool Calling (PTC)
 
-**\`ptc\` is the default for all work.** Use \`parallel\` to fan out independent items simultaneously.
+**\`ptc\` is the default tool.** Use \`parallel\` for 2+ independent operations.
 Use \`read\` and \`edit\` only in the specific cases below.
 
 ### Decision tree
 
 1. **Two or more independent operations?** → \`parallel\` — fan them out in one call, all run concurrently
-   - Each slot can be: \`read\`, \`bash\`, \`write\`, \`edit\`, or **\`ptc\`**
+   - Common slots are: \`read\`, \`bash\`, \`write\`, \`edit\`, and **\`ptc\`**
+   - \`parallel\` can also inline any supported extension tool by passing \`tool: "<name>"\` plus that tool's normal arguments
    - Slots must be independent: no slot may depend on another slot's output
-   - Results are returned together — you can combine them freely after
+   - Results are returned together — combine or process them after the call
 2. **Single operation?** → \`ptc\` (default for everything); always include a \`purpose\` field
 3. **Exceptions — use the named tool directly:**
    - \`read\` — when you need raw file content in your context window *before deciding* what to do
@@ -39,7 +40,7 @@ Use \`read\` and \`edit\` only in the specific cases below.
 
 ### \`parallel\` with \`ptc\` slots
 
-\`parallel\` can mix \`ptc\` scripts with other operations in one fan-out call:
+\`parallel\` can mix \`ptc\` scripts with reads, shell ops, and other supported extension tools in one fan-out call:
 
 \`\`\`
 parallel([
@@ -49,16 +50,19 @@ parallel([
 ])
 \`\`\`
 
-Use this to run multiple scripts, read files, and execute shell commands all at once.
+Use this to run multiple scripts and other independent operations all at once.
 
 ### Script type priority (inside \`ptc\`)
 
-1. **Python** (primary) — data processing, file I/O, APIs, parsing, logic; use PEP 723 inline deps
+1. **Python** (primary) — data processing, file I/O, APIs, parsing, logic; use the uv shebang plus PEP 723 metadata
 2. **Bash** — shell operations, git, build commands, multi-step shell logic
 
-### Python scripts must use PEP 723 inline metadata
+### Python scripts must start with the uv shebang
+
+Python \`ptc\` execution runs the saved script file directly so the kernel honors the shebang and \`uv run --script\` handles execution.
 
 \`\`\`python
+#!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
 # dependencies = ["httpx>=0.27"]
@@ -129,19 +133,23 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name:  "ptc",
     label: "Run Script",
-    description: `Default tool for all work. Run a Python (uv) or bash script in one call.
+    description: `Default tool. Run a Python (via the uv shebang) or bash script in one call.
 
 Every ptc call must include a purpose field — a one-line description of what the script does.
 The purpose is shown in the UI when the tool runs.
 
-Use individual tools only when:
+Use \`parallel\` for 2+ independent operations. Use individual tools directly only when:
 - read: raw file content is needed in context to reason before deciding
 - edit: parallel calls may touch the same file (mutation queue safety)
 Everything else: use ptc.
 
 Script type priority:
-1. Python (primary) — PEP 723 inline deps, use for data/files/APIs/logic
+1. Python (primary) — Python scripts must start with \`#!/usr/bin/env -S uv run --script\` and include PEP 723 metadata; use for data/files/APIs/logic
 2. Bash — shell operations, git, build steps
+
+Execution:
+- Python scripts are executed directly by file path, so the kernel honors \`#!/usr/bin/env -S uv run --script\`
+- Bash scripts are executed with bash
 
 MCP access: use the mcporter binary directly from within the script.
   Python: subprocess.run(["mcporter", "call", "server.tool", "key=value", "--output", "json"])
@@ -149,7 +157,7 @@ MCP access: use the mcporter binary directly from within the script.
   Discover: mcporter list --schema
 
 On failure: fix the script and call ptc again — do not fall back to individual tool calls.`,
-    promptSnippet: "Default tool for all work — runs Python or bash scripts. Use instead of read/write/bash/edit tool calls. MCP via mcporter binary.",
+    promptSnippet: "Default tool — runs Python or bash scripts. Python ptc scripts are executed directly by file path and must start with `#!/usr/bin/env -S uv run --script`. Use `parallel` for 2+ independent operations, including `ptc` slots. MCP via mcporter binary.",
     parameters: Type.Object({
       purpose: Type.String({
         description: "One-line description of what this script does. Shown in the UI when the tool runs.",
@@ -158,7 +166,7 @@ On failure: fix the script and call ptc again — do not fall back to individual
         description: "Script type. Prefer python unless the task is pure shell.",
       }),
       script: Type.String({
-        description: "Full script content. Python scripts must include a PEP 723 metadata block.",
+        description: "Full script content. Python scripts must start with `#!/usr/bin/env -S uv run --script` and include PEP 723 metadata.",
       }),
       args: Type.Optional(Type.Array(Type.String(), {
         description: "Command-line arguments passed to the script.",
@@ -176,10 +184,10 @@ On failure: fix the script and call ptc again — do not fall back to individual
       const file = `${SANDBOX_DIR}/${toolCallId.slice(0, 8)}.${ext}`;
       writeFileSync(file, params.script, { mode: 0o755 });
 
-      const cmd  = params.type === "python" ? "uv" : "bash";
+      const cmd  = params.type === "python" ? file : "bash";
       const args = params.type === "python"
-        ? ["run", file, ...(params.args ?? [])]
-        : [file,        ...(params.args ?? [])];
+        ? [...(params.args ?? [])]
+        : [file, ...(params.args ?? [])];
 
       onUpdate?.({ content: [{ type: "text", text: "Running..." }], details: undefined });
 
@@ -188,8 +196,8 @@ On failure: fix the script and call ptc again — do not fall back to individual
 
       try {
         const result = await execFileAsync(cmd, args, {
-          input:     params.stdin,
-          timeout:   120_000,
+          input: params.stdin,
+          timeout: 120_000,
           signal,
           maxBuffer: 10 * 1024 * 1024,
         } as any);
