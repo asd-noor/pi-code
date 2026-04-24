@@ -135,13 +135,17 @@ export default function (pi: ExtensionAPI) {
 
 > **RUN BEFORE EVERY REPLY — mandatory checklist:**
 > 1. Did I discover, decide, or correct anything this turn? **YES → \`memory_search\` then write now.** NO → skip.
-> 2. Did I write to memory? **YES → \`memory_validate_file\` now. Read validation output.** NO → skip.
+> 2. Did I write to memory? **YES → ensure validation happened now.** If you used \`memory_new\` / \`memory_update\`, read their validation output. Otherwise run \`memory_validate_file\`. NO → skip.
 > 3. Run \`memory_search\` one more time to confirm nothing was missed.
 >
 > Skipping this = failing your job.
 
-The memory-md daemon is running. Memory files are the shared living context for all agents
-and sessions — treat them as the authoritative record for this project.
+memory-md is a persistent, markdown-backed memory store. The markdown files are the source of
+truth; the daemon indexes them for fast lookup and search. Treat memory files as the authoritative
+shared context for this project.
+
+Memory writes mutate the markdown files first. The daemon watcher updates the index afterward, so
+very recent writes may take a brief moment to appear in search results.
 
 **Never recall from training data.** Always query memory tools. If a search returns nothing,
 state that explicitly and proceed fresh.
@@ -163,15 +167,17 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
 
 **How to store:**
 1. \`memory_search\` — check if a matching section already exists
-2. Exists → \`memory_update\` (child sections are preserved)
+2. Exists → \`memory_update\` (replaces only the immediate body; child sections are preserved)
 3. Missing → \`memory_create_file\` if the file is new, then \`memory_new\`
-4. **MANDATORY:** \`memory_validate_file\` immediately after every write — errors = corrupted state
-5. If validation fails or update doesn't work: \`read\` the .md file directly, fix with \`edit\` tool, then validate again
+4. \`memory_create_file\` requires a file name and human title, with an optional description for the file-level preamble
+5. \`memory_new\` / \`memory_update\` already validate after writing and may surface validation errors; these do not roll back the write
+6. For other write paths — especially direct \`edit\` or manual recovery — run \`memory_validate_file\` explicitly
+7. If validation fails or update doesn't work: \`read\` the .md file directly, fix with \`edit\` tool, then validate again
 
 **Structural corruption recovery:**
 - If \`memory_update\` succeeds but content looks wrong: file structure is corrupted (duplicate sections, malformed headings)
 - Memory directory: \`$MEMORY_MD_DIR\` (if set) or \`.pi-memory/\` (default)
-- Fix: \`read .pi-memory/<file>.md\`, identify structural issues, use \`edit\` tool to fix, then \`memory_validate_file\`
+- Fix: \`read $MEMORY_MD_DIR/<file>.md\` (or \`.pi-memory/<file>.md\` when using the default local dir), identify structural issues, use \`edit\` tool to fix, then \`memory_validate_file\`
 - The daemon watches files and auto-reindexes after direct edits — this is a supported recovery path
 
 **Store:** decisions, constraints, architectural choices, discovered patterns, corrected assumptions.
@@ -196,6 +202,7 @@ Always prefer a canonical file over creating a new one. Create additional files 
 
 - Filename (without \`.md\`) is always the first path segment — never derived from heading text
 - \`#\` is a decorative title only — ignored for path derivation
+- Only ATX headings are recognized for structure (for example, \`## Heading\`); setext headings are treated as body text
 - \`##\` and deeper headings become path segments (slugified: lowercase, spaces → \`-\`, all non-alphanumeric characters except \`-\` stripped)
 - Example: \`architecture.md\` + \`## Tech Stack\` → path \`architecture/tech-stack\`; \`### Frontend\` → \`architecture/tech-stack/frontend\`
 - Body: concise and factual — reference material, not narrative
@@ -262,7 +269,7 @@ Always prefer a canonical file over creating a new one. Create additional files 
 
       if (sub === "status" || sub === "") {
         const status     = getDaemonStatus(memDir);
-        const source     = process.env.MEMORY_MD_DIR ? "$MEMORY_MD_DIR" : "~/.pi/memory";
+        const source     = process.env.MEMORY_MD_DIR ? "$MEMORY_MD_DIR" : ".pi-memory";
         const breadcrumb = readCacheDirBreadcrumb(memDir);
         const cacheDir   = getCacheDir(memDir);
         ctx.ui.notify(

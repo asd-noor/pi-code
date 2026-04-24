@@ -91,7 +91,7 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
   pi.registerTool({
     name:        "memory_search",
     label:       "Memory: Search",
-    description: "Hybrid FTS5 + vector search across all stored memories. Use when you don't know the exact path or want to find semantically related sections. Returns up to top-N results.",
+    description: "Search across all stored memories using hybrid FTS5 + vector search when available, with FTS5-only fallback otherwise. Use when you don't know the exact path or want semantically related sections. Returns up to top-N results.",
     promptSnippet: "Search memory using full-text + vector search",
     parameters: Type.Object({
       query: Type.String({ description: "Search query." }),
@@ -110,7 +110,7 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
   pi.registerTool({
     name:        "memory_new",
     label:       "Memory: New",
-    description: "Create a new memory section. The file must already exist (use memory_create_file first). Fails if the section already exists — use memory_update to overwrite. The heading level is derived automatically from path depth.",
+    description: "Create a new memory section. The file must already exist (use memory_create_file first). Fails if the section already exists — use memory_update to overwrite. The heading level is derived automatically from path depth. The backing .md file is validated after writing, and any validation errors are returned without rolling the write back.",
     promptSnippet: "Create a new memory section",
     parameters: Type.Object({
       path:    Type.String({ description: "Full section path, e.g. auth/api-keys." }),
@@ -136,7 +136,7 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
   pi.registerTool({
     name:        "memory_update",
     label:       "Memory: Update",
-    description: "Replace the body of an existing section. Child sections are preserved. Use when correcting or updating stored information.",
+    description: "Replace the immediate body of an existing section. Child sections are preserved. Use when correcting or updating stored information. The backing .md file is validated after writing, and any validation errors are returned without rolling the write back.",
     promptSnippet: "Update the body of an existing memory section",
     parameters: Type.Object({
       path: Type.String({ description: "Full section path to update." }),
@@ -176,14 +176,18 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
   pi.registerTool({
     name:        "memory_create_file",
     label:       "Memory: Create File",
-    description: "Create a new empty memory file (topic area). Must be done before adding sections with memory_new. Name must not contain '/', must not start with '.', and must not include '.md'.",
-    promptSnippet: "Create a new memory file (topic area)",
+    description: "Create a new memory file (topic area). Must be done before adding sections with memory_new. Requires a file name and a human title for the file's # heading, plus an optional description placed below that title. Name must not contain '/', must not start with '.', and must not include '.md'.",
+    promptSnippet: "Create a new memory file (topic area) with title and optional description",
     parameters: Type.Object({
       name: Type.String({ description: "File name without .md extension, e.g. 'auth' or 'infra'." }),
+      title: Type.String({ description: "Human-readable file title written as the file's # heading, e.g. 'Authentication'." }),
+      description: Type.Optional(Type.String({ description: "Optional file-level description placed below the # title heading." })),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       const dir = getDir() ?? ctx.cwd;
-      const res = await run(dir, ["create-file", params.name], pi.exec.bind(pi));
+      const args = ["create-file", params.name, params.title];
+      if (params.description) args.push(params.description);
+      const res = await run(dir, args, pi.exec.bind(pi));
       return text(res.ok ? `File created: ${params.name}.md` : `Error: ${res.stderr || res.stdout}`);
     },
   });
