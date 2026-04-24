@@ -5,12 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2026-04-24
+
+### Fixed
+
+- **subagents — `agentDir` missing from `DefaultResourceLoader`**: Root cause of the persistent `Agent failed: The "path" argument must be of type string. Received undefined` error. `agent-runner.ts` was creating `DefaultResourceLoader` without `agentDir`, so `DefaultPackageManager` received `agentDir: undefined` and called `path.join(undefined, ...)` during `loader.reload()`. Fixed by importing `getAgentDir()` and passing `agentDir` to `DefaultResourceLoader`, `sessionOpts`, and `SettingsManager.create()`.
+
+## [1.9.0] - 2026-04-24
+
+### Added
+
+- **subagents — `memory-compact` bundled agent**: New `extensions/subagents/agents/memory-compact.md` agent that snapshots memory with `memory-md snapshot --move`, reads snapshot files one by one, compacts noisy/large sections into concise durable bullet points, and recreates the root-level memory files. Includes concrete compaction heuristics (3–7 bullets per section, section deletion criteria, section merge rules) and per-file handling for `workflow.md`, `decisions.md`, `architecture.md`, `setup.md`, `project.md`, and `notes.md`.
+- **`ptc` extension — uv shebang execution**: Python `ptc` scripts are now executed directly by file path so the kernel honors `#!/usr/bin/env -S uv run --script`. The shebang is now required for all Python `ptc` scripts. This lets uv manage dependencies via PEP 723 inline metadata and benefits from its dependency cache for very fast repeated runs.
+- **Binary requirements — `uv`**: `uv` is now documented as a required binary in `README.md`. Added to the binary requirements table with its purpose: executing Python `ptc` scripts via the uv shebang.
+
+### Changed
+
+- **`parallel` extension — memory write tools unblocked**: Removed the old blacklist that rejected concurrent `memory_new`, `memory_update`, `memory_delete`, `memory_create_file`, and `memory_delete_file` calls in `parallel` slots. All memory tools are now fully supported as inlined `parallel` ops. Added `memRunWithInput()` (using `spawn`) so `memory_new` and `memory_update` can feed stdin to the `memory-md` process correctly.
+- **`ptc` / `parallel` — preferred Python + uv over bash**: Sharpened all instruction and prompt text to make Python + uv the clear default scripting type. Bash is now explicitly reserved for clearly pure-shell tasks such as git, shell operations, and build commands.
+- **`ptc` / `parallel` / `pi-code-prompt` — scripts over multiple bash calls**: Updated all guidance so even shell-heavy work prefers a bash script through `ptc` rather than multiple raw `bash` calls. Standalone `bash` and `bash` slots inside `parallel` are now explicitly framed as one-shot-only.
+- **`parallel` — inlined `BashCall` description**: The `bash` slot schema now says "One-shot bash command to execute — for non-trivial shell work, prefer a bash script through `ptc` instead."
+- **`subagents/agent-runner.ts` — subagent bridge prompt**: The subagent bridge now explicitly tells subagents to use the `bash` tool only for genuinely one-shot shell commands, and to prefer a `ptc` bash script otherwise.
+- **`extensions/memory-md` — sync with upstream**: Instruction text, validation policy, `memory_search` fallback behavior, and `memory_create_file` schema all synced with `memory-md` upstream changes. `create-file` now accepts `name`, `title`, and an optional `description`.
+- **`skills/mcporter/SKILL.md` — completed CLI section**: Filled in the `## CLI Tool` section using actual `mcporter --help` output. Documents all commands (`list`, `call`, `auth`, `generate-cli`, `inspect-cli`, `emit-ts`, `config`, `daemon`) and all global flags.
+- **`pi-code-prompt` — mcporter hard triggers**: Added `mcporter` as an explicit hard-trigger skill for MCP server discovery, schema inspection, and tool invocation. Also added a proactive discovery trigger: if external integrations or hosted services may materially help, the agent should activate `mcporter` first.
+- **`subagents` — cwd normalization**: Fixed `Agent failed: The "path" argument must be of type string. Received undefined` by normalizing `ctx.cwd` with a `process.cwd()` fallback in `index.ts`, `agent-runner.ts`, and `custom-agents.ts`.
+
 ## [1.8.7] - 2026-04-22
 
 ### Added
 
 - **code-map — `/code-map` command argument completions**: The `/code-map` command now provides tab-completion for its sub-commands (`status`, `restart`, `logs`) via `getArgumentCompletions`. Typing `/code-map <Tab>` presents matching suggestions; partial prefixes (e.g. `re`) narrow the list.
-- add mcporter skill
+- **mcporter skill**: Added `skills/mcporter/SKILL.md` as a dedicated skill for MCP tool access via the `mcporter` proxy binary.
 
 ## [1.8.6] - 2026-04-22
 
