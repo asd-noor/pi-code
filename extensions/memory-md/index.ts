@@ -167,7 +167,7 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
 
 **How to store:**
 1. \`memory_search\` — check if a matching section already exists
-2. Exists → \`memory_update\` (replaces only the immediate body; child sections are preserved)
+2. Exists → \`memory_update\` (replaces only the immediate body — the text between the section heading and its first child heading; child sections are preserved unchanged and must NOT be included in the body parameter)
 3. Missing → \`memory_create_file\` if the file is new, then \`memory_new\`
 4. \`memory_create_file\` requires a file name and human title, with an optional description for the file-level preamble
 5. \`memory_new\` / \`memory_update\` already validate after writing and may surface validation errors; these do not roll back the write

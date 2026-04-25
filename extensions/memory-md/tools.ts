@@ -114,7 +114,7 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
     promptSnippet: "Create a new memory section",
     parameters: Type.Object({
       path:    Type.String({ description: "Full section path, e.g. auth/api-keys." }),
-      body:    Type.String({ description: "Body content for the section." }),
+      body:    Type.String({ description: "Body text placed directly under the section heading, before any child headings." }),
       heading: Type.Optional(Type.String({ description: "Human-readable heading. Defaults to the last path segment." })),
     }),
     async execute(_id, params, _signal, _update, _ctx) {
@@ -136,11 +136,11 @@ export function registerTools(pi: ExtensionAPI, getDir: () => string | undefined
   pi.registerTool({
     name:        "memory_update",
     label:       "Memory: Update",
-    description: "Replace the immediate body of an existing section. Child sections are preserved. Use when correcting or updating stored information. The backing .md file is validated after writing, and any validation errors are returned without rolling the write back.",
+    description: "Replace the immediate body of an existing section — the text directly under the section heading, before any child headings. Child sections (sub-headings and their content) are automatically preserved and spliced back in after the new body; do NOT include child headings in the body parameter. Use when correcting or updating stored information. The backing .md file is validated after writing, and any validation errors are returned without rolling the write back.",
     promptSnippet: "Update the body of an existing memory section",
     parameters: Type.Object({
       path: Type.String({ description: "Full section path to update." }),
-      body: Type.String({ description: "New body content." }),
+      body: Type.String({ description: "New body text for the section — content placed directly under the section heading, before any child headings. Do not include child section headings here; they are preserved automatically." }),
     }),
     async execute(_id, params, _signal, _update, _ctx) {
       const dir = getDir();
