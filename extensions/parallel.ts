@@ -419,7 +419,7 @@ Python + uv by default and only choose bash when the task is clearly pure shell;
 \`#!/usr/bin/env -S uv run --script\` at the top of Python scripts. Supported ops:
 
 - Common native ops: \`read\` / \`bash\` / \`write\` / \`edit\` (use raw \`bash\` only for one-shot commands)
-- Any supported extension tool (including `ptc`, `mcporter`) — pass `tool: "<name>"` plus the tool's normal args as additional fields
+- Any supported extension tool (including \`ptc\`, \`mcporter\`) — pass \`tool: "<name>"\` plus the tool's normal args as additional fields
 - Python \`ptc\` slots execute the saved script file directly so the shebang triggers \`uv run --script\`
 - Prefer uv-backed Python scripts because uv is robust at dependency management and its cache makes repeated runs very fast
 
