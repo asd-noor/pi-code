@@ -225,8 +225,14 @@ export class SessionViewer {
         lines.push("");
       }
 
-      // Assistant text (strip raw XML function-call blocks that leak into text deltas)
-      const text = turn.text.replace(/<function_calls>[\s\S]*?<\/function_calls>/g, "").trim();
+      // Assistant text — strip all XML protocol noise that leaks into text deltas:
+      // <function_calls>, <function_response>, and any orphaned tags
+      const text = turn.text
+        .replace(/<function_calls>[\s\S]*?<\/function_calls>/g, "")
+        .replace(/<function_response>[\s\S]*?<\/function_response>/g, "")
+        .replace(/<\/?(?:function_calls|function_response|invoke|parameter)[^>]*>/g, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
       if (text) {
         const textWidth = Math.max(10, width - 4);
         const wrapped   = wrapTextWithAnsi(text, textWidth);
