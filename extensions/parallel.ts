@@ -7,6 +7,7 @@
  * Supported operations:
  *   Native:  read, bash, write, edit
  *   Inlined: ptc
+ *            mcporter
  *            code_map_outline, code_map_symbol, code_map_diagnostics, code_map_impact
  *            memory_list, memory_get, memory_search, memory_new, memory_update,
  *            memory_delete, memory_create_file, memory_delete_file, memory_validate_file
@@ -121,6 +122,17 @@ const PtcCall = Type.Object({
  * Catch-all for inlined extension tools (code_map_*, memory_*).
  * The `tool` field names the tool; all other fields are passed as params.
  */
+const McporterCall = Type.Object({
+  tool:      Type.Literal("mcporter"),
+  action:    StringEnum(["search", "describe", "call"] as const, { description: "Action to run: search tools, describe a tool schema, or call a tool." }),
+  selector:  Type.Optional(Type.String({ description: "Tool selector in the form 'server.tool'. Required for describe and call." })),
+  query:     Type.Optional(Type.String({ description: "Free-text query for search." })),
+  limit:     Type.Optional(Type.Number({ description: "Maximum number of search matches (default 20, max 100).", maximum: 100, minimum: 1 })),
+  args:      Type.Optional(Type.Record(Type.String(), Type.Any(), { description: "Arguments object for call action." })),
+  argsJson:  Type.Optional(Type.String({ description: "JSON object string for call arguments. Mutually exclusive with args." })),
+  timeoutMs: Type.Optional(Type.Number({ description: "Per-call timeout in milliseconds (default 30000).", maximum: 300000, minimum: 1 })),
+});
+
 const ExtCall = Type.Object(
   {
     tool: Type.String({
@@ -135,7 +147,7 @@ const ExtCall = Type.Object(
   { additionalProperties: true },
 );
 
-const CallSpec = Type.Union([ReadCall, BashCall, WriteCall, EditCall, PtcCall, ExtCall]);
+const CallSpec = Type.Union([ReadCall, BashCall, WriteCall, EditCall, PtcCall, McporterCall, ExtCall]);
 
 // ── Native op implementations ────────────────────────────────────────────────
 
@@ -213,7 +225,53 @@ async function opPtc(
   }
 }
 
-// ── code_map implementations ─────────────────────────────────────────────────
+// ── mcporter implementation ──────────────────────────────────────────────────
+
+async function opMcporter(params: Record<string, any>): Promise<string> {
+  const timeout = params.timeoutMs ?? 30_000;
+
+  switch (params.action) {
+    case "search": {
+      const cliArgs = ["list", "--schema", "--json"];
+      if (params.query) cliArgs.splice(1, 0, params.query);
+      try {
+        const { stdout, stderr } = await execFileAsync("mcporter", cliArgs, { timeout, maxBuffer: 5 * 1024 * 1024 });
+        return stdout.trim() || stderr.trim() || "(no output)";
+      } catch (err: any) {
+        return [err.stdout, err.stderr, err.message].filter(Boolean).join("\n").trim();
+      }
+    }
+    case "describe": {
+      if (!params.selector) throw new Error("mcporter describe: selector is required");
+      const server = params.selector.split(".")[0];
+      try {
+        const { stdout, stderr } = await execFileAsync("mcporter", ["list", server, "--schema", "--json"], { timeout, maxBuffer: 5 * 1024 * 1024 });
+        return stdout.trim() || stderr.trim() || "(no output)";
+      } catch (err: any) {
+        return [err.stdout, err.stderr, err.message].filter(Boolean).join("\n").trim();
+      }
+    }
+    case "call": {
+      if (!params.selector) throw new Error("mcporter call: selector is required");
+      const cliArgs = ["call", params.selector, "--output", "json"];
+      if (params.argsJson) {
+        cliArgs.push("--args", params.argsJson);
+      } else if (params.args) {
+        cliArgs.push("--args", JSON.stringify(params.args));
+      }
+      try {
+        const { stdout, stderr } = await execFileAsync("mcporter", cliArgs, { timeout, maxBuffer: 10 * 1024 * 1024 });
+        return stdout.trim() || stderr.trim() || "(no output)";
+      } catch (err: any) {
+        return [err.stdout, err.stderr, err.message].filter(Boolean).join("\n").trim();
+      }
+    }
+    default:
+      throw new Error(`mcporter: unknown action "${params.action}"`);
+  }
+}
+
+// ── code_map implementations ──────────────────────────────────────────────────
 
 async function opCodeMap(toolName: string, params: Record<string, any>, cwd: string): Promise<string> {
   const client = new SocketClient(cwd);
@@ -332,6 +390,9 @@ async function opExtension(
   if (toolName === "ptc") {
     return opPtc(params as any, toolCallId, index, signal);
   }
+  if (toolName === "mcporter") {
+    return opMcporter(params);
+  }
   if (CODE_MAP_TOOLS.has(toolName)) {
     return opCodeMap(toolName, params, cwd);
   }
@@ -339,7 +400,7 @@ async function opExtension(
     return opMemory(toolName, params, cwd);
   }
 
-  const supported = ["ptc", ...CODE_MAP_TOOLS, ...MEMORY_TOOLS].join(", ");
+  const supported = ["ptc", "mcporter", ...CODE_MAP_TOOLS, ...MEMORY_TOOLS].join(", ");
   throw new Error(`Unsupported tool in parallel: "${toolName}". Supported: ${supported}`);
 }
 
@@ -358,7 +419,7 @@ Python + uv by default and only choose bash when the task is clearly pure shell;
 \`#!/usr/bin/env -S uv run --script\` at the top of Python scripts. Supported ops:
 
 - Common native ops: \`read\` / \`bash\` / \`write\` / \`edit\` (use raw \`bash\` only for one-shot commands)
-- Any supported extension tool (including \`ptc\`) — pass \`tool: "<name>"\` plus the tool's normal args as additional fields
+- Any supported extension tool (including `ptc`, `mcporter`) — pass `tool: "<name>"` plus the tool's normal args as additional fields
 - Python \`ptc\` slots execute the saved script file directly so the shebang triggers \`uv run --script\`
 - Prefer uv-backed Python scripts because uv is robust at dependency management and its cache makes repeated runs very fast
 
