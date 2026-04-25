@@ -469,7 +469,7 @@ Guidelines:
 
       // Background execution
       if (runInBackground) {
-        const id = manager.spawn(ctx, params.prompt, {
+        const id = manager.spawn({ ...ctx, cwd: currentCwd }, params.prompt, {
           description:    params.description,
           agentConfig,
           model:          resolvedModel,
@@ -496,7 +496,7 @@ Guidelines:
       }
 
       // Foreground execution
-      const record = await manager.spawnAndWait(ctx, params.prompt, {
+      const record = await manager.spawnAndWait({ ...ctx, cwd: currentCwd }, params.prompt, {
         description:    params.description,
         agentConfig,
         model:          resolvedModel,
@@ -1084,7 +1084,7 @@ Guidelines:
       ctx.ui.notify(`Delegating to ${agentName}…`, "info");
 
       const description = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
-      const record = await manager.spawnAndWait(ctx, task, {
+      const record = await manager.spawnAndWait({ ...ctx, cwd: currentCwd }, task, {
         description,
         agentConfig,
       });
