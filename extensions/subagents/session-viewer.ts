@@ -198,11 +198,19 @@ export class SessionViewer {
 
       // Tool calls
       for (const tc of turn.toolCalls) {
-        const done    = tc.completedAt !== undefined;
-        const tcIcon  = done ? t.fg("success", "  ✓") : t.fg("warning", "  ▶");
-        const tcName  = t.fg("text", tc.name);
-        const tcInput = tc.inputSummary ? t.fg("dim", `  ${tc.inputSummary}`) : "";
-        lines.push(truncateToWidth(`${tcIcon} ${tcName}${tcInput}`, width));
+        const done     = tc.completedAt !== undefined;
+        const tcIcon   = done ? t.fg("success", "  ✓") : t.fg("warning", "  ▶");
+        const tcName   = t.fg("text", tc.name);
+        const tcInput  = tc.inputSummary ? t.fg("dim", `  ${tc.inputSummary}`) : "";
+        const tcDur    = done && tc.completedAt
+          ? t.fg("dim", `  (${formatMs(tc.completedAt - tc.startedAt)})`)
+          : "";
+
+        lines.push(truncateToWidth(`${tcIcon} ${tcName}${tcInput}${tcDur}`, width));
+
+        if (done && tc.resultSummary) {
+          lines.push(truncateToWidth(`       ${t.fg("dim", tc.resultSummary)}`, width));
+        }
       }
 
       // Thinking block (dimmed, prefixed with ⟨thinking⟩)
@@ -217,8 +225,8 @@ export class SessionViewer {
         lines.push("");
       }
 
-      // Assistant text
-      const text = turn.text.trim();
+      // Assistant text (strip raw XML function-call blocks that leak into text deltas)
+      const text = turn.text.replace(/<function_calls>[\s\S]*?<\/function_calls>/g, "").trim();
       if (text) {
         const textWidth = Math.max(10, width - 4);
         const wrapped   = wrapTextWithAnsi(text, textWidth);
