@@ -848,7 +848,8 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
 
       ctx.ui.notify(`Delegating to ${agentName}…`, "info");
       const description = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
-      const record = await manager.spawnAndWait({ ...ctx, cwd: currentCwd }, task, {
+      const effectiveTask = task || "Proceed with your configured task.";
+      const record = await manager.spawnAndWait({ ...ctx, cwd: currentCwd }, effectiveTask, {
         description,
         agentConfig,
       });
