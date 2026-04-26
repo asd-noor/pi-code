@@ -248,6 +248,10 @@ export async function spawnAndRun(
     noContextFiles: true,
     systemPrompt: fullSystemPrompt,
   });
+  // Must reload before passing to createAgentSession. The SDK only calls reload()
+  // when it creates the loader itself — pre-built loaders are used as-is, so
+  // extensions never load and extension tools (agenda, ask, mcporter, …) are absent.
+  await loader.reload();
 
   const resolvedModel = model ?? ctx.model;
   const resolvedThinking = thinkingLevel ?? agentConfig.thinking;
