@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **subagents — `extensions:` CSV filtering in agent frontmatter**: The `extensions:` field now fully controls which extension tools are active in a subagent session. Previously only `true`/`false` was wired up; the CSV string[] was parsed but ignored.
   - `extensions: memory-md, agenda` — allowlist: only tools from those extensions
-  - `extensions: !memory-md` — excludelist: all extensions except those prefixed with `!`
+  - `extensions: ^memory-md` — excludelist: all extensions except those prefixed with `^`
   - `extensions: false` — no extension tools; also suppresses `before_agent_start` injections
   - `AgentConfig` gains `extensionsExclude?: string[]` derived from the `!`-prefix syntax
 
@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **memory-compact agent — `extensions: !memory-md`**: Previously used `extensions: true` with a manual override note in the prompt body warning against the injected `MEMORY_INSTRUCTION` checklist. Now uses `extensions: !memory-md` to exclude the memory-md extension entirely, preventing the injection at source. `tools:` updated to `read, bash, write, ptc, parallel` — the explicit minimal set needed for compaction.
+- **memory-compact agent — `extensions: ^memory-md`**: Previously used `extensions: true` with a manual override note in the prompt body warning against the injected `MEMORY_INSTRUCTION` checklist. Now uses `extensions: ^memory-md` to exclude the memory-md extension entirely, preventing the injection at source. `tools:` updated to `read, bash, write, ptc, parallel` — the explicit minimal set needed for compaction.
 
 ## [1.9.1] - 2026-04-24
 

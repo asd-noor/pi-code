@@ -103,9 +103,9 @@ function inheritField(val: unknown): { extensions: true | string[] | false; excl
   const items = csvList(val, []);
   if (items.length === 0) return { extensions: false };
   // If every item starts with !, treat as exclusion list.
-  if (items.every((s) => s.startsWith("!"))) {
+  if (items.every((s) => s.startsWith("^"))) {
     return { extensions: true, exclude: items.map((s) => s.slice(1)) };
   }
-  // Mixed or plain items → allowlist (strip any stray ! just in case).
-  return { extensions: items.filter((s) => !s.startsWith("!")) };
+  // Mixed or plain items → allowlist (strip any stray ^ just in case).
+  return { extensions: items.filter((s) => !s.startsWith("^")) };
 }

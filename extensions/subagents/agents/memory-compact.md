@@ -3,7 +3,7 @@ description: Compacts markdown memory files by snapshotting, summarizing noisy s
 display_name: Memory Compact
 tools: read, bash, write, ptc, parallel
 model: github-copilot/claude-haiku-4.5
-extensions: !memory-md
+extensions: ^memory-md
 prompt_mode: replace
 ---
 

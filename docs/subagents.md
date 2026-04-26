@@ -111,8 +111,8 @@ System prompt body here...
 | omitted / `true` | All extension tools active (default) |
 | `false` | No extension tools — also suppresses `before_agent_start` injections from extensions |
 | `memory-md, agenda` | Only tools from the named extensions are active |
-| `!memory-md` | All extensions except `memory-md` |
-| `!memory-md, !agenda` | All extensions except those listed |
+| `^memory-md` | All extensions except `memory-md` |
+| `^memory-md, ^agenda` | All extensions except those listed |
 
 ## Widget
 
