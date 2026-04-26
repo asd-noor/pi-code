@@ -1,11 +1,9 @@
 /**
- * custom-agents.ts — Load user-defined agent configs from .md files.
+ * agents.ts — Load agent configs from .md files.
  *
- * Discovery (higher index = higher priority, overrides lower):
+ * Discovery (project overrides global):
  *   1. Global:  ~/.pi/agent/agents/*.md
  *   2. Project: <cwd>/.pi/agents/*.md
- *
- * Names matching defaults (e.g. "Explore") override the built-in.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -16,18 +14,14 @@ import type { AgentConfig, ThinkingLevel } from "./types.ts";
 
 const ALL_BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
-/**
- * Load custom agents from global and project directories.
- * Returns a Map keyed by agent name; project overrides global.
- */
-export function loadCustomAgents(cwd?: string): Map<string, AgentConfig> {
+export function loadAgents(cwd?: string): Map<string, AgentConfig> {
   const baseCwd = typeof cwd === "string" && cwd ? cwd : process.cwd();
   const globalDir = join(homedir(), ".pi", "agent", "agents");
   const projectDir = join(baseCwd, ".pi", "agents");
 
   const agents = new Map<string, AgentConfig>();
-  loadFromDir(globalDir, agents, "global");   // lower priority
-  loadFromDir(projectDir, agents, "project"); // higher priority
+  loadFromDir(globalDir, agents, "global");
+  loadFromDir(projectDir, agents, "project");
   return agents;
 }
 
@@ -37,7 +31,6 @@ function loadFromDir(
   source: "project" | "global",
 ): void {
   if (!existsSync(dir)) return;
-
   let files: string[];
   try {
     files = readdirSync(dir).filter((f) => f.endsWith(".md"));
@@ -75,8 +68,6 @@ function loadFromDir(
     });
   }
 }
-
-// ---- Field parsers ----
 
 function str(val: unknown): string | undefined {
   return typeof val === "string" ? val : undefined;

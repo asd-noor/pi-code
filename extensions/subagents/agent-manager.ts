@@ -8,7 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import { spawnAndRun, resumeSession, steerSession } from "./agent-runner.ts";
-import type { AgentActivity, AgentConfig, AgentRecord, SubagentType, ThinkingLevel } from "./types.ts";
+import type { AgentActivity, AgentConfig, AgentRecord, ThinkingLevel } from "./types.ts";
 
 const DEFAULT_MAX_CONCURRENT = 4;
 
@@ -24,7 +24,6 @@ export interface SpawnOptions {
   inheritContext?: boolean;
   thinkingLevel?: ThinkingLevel;
   isBackground?: boolean;
-  onSessionCreated?: (session: any) => void;
   agendaId?: number;
 }
 
@@ -49,7 +48,6 @@ export class AgentManager {
     this.onComplete = onComplete;
     this.onStart = onStart;
     this.maxConcurrent = maxConcurrent;
-    // Auto-cleanup completed records after 10 minutes
     this.cleanupTimer = setInterval(() => this.cleanup(), 60_000);
   }
 
@@ -59,7 +57,6 @@ export class AgentManager {
     this.drainQueue();
   }
 
-  /** Spawn a background agent. Returns its ID immediately (may be queued). */
   spawn(ctx: any, prompt: string, options: SpawnOptions): string {
     const id = randomUUID().slice(0, 17);
     const activity: AgentActivity = {
@@ -71,7 +68,6 @@ export class AgentManager {
       log: [],
       currentTurn: undefined,
     };
-
     const record: AgentRecord = {
       id,
       type: options.agentConfig.name,
@@ -82,7 +78,6 @@ export class AgentManager {
       startedAt: Date.now(),
       abortController: new AbortController(),
     };
-
     this.records.set(id, record);
     this.activities.set(id, activity);
 
@@ -90,12 +85,10 @@ export class AgentManager {
       this.queue.push({ id, ctx, prompt, options });
       return id;
     }
-
     this.startAgent(id, record, activity, ctx, prompt, options);
     return id;
   }
 
-  /** Spawn a foreground agent and wait for it. */
   async spawnAndWait(ctx: any, prompt: string, options: Omit<SpawnOptions, "isBackground">): Promise<AgentRecord> {
     const id = this.spawn(ctx, prompt, { ...options, isBackground: false });
     const record = this.records.get(id)!;
@@ -127,14 +120,10 @@ export class AgentManager {
       agendaId: options.agendaId,
       onSessionCreated: (session) => {
         record.session = session;
-        // Flush steers that arrived before session was ready
         if (record.pendingSteers?.length) {
-          for (const msg of record.pendingSteers) {
-            session.steer(msg).catch(() => {});
-          }
+          for (const msg of record.pendingSteers) session.steer(msg).catch(() => {});
           record.pendingSteers = undefined;
         }
-        options.onSessionCreated?.(session);
       },
     }).then((result) => {
       if (record.status !== "stopped") {
@@ -181,17 +170,14 @@ export class AgentManager {
     }
   }
 
-  /** Resume an existing agent session with a new prompt. */
   async resume(id: string, prompt: string): Promise<AgentRecord | undefined> {
     const record = this.records.get(id);
     if (!record?.session) return undefined;
-
     record.status = "running";
     record.startedAt = Date.now();
     record.completedAt = undefined;
     record.result = undefined;
     record.error = undefined;
-
     try {
       const text = await resumeSession(record.session, prompt);
       record.status = "completed";
@@ -205,19 +191,15 @@ export class AgentManager {
     return record;
   }
 
-  /** Steer a running agent. */
   async steer(id: string, message: string): Promise<boolean> {
     const record = this.records.get(id);
     if (!record) return false;
     if (record.status !== "running") return false;
-
     if (!record.session) {
-      // Queue for when session is ready
       record.pendingSteers = record.pendingSteers ?? [];
       record.pendingSteers.push(message);
       return true;
     }
-
     try {
       await steerSession(record.session, message);
       return true;
@@ -226,18 +208,15 @@ export class AgentManager {
     }
   }
 
-  /** Abort a running or queued agent. */
   abort(id: string): boolean {
     const record = this.records.get(id);
     if (!record) return false;
-
     if (record.status === "queued") {
       this.queue = this.queue.filter((q) => q.id !== id);
       record.status = "stopped";
       record.completedAt = Date.now();
       return true;
     }
-
     if (record.status !== "running") return false;
     record.abortController?.abort();
     record.status = "stopped";
@@ -245,7 +224,6 @@ export class AgentManager {
     return true;
   }
 
-  /** Abort all running/queued agents. */
   abortAll(): void {
     for (const item of this.queue) {
       const r = this.records.get(item.id);
@@ -261,25 +239,15 @@ export class AgentManager {
     }
   }
 
-  getRecord(id: string): AgentRecord | undefined {
-    return this.records.get(id);
-  }
-
-  getActivity(id: string): AgentActivity | undefined {
-    return this.activities.get(id);
-  }
-
+  getRecord(id: string): AgentRecord | undefined { return this.records.get(id); }
+  getActivity(id: string): AgentActivity | undefined { return this.activities.get(id); }
   listRecords(): AgentRecord[] {
     return [...this.records.values()].sort((a, b) => b.startedAt - a.startedAt);
   }
-
   hasRunning(): boolean {
-    return [...this.records.values()].some(
-      (r) => r.status === "running" || r.status === "queued",
-    );
+    return [...this.records.values()].some((r) => r.status === "running" || r.status === "queued");
   }
 
-  /** Remove completed/stopped/errored records. Called on session start/switch. */
   clearCompleted(): void {
     for (const [id, record] of this.records) {
       if (record.status === "running" || record.status === "queued") continue;
@@ -303,9 +271,7 @@ export class AgentManager {
   dispose(): void {
     clearInterval(this.cleanupTimer);
     this.abortAll();
-    for (const record of this.records.values()) {
-      record.session?.dispose?.();
-    }
+    for (const record of this.records.values()) record.session?.dispose?.();
     this.records.clear();
     this.activities.clear();
   }

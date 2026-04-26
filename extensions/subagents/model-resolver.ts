@@ -1,7 +1,6 @@
 /**
  * model-resolver.ts — Fuzzy model resolution from a short name or full id.
  *
- * Priority: exact "provider/modelId" match → fuzzy substring/part match.
  * Returns the Model instance on success, or an error string on failure.
  */
 
@@ -17,10 +16,6 @@ export interface ModelRegistry {
   getAvailable?(): any[];
 }
 
-/**
- * Resolve a model string (exact or fuzzy) to a Model instance.
- * Only considers models that have auth configured (available).
- */
 export function resolveModel(
   input: string,
   registry: ModelRegistry,
@@ -36,7 +31,7 @@ export function resolveModel(
     if (found) return found;
   }
 
-  // 2. Fuzzy match: score each available model
+  // 2. Fuzzy match
   const query = input.toLowerCase();
   let bestMatch: ModelEntry | undefined;
   let bestScore = 0;
@@ -72,7 +67,6 @@ export function resolveModel(
     if (found) return found;
   }
 
-  // 3. Not found — list available models
   const list = available
     .map((m) => `  ${m.provider}/${m.id}`)
     .sort()
@@ -80,8 +74,7 @@ export function resolveModel(
   return `Model not found: "${input}".\n\nAvailable models:\n${list}`;
 }
 
-/** Extract a short display label from a model id string. */
 export function modelLabel(modelId: string): string {
   const name = modelId.includes("/") ? modelId.split("/").pop()! : modelId;
-  return name.replace(/-\d{8}$/, ""); // strip date suffix
+  return name.replace(/-\d{8}$/, "");
 }
