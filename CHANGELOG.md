@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-04-26
+
+### Fixed
+
+- **subagents — extension tools unavailable in subagent sessions**: Subagents had access to only 7 built-in tools (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`). Two root causes in `extensions/subagents/agent-runner.ts`:
+  1. **Loader never reloaded**: `DefaultResourceLoader` was constructed and passed to `createAgentSession` without calling `reload()`. The SDK only reloads loaders it creates itself — pre-built loaders are used as-is. Result: extensions never loaded, no extension tools registered.
+  2. **Built-in allowlist blocked extension tools**: `tools: ALL_BUILTIN_TOOL_NAMES` in `sessionOpts` set `allowedToolNames` in the SDK, acting as a strict whitelist. Extension tools (`agenda_*`, `ask`, `mcporter`, etc.) are not built-ins and were filtered out of the registry entirely before `setActiveToolsByName` even ran.
+  
+  **Fix**: Added `await loader.reload()` after `DefaultResourceLoader` construction. Removed `tools: toolNames` from `sessionOpts`; replaced with post-creation `session.getAllTools()` filtering — built-in tools restricted to agent config allowlist, extension tools always included, delegation tools (`Subagent`, `get_subagent_result`, `steer_subagent`) excluded to prevent recursive spawning.
+
+- **agenda widget — not activating for subagent-driven agendas**: Widget never appeared when agendas were started by subagents rather than the parent session. Direct consequence of the above: subagents couldn't call `agenda_start` (tool unavailable), so agendas stayed `not_started`, the parent's 2s poller saw no change, and the widget remained hidden. Resolved by the extension tools fix above.
+
+- **subagents — `tools: none` not respected**: `builtinToolNames = []` was falsy, causing the condition `agentConfig.builtinToolNames?.length` to fall back to `ALL_BUILTIN_TOOL_NAMES`. Fixed by checking `!= null` instead of `?.length`.
+
+### Added
+
+- **subagents — `extensions:` CSV filtering in agent frontmatter**: The `extensions:` field now fully controls which extension tools are active in a subagent session. Previously only `true`/`false` was wired up; the CSV string[] was parsed but ignored.
+  - `extensions: memory-md, agenda` — allowlist: only tools from those extensions
+  - `extensions: !memory-md` — excludelist: all extensions except those prefixed with `!`
+  - `extensions: false` — no extension tools; also suppresses `before_agent_start` injections
+  - `AgentConfig` gains `extensionsExclude?: string[]` derived from the `!`-prefix syntax
+
+- **subagents — unified `tools:` frontmatter**: Non-builtin tool names listed in `tools:` (e.g. `ptc`, `parallel`) are now treated as explicit extension tool allows — included unconditionally as long as the extension loaded, bypassing the `extensions:` filter. Previously non-builtin names in `tools:` were silently ignored.
+
+- **docs — `MultiSubagent` tool documented**: Added `MultiSubagent` to `docs/subagents.md` tools table with its own parameter reference (`tasks`, `run_in_background`, `concurrency`). Previously absent from docs entirely.
+
+- **docs — `agenda_id` parameter documented**: Added `agenda_id` to the `Subagent` parameters table in `docs/subagents.md`.
+
+- **docs — `memory-compact` bundled agent documented**: Added to the bundled agents table in `docs/subagents.md`.
+
+### Changed
+
+- **memory-compact agent — `extensions: !memory-md`**: Previously used `extensions: true` with a manual override note in the prompt body warning against the injected `MEMORY_INSTRUCTION` checklist. Now uses `extensions: !memory-md` to exclude the memory-md extension entirely, preventing the injection at source. `tools:` updated to `read, bash, write, ptc, parallel` — the explicit minimal set needed for compaction.
+
 ## [1.9.1] - 2026-04-24
 
 ### Fixed
