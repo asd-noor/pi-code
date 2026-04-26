@@ -9,8 +9,11 @@
  *   Inlined: ptc
  *            mcporter
  *            code_map_outline, code_map_symbol, code_map_diagnostics, code_map_impact
- *            memory_list, memory_get, memory_search, memory_new, memory_update,
- *            memory_delete, memory_create_file, memory_delete_file, memory_validate_file
+ *            memory_list, memory_get, memory_search,
+ *            memory_create_file, memory_delete_file, memory_validate_file
+ *
+ * Blacklisted (concurrent writes corrupt memory files):
+ *            memory_new, memory_update, memory_delete
  *
  * No monkey-patching. All supported non-native tools are implemented directly
  * in this file, using the same logic as their respective extensions.
@@ -139,8 +142,9 @@ const ExtCall = Type.Object(
       description:
         "Name of a supported inlined tool: " +
         "code_map_outline, code_map_symbol, code_map_diagnostics, code_map_impact, " +
-        "memory_list, memory_get, memory_search, memory_new, memory_update, memory_delete, " +
+        "memory_list, memory_get, memory_search, " +
         "memory_create_file, memory_delete_file, memory_validate_file. " +
+        "NOT allowed (concurrent writes corrupt memory files): memory_new, memory_update, memory_delete — call these sequentially via the native tools. " +
         "Pass the tool's normal arguments as additional fields alongside `tool`.",
     }),
   },
@@ -370,10 +374,18 @@ const CODE_MAP_TOOLS = new Set([
   "code_map_outline", "code_map_symbol", "code_map_diagnostics", "code_map_impact",
 ]);
 
-/** Memory tools supported for concurrent execution. */
+/**
+ * Memory tools that mutate files — blacklisted from parallel to prevent corruption.
+ * Concurrent writes to the same markdown file can produce duplicate sections or
+ * interleaved content. Call these sequentially via the native tools instead.
+ */
+const MEMORY_WRITE_BLACKLIST = new Set([
+  "memory_new", "memory_update", "memory_delete",
+]);
+
+/** Memory tools safe for concurrent execution (read-only or independent file ops). */
 const MEMORY_TOOLS = new Set([
   "memory_list", "memory_get", "memory_search",
-  "memory_new", "memory_update", "memory_delete",
   "memory_create_file", "memory_delete_file", "memory_validate_file",
 ]);
 
@@ -395,6 +407,12 @@ async function opExtension(
   }
   if (CODE_MAP_TOOLS.has(toolName)) {
     return opCodeMap(toolName, params, cwd);
+  }
+  if (MEMORY_WRITE_BLACKLIST.has(toolName)) {
+    throw new Error(
+      `"${toolName}" is not allowed inside parallel — concurrent writes corrupt memory files. ` +
+      `Call ${toolName} sequentially using the native tool instead.`,
+    );
   }
   if (MEMORY_TOOLS.has(toolName)) {
     return opMemory(toolName, params, cwd);
@@ -429,6 +447,11 @@ results back in one shot, then decide what to do. Use a raw \`bash\` slot only f
 ### edit safety
 \`parallel\`'s \`edit\` op does **not** use the native mutation queue. Do not include two \`edit\`
 calls targeting the same file in one \`parallel\` invocation — use the native \`edit\` tool for that instead.
+
+### memory write safety
+\`memory_new\`, \`memory_update\`, and \`memory_delete\` are **not allowed** inside \`parallel\`.
+Concurrent writes corrupt the markdown-backed memory files (duplicate sections, interleaved content).
+Call them sequentially via the native memory tools instead.
 `.trim();
 
 // ── Extension ────────────────────────────────────────────────────────────────
