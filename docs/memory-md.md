@@ -44,13 +44,19 @@ Memory is organised hierarchically by file and section headings:
 
 ```
 auth.md
-  ## API Keys          → path: auth/api-keys
-    ### Rotation Policy → path: auth/api-keys/rotation-policy
+  ## API Keys                  → path: auth/api-keys
+    ### Rotation Policy        → path: auth/api-keys/rotation-policy
+    ### Revocation             → path: auth/api-keys/revocation
+  ## OAuth
+    ### Providers              → path: auth/oauth/providers
+      #### Google              → path: auth/oauth/providers/google
 ```
 
 - File name (without `.md`) is always the first path segment
 - Headings are slugified: lowercase, spaces → `-`, non-alphanumeric stripped
 - `"API Keys"` → `api-keys`, `"Token Refresh Policy"` → `token-refresh-policy`
+
+**Use nesting — don't flatten.** A `##` section should cover one coherent topic area. Sub-topics, categories, or logically distinct facts belong under `###` or `####`, not crammed into a single `##` body. Deep nesting keeps individual sections small, precise, and easy to retrieve via search.
 
 ### Workflow: storing
 

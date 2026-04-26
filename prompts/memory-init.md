@@ -40,8 +40,10 @@ For each file:
      - `#` is a decorative title only — ignored for path derivation
      - `##` headings become the second path segment: `file/heading-slug`
      - `###` headings become the third: `file/parent-slug/heading-slug`
+     - `####` headings become the fourth: `file/grandparent/parent/heading-slug`
      - Slugification: lowercase, spaces → `-`, all non-alphanumeric characters except `-` stripped
-     - Example: `architecture.md` + `## Tech Stack` → path `architecture/tech-stack`
+     - Example: `architecture.md` + `## Tech Stack` → `architecture/tech-stack`; `### Frontend` → `architecture/tech-stack/frontend`
+   - **Use nesting — don't flatten.** A `##` should cover one coherent topic. Sub-topics, categories, or distinct facts belong under `###` or `####`. Avoid cramming multiple concepts into a single `##` body — break them into child sections instead. This keeps each section small, focused, and easy to retrieve.
    - Store factual, concise information suitable for future reference
    - Include paths, commands, and specific details where relevant
    - After writing to a file, run `memory_validate_file` to check for duplicate paths, skipped heading levels, and multiple title headings
