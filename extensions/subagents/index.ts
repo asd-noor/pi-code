@@ -874,4 +874,92 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       );
     },
   });
+
+  // =========================================================================
+  // Command: /delegate-multi
+  // =========================================================================
+
+  pi.registerCommand("delegate-multi", {
+    description: "Delegate multiple tasks to agents in parallel. Usage: /delegate-multi agent1:task1; agent2:task2",
+
+    getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+      const lastSemicolon = prefix.lastIndexOf(";");
+      const current = lastSemicolon === -1 ? prefix : prefix.slice(lastSemicolon + 1).trimStart();
+      if (current.includes(":")) return null;
+      rebuildRegistry(currentCwd);
+      return getAvailableTypes()
+        .filter((name) => name.toLowerCase().startsWith(current.toLowerCase()))
+        .map((name) => {
+          const cfg = getConfig(name);
+          return { value: name + ":", label: name, description: cfg?.description };
+        });
+    },
+
+    handler: async (args, ctx) => {
+      const trimmed = (args ?? "").trim();
+      if (!trimmed) { ctx.ui.notify("Usage: /delegate-multi agent1:task1; agent2:task2", "error"); return; }
+
+      currentCwd = resolveCwd(ctx, currentCwd);
+      rebuildRegistry(currentCwd);
+      widget.setUICtx(ctx.ui);
+
+      // Parse semicolon-separated "agent:task" pairs
+      const pairs = trimmed.split(";").map((s) => s.trim()).filter(Boolean);
+      const tasks: Array<{ agentName: string; task: string }> = [];
+      for (let i = 0; i < pairs.length; i++) {
+        const colon = pairs[i]!.indexOf(":");
+        if (colon === -1) { ctx.ui.notify(`Segment ${i + 1}: missing ":" — expected agent:task`, "error"); return; }
+        tasks.push({ agentName: pairs[i]!.slice(0, colon).trim(), task: pairs[i]!.slice(colon + 1).trim() });
+      }
+
+      // Resolve agent configs up front — fail fast
+      const resolved: Array<{ agentName: string; task: string; agentConfig: any }> = [];
+      for (let i = 0; i < tasks.length; i++) {
+        const { agentName, task } = tasks[i]!;
+        const agentConfig = getConfig(agentName);
+        if (!agentConfig) {
+          const available = getAvailableTypes().join(", ") || "none";
+          ctx.ui.notify(`Unknown agent: "${agentName}". Available: ${available}`, "error");
+          return;
+        }
+        resolved.push({ agentName, task, agentConfig });
+      }
+
+      ctx.ui.notify(`Delegating to ${resolved.length} agents in parallel…`, "info");
+
+      const results = new Array(resolved.length) as Array<{ agentName: string; label: string; output: string; status: string }> ;
+      await Promise.all(
+        resolved.map(async ({ agentName, task, agentConfig }, i) => {
+          const description = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
+          const record = await manager.spawnAndWait({ ...ctx, cwd: currentCwd }, task, {
+            description,
+            agentConfig,
+          });
+          widget.markFinished(record.id);
+          const duration = record.completedAt ? formatMs(record.completedAt - record.startedAt) : "?";
+          const stats    = `${agentName} · ${duration} · ${record.toolUses} tool use${record.toolUses !== 1 ? "s" : ""}`;
+          results[i] = {
+            agentName,
+            label:  stats,
+            output: record.status === "error" ? `ERROR: ${record.error ?? "unknown"}` : record.result?.trim() || "(no output)",
+            status: record.status,
+          };
+        }),
+      );
+
+      const content = results
+        .map((r) => `[${r.label}]\n\n${r.output}`)
+        .join("\n\n---\n\n");
+
+      pi.sendMessage(
+        {
+          customType: "delegate-multi:result",
+          content,
+          display: true,
+          details: { count: resolved.length },
+        },
+        { deliverAs: "followUp" },
+      );
+    },
+  });
 }
