@@ -12,8 +12,10 @@ export interface AgentConfig {
   description: string;
   /** Built-in tool names to give the agent. Omit/empty = all built-in tools. */
   builtinToolNames?: string[];
-  /** true = inherit all extension tools, string[] = only listed, false = none */
+  /** true = all extensions, string[] = only listed, string[] with !-prefix = all except listed, false = none */
   extensions: true | string[] | false;
+  /** Derived from extensions field: names to exclude (populated when all items start with !) */
+  extensionsExclude?: string[];
   model?: string;
   thinking?: ThinkingLevel;
   /** Max agentic turns (undefined = unlimited). */

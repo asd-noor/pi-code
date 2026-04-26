@@ -193,9 +193,10 @@ See the [doc-library](./docs/doc-library.md) and [web-scout](./docs/web-scout.md
 ### Sub-Agent Delegation (subagents)
 
 - Spawn autonomous sub-agents for complex tasks
+- Fan out multiple independent agents concurrently with `MultiSubagent`
 - Run in foreground (sequential) or background (parallel)
 - Inherit context from parent or start fresh
-- Agenda integration for structured sub-tasks
+- Agenda integration: assign a pre-created `agenda_id` and the subagent owns the full lifecycle
 - Model and thinking-level overrides
 
 ### Library Documentation (doc-library skill)

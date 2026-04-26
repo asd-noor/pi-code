@@ -7,6 +7,7 @@ Spawn autonomous sub-agents for parallel and delegated work. Each sub-agent runs
 | Tool | Description |
 |---|---|
 | `Subagent` | Launch a sub-agent (foreground or background) |
+| `MultiSubagent` | Launch multiple independent sub-agents concurrently in one call |
 | `get_subagent_result` | Check status and retrieve results from a background agent |
 | `steer_subagent` | Inject a steering message into a running agent mid-run |
 
@@ -24,6 +25,15 @@ Spawn autonomous sub-agents for parallel and delegated work. Each sub-agent runs
 | `resume` | string? | Agent ID to resume from |
 | `isolated` | boolean? | Strip extension/MCP tools — built-in tools only |
 | `inherit_context` | boolean? | Prepend parent conversation history to prompt |
+| `agenda_id` | number? | ID of a `not_started` agenda to assign — subagent will start, execute, evaluate, and complete it |
+
+### `MultiSubagent` parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `tasks` | array | Array of task objects — each accepts the same fields as `Subagent` |
+| `run_in_background` | boolean? | Start all agents in background; returns agent IDs immediately |
+| `concurrency` | number? | Max agents running simultaneously (default: all tasks at once) |
 
 ## Commands
 
@@ -60,6 +70,20 @@ Agents are defined as `.md` files with YAML frontmatter. On first install, the b
 | `worker` | inherits parent | append | Implements features, fixes bugs, refactors code, edits files, and handles any multi-step coding task |
 | `Explore` | grok-code-fast-1 | replace | Fast codebase exploration agent (read-only) |
 | `Research` | claude-haiku-4.5 | replace | Performs comprehensive research on topics, libraries, and APIs using web sources and documentation, with memory integration |
+| `memory-compact` | claude-haiku-4.5 | replace | Compacts markdown memory files by snapshotting, summarizing noisy sections into concise bullets, and recreating cleaner memory files |
+
+**`tools` values:**
+
+`tools:` is a **unified allowlist** for all tools — both built-ins and extension tools.
+
+| Value | Effect |
+|---|---|
+| omitted | All 7 built-in tools active; extension tools controlled by `extensions:` |
+| `read, bash, write` | Only those built-ins; extension tools controlled by `extensions:` |
+| `read, bash, write, ptc, parallel` | Those built-ins + `ptc` and `parallel` explicitly allowed, regardless of `extensions:` |
+| `none` | No built-in tools; extension tools still controlled by `extensions:` |
+
+Non-builtin names (e.g. `ptc`, `parallel`, `agenda_start`) are treated as **explicit extension tool allows** — they are included as long as the extension loaded (i.e. not blocked by `extensions: false` or `isolated: true`).
 
 ### Frontmatter reference
 
@@ -68,16 +92,27 @@ Agents are defined as `.md` files with YAML frontmatter. On first install, the b
 description: One-line description shown in UI
 display_name: Display Name
 tools: read, bash, grep, find, ls    # or "none" for no built-in tools
+extensions: memory-md, agenda        # true (default) | false | csv of extension names
 model: anthropic/claude-sonnet-4-5   # omit to inherit parent model
 thinking: low                        # off | minimal | low | medium | high | xhigh
 max_turns: 30                        # omit for unlimited
 prompt_mode: replace                 # replace = body is full prompt | append = appended to parent
-extensions: false                    # true | false | csv of extension names
+isolated: false                      # true strips ALL extension/MCP tools
 enabled: true
 ---
 
 System prompt body here...
 ```
+
+**`extensions` values:**
+
+| Value | Effect |
+|---|---|
+| omitted / `true` | All extension tools active (default) |
+| `false` | No extension tools — also suppresses `before_agent_start` injections from extensions |
+| `memory-md, agenda` | Only tools from the named extensions are active |
+| `!memory-md` | All extensions except `memory-md` |
+| `!memory-md, !agenda` | All extensions except those listed |
 
 ## Widget
 

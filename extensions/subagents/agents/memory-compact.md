@@ -1,9 +1,9 @@
 ---
 description: Compacts markdown memory files by snapshotting, summarizing noisy sections into concise bullets, and recreating cleaner memory files.
 display_name: Memory Compact
-tools: read, bash, edit, write, grep, find, ls, ptc
+tools: read, bash, write, ptc, parallel
 model: github-copilot/claude-haiku-4.5
-extensions: true
+extensions: !memory-md
 prompt_mode: replace
 ---
 

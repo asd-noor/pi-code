@@ -229,13 +229,17 @@ export async function spawnAndRun(
   const agentDirPath = getAgentDir();
 
   // Built-in tool allowlist: use agent's declared tools, falling back to all built-ins.
-  // NOTE: do NOT pass this as `tools` to sessionOpts — the SDK treats that as an
-  // allowedToolNames whitelist and filters extension-registered tools (agenda, mcporter,
-  // ask, …) out of the registry entirely before setActiveToolsByName even runs.
-  // Instead we apply the restriction ourselves after session creation below.
-  const toolNames = agentConfig.builtinToolNames?.length
+  // Use != null (not ?.length) so that an explicit empty array (tools: none) is respected
+  // and doesn't silently fall back to all built-ins.
+  const toolNames = agentConfig.builtinToolNames != null
     ? agentConfig.builtinToolNames.filter((n) => ALL_BUILTIN_TOOL_NAMES.includes(n))
     : ALL_BUILTIN_TOOL_NAMES;
+
+  // Non-builtin names listed in tools: (e.g. ptc, parallel) are explicit extension
+  // tool allows — included unconditionally as long as the extension loaded.
+  const explicitExtTools = new Set(
+    (agentConfig.builtinToolNames ?? []).filter((n) => !ALL_BUILTIN_TOOL_NAMES.includes(n)),
+  );
 
   const loader = new DefaultResourceLoader({
     cwd,
@@ -274,17 +278,40 @@ export async function spawnAndRun(
   // - Always exclude delegation tools (Subagent, get_subagent_result, steer_subagent)
   //   to prevent recursive spawning beyond the configured depth.
   // - For built-in tools, respect the agent config allowlist (toolNames).
-  // - Extension-registered tools (agenda, ask, mcporter, …) are always included
-  //   so subagents can use them — they were blocked before because passing
-  //   `tools: toolNames` to createAgentSession set an allowedToolNames whitelist
-  //   that filtered extension tools out of the registry entirely.
+  // - Extension-registered tools are included based on agentConfig.extensions:
+  //     true  → all extension tools included
+  //     false → no extension tools (noExtensions=true already skipped loading,
+  //             but guard here too for safety)
+  //     string[] → only tools whose sourceInfo.path contains one of the listed
+  //               extension names (e.g. ["memory-md", "agenda"])
   {
-    const all = session.getAllTools().map((t: any) => t.name);
-    const active = all.filter((name: string) => {
-      if (EXCLUDED_TOOL_NAMES.has(name)) return false;
-      if (ALL_BUILTIN_TOOL_NAMES.includes(name)) return toolNames.includes(name);
-      return true; // extension tools always included
-    });
+    const allTools = session.getAllTools();
+    // Build name→sourcePath map once to avoid O(n²) lookups.
+    const sourceByName = new Map(
+      allTools.map((t: any) => [t.name, (t.sourceInfo?.path ?? "") as string]),
+    );
+    const extFilter = agentConfig.extensions;
+    const active = allTools
+      .map((t: any) => t.name as string)
+      .filter((name: string) => {
+        if (EXCLUDED_TOOL_NAMES.has(name)) return false;
+        if (ALL_BUILTIN_TOOL_NAMES.includes(name)) return toolNames.includes(name);
+        // Explicitly listed in tools: frontmatter — always include if the extension loaded.
+        if (explicitExtTools.has(name)) return true;
+        // Extension tool — apply extensions filter.
+        if (extFilter === false) return false;
+        if (extFilter === true) {
+          // Exclusion mode: skip tools whose source path matches any excluded extension.
+          if (agentConfig.extensionsExclude?.length) {
+            const src = sourceByName.get(name) ?? "";
+            return !agentConfig.extensionsExclude.some((ext) => src.includes(ext));
+          }
+          return true;
+        }
+        // string[] allowlist — match against source path of the tool.
+        const src = sourceByName.get(name) ?? "";
+        return (extFilter as string[]).some((ext) => src.includes(ext));
+      });
     session.setActiveToolsByName(active);
   }
 

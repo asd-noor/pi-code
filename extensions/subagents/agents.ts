@@ -49,23 +49,25 @@ function loadFromDir(
 
     const { frontmatter: fm, body } = parseFrontmatter<Record<string, unknown>>(content);
 
-    agents.set(name, {
-      name,
-      displayName: str(fm.display_name),
-      description: str(fm.description) ?? name,
-      builtinToolNames: csvList(fm.tools, ALL_BUILTIN_TOOLS),
-      extensions: inheritField(fm.extensions ?? fm.inherit_extensions),
-      model: str(fm.model),
-      thinking: str(fm.thinking) as ThinkingLevel | undefined,
-      maxTurns: nonNegativeInt(fm.max_turns),
-      systemPrompt: body.trim(),
-      promptMode: fm.prompt_mode === "append" ? "append" : "replace",
-      inheritContext: fm.inherit_context != null ? fm.inherit_context === true : undefined,
-      runInBackground: fm.run_in_background != null ? fm.run_in_background === true : undefined,
-      isolated: fm.isolated != null ? fm.isolated === true : undefined,
-      enabled: fm.enabled !== false,
-      source,
-    });
+      const extResult = inheritField(fm.extensions ?? fm.inherit_extensions);
+      agents.set(name, {
+        name,
+        displayName:      str(fm.display_name),
+        description:      str(fm.description) ?? name,
+        builtinToolNames: csvList(fm.tools, ALL_BUILTIN_TOOLS),
+        extensions:       extResult.extensions,
+        extensionsExclude: extResult.exclude,
+        model:            str(fm.model),
+        thinking:         str(fm.thinking) as ThinkingLevel | undefined,
+        maxTurns:         nonNegativeInt(fm.max_turns),
+        systemPrompt:     body.trim(),
+        promptMode:       fm.prompt_mode === "append" ? "append" : "replace",
+        inheritContext:   fm.inherit_context != null ? fm.inherit_context === true : undefined,
+        runInBackground:  fm.run_in_background != null ? fm.run_in_background === true : undefined,
+        isolated:         fm.isolated != null ? fm.isolated === true : undefined,
+        enabled:          fm.enabled !== false,
+        source,
+      });
   }
 }
 
@@ -91,10 +93,19 @@ function csvList(val: unknown, defaults: string[]): string[] {
   return parseCsvField(val) ?? [];
 }
 
-/** omitted/true → true; false/"none" → false; csv → items. */
-function inheritField(val: unknown): true | string[] | false {
-  if (val === undefined || val === null || val === true) return true;
-  if (val === false || val === "none") return false;
+/** omitted/true → true; false/"none" → false; csv → items.
+ * Items prefixed with ! (e.g. "!memory-md") are treated as an exclusion list:
+ * if ALL items in the csv start with !, the result is true + extensionsExclude.
+ */
+function inheritField(val: unknown): { extensions: true | string[] | false; exclude?: string[] } {
+  if (val === undefined || val === null || val === true) return { extensions: true };
+  if (val === false || val === "none") return { extensions: false };
   const items = csvList(val, []);
-  return items.length > 0 ? items : false;
+  if (items.length === 0) return { extensions: false };
+  // If every item starts with !, treat as exclusion list.
+  if (items.every((s) => s.startsWith("!"))) {
+    return { extensions: true, exclude: items.map((s) => s.slice(1)) };
+  }
+  // Mixed or plain items → allowlist (strip any stray ! just in case).
+  return { extensions: items.filter((s) => !s.startsWith("!")) };
 }
