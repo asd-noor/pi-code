@@ -225,6 +225,8 @@ Always prefer a canonical file over creating a new one. Create additional files 
     // Always resolve memDir — tools must work in subagent sessions too.
     memDir = resolveMemDir(ctx.cwd);
     mkdirSync(memDir, { recursive: true });
+    // Expose to child processes (bash tool, subagents like memory-compact).
+    process.env.MEMORY_MD_DIR = memDir;
 
     if (!ctx.hasUI) return;
     isInteractive = true;
@@ -252,6 +254,7 @@ Always prefer a canonical file over creating a new one. Create additional files 
     clearFooter();
     memDir = undefined;
     uiCtx  = undefined;
+    delete process.env.MEMORY_MD_DIR;
   });
 
   // ── /memory command ───────────────────────────────────────────────────────
