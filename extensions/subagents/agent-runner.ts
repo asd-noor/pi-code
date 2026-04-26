@@ -228,7 +228,11 @@ export async function spawnAndRun(
 
   const agentDirPath = getAgentDir();
 
-  // Tool allowlist: use agent's declared tools, falling back to all built-ins
+  // Built-in tool allowlist: use agent's declared tools, falling back to all built-ins.
+  // NOTE: do NOT pass this as `tools` to sessionOpts — the SDK treats that as an
+  // allowedToolNames whitelist and filters extension-registered tools (agenda, mcporter,
+  // ask, …) out of the registry entirely before setActiveToolsByName even runs.
+  // Instead we apply the restriction ourselves after session creation below.
   const toolNames = agentConfig.builtinToolNames?.length
     ? agentConfig.builtinToolNames.filter((n) => ALL_BUILTIN_TOOL_NAMES.includes(n))
     : ALL_BUILTIN_TOOL_NAMES;
@@ -255,19 +259,28 @@ export async function spawnAndRun(
     settingsManager: SettingsManager.create(cwd, agentDirPath),
     modelRegistry: ctx.modelRegistry,
     model: resolvedModel,
-    tools: toolNames,
+    // Do not pass `tools` here — see toolNames comment above.
     resourceLoader: loader,
   };
   if (resolvedThinking) sessionOpts.thinkingLevel = resolvedThinking;
 
   const { session } = await createAgentSession(sessionOpts);
 
-  // When extensions are loaded, filter out our own delegation tools to prevent
-  // recursive subagent spawning beyond the configured depth.
-  if (!noExtensions) {
-    const active = session.getActiveToolNames().filter(
-      (name: string) => !EXCLUDED_TOOL_NAMES.has(name),
-    );
+  // Apply tool restrictions:
+  // - Always exclude delegation tools (Subagent, get_subagent_result, steer_subagent)
+  //   to prevent recursive spawning beyond the configured depth.
+  // - For built-in tools, respect the agent config allowlist (toolNames).
+  // - Extension-registered tools (agenda, ask, mcporter, …) are always included
+  //   so subagents can use them — they were blocked before because passing
+  //   `tools: toolNames` to createAgentSession set an allowedToolNames whitelist
+  //   that filtered extension tools out of the registry entirely.
+  {
+    const all = session.getAllTools().map((t: any) => t.name);
+    const active = all.filter((name: string) => {
+      if (EXCLUDED_TOOL_NAMES.has(name)) return false;
+      if (ALL_BUILTIN_TOOL_NAMES.includes(name)) return toolNames.includes(name);
+      return true; // extension tools always included
+    });
     session.setActiveToolsByName(active);
   }
 
