@@ -148,8 +148,14 @@ function buildSubagentInstruction(): string {
     "",
     "### Foreground vs background",
     "",
-    "- Foreground (default): result is needed before continuing. Runs one at a time — blocks the conversation.",
-    "- Background (`run_in_background: true`): starts immediately. Use for independent tasks.",
+    "**Default: always use background agents** (`run_in_background: true`).",
+    "Running agents in the background lets you continue taking instructions and spawn additional agents immediately — keeping throughput high and the conversation unblocked.",
+    "",
+    "**Spawn with an agenda** (`agenda_id`): create a `not_started` agenda first, pass its ID to the subagent.",
+    "The subagent will start, execute, evaluate, and complete the agenda, making progress easy to track.",
+    "",
+    "**Use foreground ONLY when the result is immediately required to make a decision** — for example, you are researching options and need information before you can proceed.",
+    "Any other case → background. Never block the conversation unless you have no choice.",
     "",
     "### Parallel work — fan-out with MultiSubagent",
     "",
@@ -279,11 +285,12 @@ Guidelines:
 - Delegate to a subagent by default. Only handle work inline when it is a single, trivial action.
 - Hard triggers: exploration across >2 files → Explore; implementation/refactor/edit → worker; committing staged changes → git-commit; any task with 3+ steps → worker.
 - Read each agent's description and pick the best fit. The available agents are listed in the system prompt.
-- For parallel work, use run_in_background: true on each subagent. Foreground calls run sequentially — only one executes at a time.
+- **Prefer background agents** (run_in_background: true). Running in the background keeps the conversation unblocked so you can take new instructions and spawn more agents immediately.
+- **Pair with an agenda**: create a not_started agenda first, pass its agenda_id to the subagent. The subagent will start, execute, evaluate, and complete it — making progress easy to track.
+- **Use foreground only** when you need the result right now to make a decision (e.g. mid-research information gathering). Every other case → background.
 - Provide clear, detailed prompts so the subagent can work autonomously.
 - Subagent results are returned as text — summarize them for the user.
-- Use run_in_background for work you don't need immediately. You will be notified when it completes.
-- Pass agenda_id when the primary agent has pre-created a not_started agenda for this task. The subagent will start, execute, and complete it.
+- You will be notified when a background agent completes.
 - Use resume with an agent ID to continue a previous subagent's work.
 - Use steer_subagent to send mid-run messages to a running background subagent.
 - Use model to specify a different model (as "provider/modelId", or fuzzy e.g. "haiku", "sonnet").
