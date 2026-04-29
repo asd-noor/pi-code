@@ -6,6 +6,7 @@
         "pi-package"
     ],
     "license": "GPL-3.0-only",
+    "type": "module",
     "dependencies": {
         "pi-mcporter": "*",
         "pi-ask-tool-extension": "*"

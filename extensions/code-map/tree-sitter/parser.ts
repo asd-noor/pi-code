@@ -33,7 +33,10 @@ export class TreeSitterParser {
   /** Compiled queries keyed by language id */
   private queryCache = new Map<string, any>();
 
-  constructor(private grammars: LoadedGrammars) {}
+  private grammars: LoadedGrammars;
+  constructor(grammars: LoadedGrammars) {
+    this.grammars = grammars;
+  }
 
   /**
    * Parse a file from disk.  Returns an empty array on any error (missing
