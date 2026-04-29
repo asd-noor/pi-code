@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.3] - 2026-04-30
+
+### Fixed
+
+- **code-map — TypeScript enums not supported in strip-only mode**: `lsp/protocol.ts` used `export enum SymbolKind` and `export enum DiagnosticSeverity`. Node’s strip-only transpiler cannot emit the runtime object enums generate. Converted both to `as const` objects with a matching type alias (`export type X = typeof X[keyof typeof X]`), which are pure type annotations that strip cleanly. Updated `SKIP_KINDS` in `indexer.ts` to `new Set<SymbolKind>()` so `.has()` accepts the full value union.
+
 ## [1.12.2] - 2026-04-30
 
 ### Fixed

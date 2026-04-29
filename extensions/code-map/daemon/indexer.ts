@@ -35,7 +35,7 @@ const SKIP_DIRS = new Set([
   "target", "__pycache__", ".next", "build",
 ]);
 
-const SKIP_KINDS = new Set([
+const SKIP_KINDS = new Set<SymbolKind>([
   SymbolKind.File, SymbolKind.Variable, SymbolKind.String,
   SymbolKind.Number, SymbolKind.Boolean, SymbolKind.Array,
   SymbolKind.Object, SymbolKind.Key, SymbolKind.Null,
@@ -397,7 +397,7 @@ function flattenSymbols(
 
   if (isHierarchical) {
     for (const sym of raw as DocumentSymbol[]) {
-      if (!SKIP_KINDS.has(sym.kind)) {
+      if (!SKIP_KINDS.has(sym.kind as SymbolKind)) {
         out.push({
           id:        nodeId(relFile, sym.name, SYMBOL_KIND_NAMES[sym.kind] ?? ""),
           name:      sym.name,
@@ -413,7 +413,7 @@ function flattenSymbols(
     }
   } else {
     for (const sym of raw as SymbolInformation[]) {
-      if (!SKIP_KINDS.has(sym.kind)) {
+      if (!SKIP_KINDS.has(sym.kind as SymbolKind)) {
         out.push({
           id:        nodeId(relFile, sym.name, SYMBOL_KIND_NAMES[sym.kind] ?? ""),
           name:      sym.name,
