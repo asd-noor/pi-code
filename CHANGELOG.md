@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-04-30
+
+### Fixed
+
+- **code-map — daemon spawned with `bun` instead of `node`**: `spawnDaemon()` in `extensions/code-map/index.ts` used `bun run runner.ts`, which caused the daemon to run under Bun. Bun resolves native addon paths differently from Node.js, producing `ResolveMessage: Cannot find module './prebuilds/darwin-arm64/tree-sitter.node'` at startup. Node v24 runs `.ts` files natively (type-stripping is on by default since v23.6), so the fix is a direct `node runner.ts` spawn — no wrapper needed.
+- **code-map — tree-sitter installer: bun fallback removed**: `runNpm()` in `tree-sitter/installer.ts` still had a bun fallback path. Removed entirely; npm is required and an explicit error is thrown if it is absent.
+
 ## [1.11.1] - 2026-04-30
 
 ### Fixed

@@ -92,21 +92,16 @@ function which(cmd: string): string | null {
 /**
  * Install npm packages for tree-sitter.
  *
- * IMPORTANT: always prefer npm over bun.
- * Tree-sitter ships a native Node.js addon that must be compiled against the
- * Node.js ABI.  Bun's native-addon build pipeline targets Bun's own runtime
- * and can leave the .node file absent or partially compiled.  npm runs the
- * standard node-gyp-build install hook which compiles correctly for Node.js.
+ * Always uses npm: tree-sitter is a native Node.js addon that must be
+ * compiled against the Node.js ABI.  Bun's native-addon build pipeline
+ * targets Bun's own runtime and leaves the .node file absent or incomplete.
  */
-function runNpm(dir: string, packages: string[], log: (msg: string) => void): void {
+function runNpm(dir: string, packages: string[], _log: (msg: string) => void): void {
   const env = buildEnv();
   if (which("npm")) {
     runSync("npm", ["install", "--prefix", dir, "--legacy-peer-deps", ...packages], { env });
-  } else if (which("bun")) {
-    log("Warning: npm not found; falling back to bun — native addon may need an explicit rebuild");
-    runSync("bun", ["add", "--cwd", dir, ...packages], { env });
   } else {
-    throw new Error("Neither npm nor bun found on PATH");
+    throw new Error("npm not found on PATH — required to build tree-sitter native addon");
   }
 }
 

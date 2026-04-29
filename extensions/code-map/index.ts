@@ -145,8 +145,8 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
     const logFd   = openSync(logPath, "a");
 
     const child = spawn(
-      "bun",
-      ["run", DAEMON_SCRIPT, root, "--auto-install", `--file-limit=${config.fileLimit}`],
+      "node",
+      [DAEMON_SCRIPT, root, "--auto-install", `--file-limit=${config.fileLimit}`],
       { stdio: ["ignore", logFd, logFd], detached: false },
     );
     child.on("error", (err) => {
