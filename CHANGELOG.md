@@ -5,13 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.11.0] - 2026-04-28
+## [1.11.1] - 2026-04-30
 
 ### Fixed
 
-- subagents - updated instructions prefer using background agents.
+- **code-map — tree-sitter native addon fails to build when bun is on PATH**: `runNpm()` in `tree-sitter/installer.ts` preferred bun over npm. Bun 1.3.10 only compiled 3 of 9 source files and never produced `tree_sitter_runtime_binding.node`. At runtime Node v24 (ABI 137) failed to load the addon with `No native build was found for ... abi=137`, `loadGrammars()` returned `null` silently, and the daemon fell back to LSP-only mode — skipping all JS/TS/Python/Zig/Lua files since no LSP was configured for them. Fixed by flipping the preference order to npm-first (npm's `node-gyp-build` install hook compiles correctly for Node.js ABI). Added `PACKAGES_NEED_BUILD` constant for the three packages without prebuilts (`tree-sitter`, `tree-sitter-zig`, `tree-sitter-lua`). After `npm install`, `missingNodeFiles()` checks each package's `build/Release/` for a `.node` file; any missing ones are rebuilt via `rebuildPackages()` using `npx node-gyp rebuild`, with a clear actionable error if the rebuild also fails. `loadGrammars()` now accepts an optional `log` callback to surface the native load error instead of swallowing it silently; `runner.ts` passes `log` through.
 
-## [1.10.0] - 2026-04-26
+## [1.11.0] - 2026-04-28
 
 ### Fixed
 
