@@ -1,10 +1,10 @@
 /**
  * SQLite-backed persistent store for code-map.
  * Replaces all in-memory Maps from CodeGraph.
- * Uses bun:sqlite (zero deps, built-in).
+ * Uses node:sqlite (built-in since Node v22.5, no flag needed in v24).
  */
 
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import type { GraphNode, RefLocation } from "./graph.ts";
 import { REF_KINDS } from "./graph.ts";
 
@@ -95,11 +95,24 @@ const REF_KINDS_SQL = [...REF_KINDS].map((k) => `'${k}'`).join(", ");
 // ── CodeMapDB ─────────────────────────────────────────────────────────────────
 
 export class CodeMapDB {
-  private db: Database;
+  private db: DatabaseSync;
 
   constructor(dbPath: string) {
-    this.db = new Database(dbPath, { create: true });
+    this.db = new DatabaseSync(dbPath);
     this.db.exec(SCHEMA);
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  private transaction(fn: () => void): void {
+    this.db.exec("BEGIN");
+    try {
+      fn();
+      this.db.exec("COMMIT");
+    } catch (err) {
+      try { this.db.exec("ROLLBACK"); } catch (_) {}
+      throw err;
+    }
   }
 
   // ── Node writes ─────────────────────────────────────────────────────────────
@@ -110,12 +123,11 @@ export class CodeMapDB {
       `INSERT OR REPLACE INTO nodes (id, name, kind, language, file, line_start, line_end, col_start)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
-    const run = this.db.transaction((ns: GraphNode[]) => {
-      for (const n of ns) {
+    this.transaction(() => {
+      for (const n of nodes) {
         stmt.run(n.id, n.name, n.kind, n.language, n.file, n.lineStart, n.lineEnd, n.colStart);
       }
     });
-    run(nodes);
   }
 
   /** Returns node_ids of symbols in OTHER files whose caller list included relFile.
@@ -128,7 +140,7 @@ export class CodeMapDB {
   }
 
   deleteFile(relFile: string): void {
-    const run = this.db.transaction(() => {
+    this.transaction(() => {
       // Unmark as indexed any symbol whose callers included this file,
       // so Phase 2 will recompute their reverse refs on next impact query.
       this.db.prepare(
@@ -140,7 +152,6 @@ export class CodeMapDB {
       this.db.prepare(`DELETE FROM diagnostics WHERE file = ?`).run(relFile);
       this.db.prepare(`DELETE FROM file_meta WHERE file = ?`).run(relFile);
     });
-    run();
   }
 
   deleteFiles(relFiles: string[]): void {
@@ -153,8 +164,8 @@ export class CodeMapDB {
     const delNodes = this.db.prepare(`DELETE FROM nodes WHERE file = ?`);
     const delDiags = this.db.prepare(`DELETE FROM diagnostics WHERE file = ?`);
     const delMeta  = this.db.prepare(`DELETE FROM file_meta WHERE file = ?`);
-    const run = this.db.transaction((files: string[]) => {
-      for (const f of files) {
+    this.transaction(() => {
+      for (const f of relFiles) {
         unmarkIndexed.run(f);
         delCallerRefs.run(f);
         delNodes.run(f);
@@ -162,7 +173,6 @@ export class CodeMapDB {
         delMeta.run(f);
       }
     });
-    run(relFiles);
   }
 
   // ── Node reads ──────────────────────────────────────────────────────────────
@@ -236,14 +246,13 @@ export class CodeMapDB {
     const insertIndexed = this.db.prepare(
       `INSERT OR IGNORE INTO indexed_nodes (node_id) VALUES (?)`,
     );
-    const run = this.db.transaction(() => {
+    this.transaction(() => {
       this.db.prepare(`DELETE FROM reverse_refs WHERE node_id = ?`).run(nodeId);
       for (const r of refs) {
         insertRef.run(nodeId, r.file, r.lineStart, r.lineEnd);
       }
       insertIndexed.run(nodeId);
     });
-    run();
   }
 
   getReverseRefs(nodeId: string): RefLocation[] {
@@ -274,13 +283,12 @@ export class CodeMapDB {
       `INSERT INTO diagnostics (file, language, severity, line, col, source, message)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
-    const run = this.db.transaction(() => {
+    this.transaction(() => {
       this.db.prepare(`DELETE FROM diagnostics WHERE file = ?`).run(relFile);
       for (const d of diags) {
         insertDiag.run(d.file, d.language, d.severity, d.line, d.col, d.source, d.message);
       }
     });
-    run();
   }
 
   getDiagnostics(file?: string, language?: string, minSeverity?: number): DiagRow[] {
@@ -306,7 +314,7 @@ export class CodeMapDB {
     const sql = `SELECT file, language, severity, line, col, source, message
                  FROM diagnostics ${where} ORDER BY file, line`;
 
-    return this.db.prepare(sql).all(...params) as DiagRow[];
+    return this.db.prepare(sql).all(...params) as unknown as DiagRow[];
   }
 
   // ── File metadata ───────────────────────────────────────────────────────────

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.1] - 2026-04-30
+
+### Fixed
+
+- **code-map — `bun:sqlite` not available under Node.js**: `daemon/db.ts` imported `Database` from `bun:sqlite`, causing `ERR_UNSUPPORTED_ESM_URL_SCHEME: Received protocol 'bun:'` when the daemon runs under Node. Migrated to `node:sqlite` (`DatabaseSync`, available without flags since Node v22.5 / v24). `bun:sqlite`'s `db.transaction(fn)` helper has no equivalent in `node:sqlite`; replaced all five usages with an explicit `private transaction()` wrapper using `BEGIN`/`COMMIT`/`ROLLBACK`.
+- **code-map — `bun-types` devDependency and tsconfig reference removed**: `bun-types` is no longer needed now that the codebase uses only Node.js built-ins. Removed from `package.json` `devDependencies` and from `extensions/code-map/tsconfig.json` `types` array.
+- **code-map — TypeScript parameter property in strip-only mode**: `constructor(private grammars: LoadedGrammars) {}` in `tree-sitter/parser.ts` is not supported by Node’s strip-only TypeScript transpiler. Expanded to an explicit field declaration and assignment.
+- **code-map — `"type": "module"` missing from root `package.json`**: Node emitted a `MODULE_TYPELESS_PACKAGE_JSON` performance warning on every daemon start because the package type was unspecified. Added `"type": "module"` to `package.json`.
+
 ## [1.12.0] - 2026-04-30
 
 ### Fixed

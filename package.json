@@ -1,6 +1,6 @@
 {
     "name": "pi-code",
-    "version": "1.12.0",
+    "version": "1.12.1",
     "description": "A curated pi package bundling custom extensions and configurations.",
     "keywords": [
         "pi-package"
@@ -34,7 +34,5 @@
             "./prompts"
         ]
     },
-    "devDependencies": {
-        "bun-types": "^1.3.12"
-    }
+    "devDependencies": {}
 }
