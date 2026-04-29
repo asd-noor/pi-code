@@ -124,41 +124,26 @@ export class Indexer {
     for (const { abs: absFile, mtimeMs } of staleFiles) {
       if (this.aborted) return;
       const relFile = relative(this.rootPath, absFile);
+      const ext     = extname(absFile).toLowerCase();
 
-      if (parser) {
-        // Tree-sitter path: synchronous, no sleep, no LSP open needed
+      if (parser && EXT_TO_LANG[ext]) {
+        // Tree-sitter owns all supported extensions — never fall back to LSP
+        // for symbol extraction.  0 nodes is a valid result (e.g. a config
+        // file with no declarations); LSP's role is diagnostics + relations.
         try {
           const nodes = parser.parseFile(absFile, relFile);
-          if (nodes.length > 0) {
-            this.db.insertNodes(nodes);
-            this.db.setMtime(relFile, mtimeMs);
-            count += nodes.length;
-            continue;
-          }
-        } catch (_) {
-          // fall through to LSP
+          if (nodes.length > 0) this.db.insertNodes(nodes);
+          this.db.setMtime(relFile, mtimeMs);
+          count += nodes.length;
+        } catch (err) {
+          this.log(`  skip ${relFile}: tree-sitter parse error: ${err}`);
         }
-      }
-
-      // LSP fallback — for files whose grammar is unavailable or on parse error
-      const client = this.clientFor(absFile);
-      if (!client) {
-        this.log(`  skip ${relFile}: no LSP client for this file type`);
         continue;
       }
 
-      const language = EXT_TO_LANG[extname(absFile).toLowerCase()] ?? "unknown";
-
-      try {
-        client.openFile(absFile);
-        const raw   = await client.documentSymbols(absFile);
-        const nodes = flattenSymbols(raw, relFile, language);
-        this.db.insertNodes(nodes);
-        this.db.setMtime(relFile, mtimeMs);
-        count += nodes.length;
-      } catch (err) {
-        this.log(`  skip ${relFile}: ${err}`);
-      }
+      // No tree-sitter grammar for this extension — skip silently.
+      // (LSP is only used for diagnostics and reverse-ref analysis, not
+      //  symbol extraction.)
     }
 
     this.log(
@@ -247,51 +232,30 @@ export class Indexer {
     const affectedNodeIds = this.db.getAffectedNodeIds(relFile);
     this.db.deleteFile(relFile);
 
-    // ── Tree-sitter path: instant, synchronous symbol update ─────────────────
-    if (this.tsParser) {
+    // ── Tree-sitter: symbol extraction ────────────────────────────────────────
+    if (this.tsParser && EXT_TO_LANG[extname(absFile).toLowerCase()]) {
       try {
         const nodes = this.tsParser.parseFile(absFile, relFile);
         if (nodes.length > 0) {
           this.db.insertNodes(nodes);
-          this.db.setMtime(relFile, statSync(absFile).mtimeMs);
-          this.log(`  re-indexed ${nodes.length} symbols (tree-sitter)`);
-
-          // Notify LSP async — diagnostics update in background, don't block.
-          void this._lspReindexBackground(absFile, relFile, affectedNodeIds);
-          return;
         }
-      } catch (_) {
-        // fall through to LSP path
+        this.db.setMtime(relFile, statSync(absFile).mtimeMs);
+        this.log(`  re-indexed ${nodes.length} symbols (tree-sitter)`);
+      } catch (err) {
+        this.log(`  tree-sitter parse error for ${relFile}: ${err}`);
       }
-    }
-
-    // ── LSP fallback path (no tree-sitter grammar for this file type) ─────────
-    const client = this.clientFor(absFile);
-    if (!client) {
-      this.log(`  skip LSP re-index for ${relFile}: no client for this file type`);
+      // Notify LSP async for diagnostics + reverse refs regardless of node count.
+      void this._lspReindexBackground(absFile, relFile, affectedNodeIds);
       return;
     }
 
-    const language = EXT_TO_LANG[extname(absFile).toLowerCase()] ?? "unknown";
+    // ── No tree-sitter grammar: notify LSP for diagnostics only ──────────────
+    const client = this.clientFor(absFile);
+    if (!client) return;
 
     client.updateFile(absFile);
     await client.waitForQuietDiagnostics(600, 6000);
-
-    try {
-      const raw   = await client.documentSymbols(absFile);
-      const nodes = flattenSymbols(raw, relFile, language);
-      this.db.insertNodes(nodes);
-      this.db.setMtime(relFile, statSync(absFile).mtimeMs);
-      this.log(`  re-indexed ${nodes.length} symbols (lsp)`);
-    } catch (err) {
-      this.log(`  re-index symbols failed: ${err}`);
-    }
-
-    this.snapshotDiagnostics(
-      client.getDiagnostics() as Map<string, Diagnostic[]>,
-    );
-
-    // Update reverse refs for new nodes (background, best-effort).
+    this.snapshotDiagnostics(client.getDiagnostics() as Map<string, Diagnostic[]>);
     void this._updateReverseRefsForFile(absFile, relFile, affectedNodeIds);
   }
 

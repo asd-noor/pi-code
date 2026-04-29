@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.4] - 2026-04-30
+
+### Fixed
+
+- **code-map — tree-sitter and LSP used as fallbacks for each other (wrong architecture)**: The indexer treated LSP `documentSymbol` as a fallback when tree-sitter returned 0 nodes. This was wrong — 0 nodes is a valid result (e.g. a config file with no declarations), and LSP is not initialized during `buildNodes` so it timed out. The correct split is: **tree-sitter owns all symbol extraction** for supported extensions; **LSP handles diagnostics and reverse-ref analysis only**.
+  - `buildNodes`: if tree-sitter has a grammar for the file’s extension, always use it and never touch LSP. 0 nodes = file processed with no declarations, mtime recorded, no error. Files with no grammar are silently skipped.
+  - `_reindexFile`: tree-sitter extracts symbols (even if 0); LSP is notified asynchronously for diagnostics and reverse refs. Removed the LSP `documentSymbol` call from the re-index path entirely.
+  - `runner.ts`: removed the “early-init LSPs before indexing” block (was only needed to prevent LSP timeouts during `buildNodes`, no longer relevant). Updated startup sequence comment to reflect the correct roles.
+
 ## [1.12.3] - 2026-04-30
 
 ### Fixed

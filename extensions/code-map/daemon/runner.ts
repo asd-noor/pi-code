@@ -10,17 +10,17 @@
  *   1. Check / install tree-sitter grammars (if --auto-install)
  *   2. Load grammars → create TreeSitterParser
  *   3. Detect ALL matching LSP servers for the project
- *   4. Collect files (all tree-sitter-supported extensions)
- *   5. If no tree-sitter: initialize each LSP now (blocking) so buildNodes
- *      LSP fallback doesn't time out on uninitialized clients
- *   6. buildNodes(files, tsParser)   ← tree-sitter fast parse, mtime-gated
- *                                     (LSP documentSymbol fallback if no grammar)
- *   7. Start socket server + file watcher → write "ready"
- *   8. Background: init each LSP in parallel → open its files → wait diagnostics
- *      → snapshot merged diagnostics → mark each language ready → buildReverseRefs
+ *   4. buildNodes(files, tsParser)   ← tree-sitter parses ALL symbols, mtime-gated
+ *   5. Start socket server + file watcher → write "ready"
+ *   6. Background: init each LSP in parallel → open its files → wait diagnostics
+ *      → snapshot diagnostics → mark each language ready → buildReverseRefs
+ *
+ * Roles:
+ *   tree-sitter  — symbol extraction (outline, symbol, impact)
+ *   LSP          — diagnostics + reverse-ref analysis only
  *
  * The "ready" status is written BEFORE LSP background work completes.
- * LSP failure after step 7 is non-fatal — the tree-sitter index stays available.
+ * LSP failure after step 5 is non-fatal — the tree-sitter index stays available.
  */
 
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
@@ -197,23 +197,7 @@ async function main() {
   const indexer = new Indexer(lspClients, db, rootPath, ALL_EXTENSIONS, log);
   if (tsParser) indexer.tsParser = tsParser;
 
-  // ── 5. If no tree-sitter: initialize LSPs now so buildNodes fallback works ─
-
-  if (!tsParser && uniqueClients.length > 0) {
-    log("tree-sitter unavailable — initializing LSPs before indexing…");
-    await Promise.all(
-      uniqueClients.map(async ({ client, def }) => {
-        try {
-          await client.initialize();
-          log(`LSP early-init done [${def.languageId}]`);
-        } catch (err) {
-          log(`LSP early-init failed [${def.languageId}]: ${err}`);
-        }
-      }),
-    );
-  }
-
-  // ── 6. Collect files + build node graph (incremental via mtime) ───────────
+  // ── 5. Collect files + build node graph (incremental via mtime) ───────────
 
   writeFileSync(statusFile, "indexing", "utf8");
 
