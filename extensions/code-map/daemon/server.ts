@@ -52,13 +52,24 @@ export class DaemonServer {
   /** Set of language ids whose LSP has finished initializing. */
   private readyLangs = new Set<string>();
 
+  private socketPath: string;
+  private db: CodeMapDB;
+  private lspClients: Map<string, LspClient>;
+  private rootPath: string;
+  private onShutdown: () => void;
+
   constructor(
-    private socketPath: string,
-    private db: CodeMapDB,
-    private lspClients: Map<string, LspClient>,
-    private rootPath: string,
-    private onShutdown: () => void,
+    socketPath: string,
+    db: CodeMapDB,
+    lspClients: Map<string, LspClient>,
+    rootPath: string,
+    onShutdown: () => void,
   ) {
+    this.socketPath = socketPath;
+    this.db = db;
+    this.lspClients = lspClients;
+    this.rootPath = rootPath;
+    this.onShutdown = onShutdown;
     this.server = createServer((s) => this.handleConnection(s));
   }
 

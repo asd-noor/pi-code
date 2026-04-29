@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.2] - 2026-04-30
+
+### Fixed
+
+- **code-map — more TypeScript parameter properties in strip-only mode**: `indexer.ts`, `watcher.ts`, and `server.ts` all used constructor parameter properties (`private x: T`), which Node’s strip-only transpiler does not support. Expanded all three to explicit field declarations with assignments in the constructor body.
+
 ## [1.12.1] - 2026-04-30
 
 ### Fixed

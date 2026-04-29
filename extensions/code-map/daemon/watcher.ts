@@ -14,11 +14,16 @@ export class FileWatcher {
   /** Tracks directories already passed to fs.watch to avoid duplicates. */
   private watchedDirs = new Set<string>();
 
+  private rootPath: string;
+  private onChange: ChangeCallback;
+
   constructor(
-    private rootPath: string,
+    rootPath: string,
     extensions: string[],
-    private onChange: ChangeCallback
+    onChange: ChangeCallback
   ) {
+    this.rootPath = rootPath;
+    this.onChange = onChange;
     this.extensions = new Set(extensions);
   }
 

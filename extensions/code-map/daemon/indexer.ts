@@ -50,13 +50,25 @@ export class Indexer {
   /** Serialises concurrent file-change re-indexes so they never race. */
   private reindexQueue: Promise<void> = Promise.resolve();
 
+  private clients: Map<string, LspClient>;
+  private db: CodeMapDB;
+  private rootPath: string;
+  private extensions: Set<string>;
+  private log: Log;
+
   constructor(
-    private clients: Map<string, LspClient>,
-    private db: CodeMapDB,
-    private rootPath: string,
-    private extensions: Set<string>,
-    private log: Log,
-  ) {}
+    clients: Map<string, LspClient>,
+    db: CodeMapDB,
+    rootPath: string,
+    extensions: Set<string>,
+    log: Log,
+  ) {
+    this.clients = clients;
+    this.db = db;
+    this.rootPath = rootPath;
+    this.extensions = extensions;
+    this.log = log;
+  }
 
   abort() { this.aborted = true; }
 
