@@ -119,7 +119,7 @@ async function main() {
 
   let tsParser: TreeSitterParser | undefined;
   try {
-    const grammars = loadGrammars(getTreeSitterDir());
+    const grammars = loadGrammars(getTreeSitterDir(), log);
     if (grammars) {
       tsParser = new TreeSitterParser(grammars);
       log(`tree-sitter loaded (${grammars.languages.size} grammars)`);

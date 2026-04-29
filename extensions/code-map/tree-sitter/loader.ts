@@ -30,8 +30,9 @@ const EXT_TO_PKG: Array<{ exts: string[]; pkg: string; key?: string }> = [
 /**
  * Load tree-sitter and all supported grammars from the given install directory.
  * Returns null if the core tree-sitter package cannot be loaded.
+ * @param log  Optional callback to report the native load error for diagnostics.
  */
-export function loadGrammars(tsDir: string): LoadedGrammars | null {
+export function loadGrammars(tsDir: string, log?: (msg: string) => void): LoadedGrammars | null {
   // Create a require function rooted at tsDir/node_modules so that
   // "tree-sitter" resolves to the installed package (native addon).
   const req = createRequire(join(tsDir, "_loader.js"));
@@ -40,6 +41,8 @@ export function loadGrammars(tsDir: string): LoadedGrammars | null {
   try {
     Parser = req("tree-sitter");
   } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    log?.(`tree-sitter native addon failed to load: ${reason}`);
     return null;
   }
 
