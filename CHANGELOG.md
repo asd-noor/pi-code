@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.5] - 2026-05-02
+
+### Added
+
+- **agenda — `agenda_discoveries`**: New append-only knowledge log per agenda. Captures code searches, web research, library lookups, and expected/unexpected findings encountered during work. Discoveries sit entirely outside the Ralph loop — adding one never bumps the revision or affects evaluation staleness.
+  - New `agenda_discoveries` SQLite table: `category` (`code` | `web` | `library` | `finding`), `title`, `detail`, `outcome` (`expected` | `unexpected` | `neutral`, default `neutral`), optional `source`.
+  - Four new tools: `agenda_discovery_add` (requires `in_progress`), `agenda_discovery_get`, `agenda_discovery_list` (optional `category` filter), `agenda_discovery_delete` (blocked when `completed`).
+  - `agenda_create` extended with an optional `discoveries` array — primary agents can pre-fill the log at creation time so subagents inherit context before starting work.
+  - `instruction.ts` updated: `AGENDA_INSTRUCTION` gains a "Discoveries — knowledge artifacts" section covering categories, outcomes, and workflow; `buildSubagentAgendaInstruction` now includes a step to check `agenda_discovery_list` before starting work.
+
+- **pi-code-prompt — memory/agenda integration guidance**: Added `## Memory — Work & Agenda Integration` section to `extensions/pi-code-prompt.ts` (injected into all agent sessions).
+  - **During work** hard triggers: write to memory immediately when completing a non-trivial implementation, discovering how a module works, hitting unexpected constraints, making architectural decisions, or correcting assumptions.
+  - **After agenda completion** pipeline: call `agenda_discovery_list` immediately after `agenda_complete`, map discoveries to the appropriate memory file by category (`code` → `architecture.md`, `library` → `architecture.md`/`setup.md`, `web` → `notes.md`, `finding`/unexpected → `decisions.md`/`notes.md`), group related discoveries, prioritise by `outcome`.
+
+### Changed
+
+- **docs/agenda.md**: Updated to reflect all of the above.
+  - `agenda_create` row notes optional discoveries param.
+  - `agenda_evaluate` row notes `in_progress` precondition.
+  - `agenda_complete` row notes that unfinished tasks are allowed when the acceptance guard passes.
+  - Browser keyboard table gains the missing `Enter` key (focuses selected in-progress agenda in widget).
+  - New `## Discoveries` section: fields table, lifecycle gating table, discovery tools table, memory integration category mapping.
+  - `## Skill` section replaced with `## Instruction injection` (correct terminology — this is a `before_agent_start` event hook, not a pi skill file).
+
 ## [1.12.4] - 2026-04-30
 
 ### Fixed
