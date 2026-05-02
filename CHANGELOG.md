@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.6] - 2026-05-02
+
+### Added
+
+- **parallel — `agenda_discovery_*` tools now supported as inlined slots**: All four discovery tools (`agenda_discovery_add`, `agenda_discovery_get`, `agenda_discovery_list`, `agenda_discovery_delete`) can now be fanned out inside a `parallel` call alongside `read`, `ptc`, `code_map_*`, and `memory_*` ops.
+  - `extensions/agenda/tools.ts`: exported new `AGENDA_DISCOVERY_TOOL_NAMES` set — canonical source of truth imported by `parallel.ts`.
+  - `extensions/parallel.ts`: added imports from `./agenda/db.ts`, `./agenda/types.ts`, `./agenda/format.ts`, and `./agenda/tools.ts`; new `opAgendaDiscovery()` function implements all four tools directly via SQLite (WAL mode serialises concurrent writes safely, so no blacklisting needed); dispatch added in `opExtension()`; `ExtCall` description, top-level JSDoc comment, `BASE_INSTRUCTION` (`### agenda discovery tools` section), and the `supported` error message all updated.
+
+- **session-viewer — auto-scroll**: The subagent session viewer (`extensions/subagents/session-viewer.ts`) now tracks the bottom of the log automatically while an agent is running.
+  - New `private autoScroll = true` flag. When `true` and the agent is live (`isLive`), `scrollOffset` is pinned to `maxScroll` on every render.
+  - Pressing ↑, PgUp, or Home disables auto-scroll so the user can freely read history.
+  - Pressing End re-enables auto-scroll and jumps back to the bottom.
+  - Footer hint updated to say *"auto-scroll: off on ↑, End to resume"*.
+
 ## [1.12.5] - 2026-05-02
 
 ### Added
