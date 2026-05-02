@@ -51,6 +51,7 @@ const STATUS_COLOR: Record<string, string> = {
 export class SessionViewer {
   public onClose?: () => void;
   private scrollOffset = 0;
+  private autoScroll = true;
 
   constructor(
     private record: AgentRecord,
@@ -84,7 +85,7 @@ export class SessionViewer {
     // Footer
     const footerLines = [
       t.fg("border", "\u2500".repeat(width)),
-      truncateToWidth(t.fg("dim", "\u2191\u2193 / PgUp PgDn  scroll    Home End  jump    q / Esc  close"), width),
+      truncateToWidth(t.fg("dim", "\u2191\u2193 / PgUp PgDn  scroll    Home End  jump    q / Esc  close    auto-scroll: off on \u2191, End to resume"), width),
     ];
 
     // Content
@@ -94,6 +95,7 @@ export class SessionViewer {
     const contentH   = Math.max(5, overlayRows - headerLines.length - footerLines.length);
 
     const maxScroll = Math.max(0, contentLines.length - contentH);
+    if (this.autoScroll && isLive) this.scrollOffset = maxScroll;
     if (this.scrollOffset > maxScroll) this.scrollOffset = maxScroll;
 
     const visible = contentLines.slice(this.scrollOffset, this.scrollOffset + contentH);
@@ -172,11 +174,11 @@ export class SessionViewer {
       this.onClose?.();
       return;
     }
-    if (matchesKey(data, Key.up))       this.scrollOffset = Math.max(0, this.scrollOffset - 1);
-    else if (matchesKey(data, Key.down)) this.scrollOffset++;
-    else if (matchesKey(data, Key.pageUp))   this.scrollOffset = Math.max(0, this.scrollOffset - 10);
-    else if (matchesKey(data, Key.pageDown)) this.scrollOffset += 10;
-    else if (matchesKey(data, Key.home))     this.scrollOffset = 0;
-    else if (matchesKey(data, Key.end))      this.scrollOffset = Number.MAX_SAFE_INTEGER;
+    if (matchesKey(data, Key.up))             { this.autoScroll = false; this.scrollOffset = Math.max(0, this.scrollOffset - 1); }
+    else if (matchesKey(data, Key.down))        this.scrollOffset++;
+    else if (matchesKey(data, Key.pageUp))      { this.autoScroll = false; this.scrollOffset = Math.max(0, this.scrollOffset - 10); }
+    else if (matchesKey(data, Key.pageDown))    this.scrollOffset += 10;
+    else if (matchesKey(data, Key.home))        { this.autoScroll = false; this.scrollOffset = 0; }
+    else if (matchesKey(data, Key.end))         { this.autoScroll = true;  this.scrollOffset = Number.MAX_SAFE_INTEGER; }
   }
 }

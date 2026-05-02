@@ -11,6 +11,8 @@
  *            code_map_outline, code_map_symbol, code_map_diagnostics, code_map_impact
  *            memory_list, memory_get, memory_search,
  *            memory_create_file, memory_delete_file, memory_validate_file
+ *            agenda_discovery_add, agenda_discovery_get,
+ *            agenda_discovery_list, agenda_discovery_delete
  *
  * Blacklisted (concurrent writes corrupt memory files):
  *            memory_new, memory_update, memory_delete
@@ -27,6 +29,18 @@ import { basename, dirname, join, resolve } from "node:path";
 import { exec, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { SocketClient } from "./code-map/client.ts";
+import {
+  openDb,
+  getAgenda,
+  getDiscoveries,
+  getDiscovery,
+  requireAgendaInProgress,
+  toPositiveInt as agendaToPositiveInt,
+  nowIso,
+} from "./agenda/db.ts";
+import { DISCOVERY_CATEGORIES, DISCOVERY_OUTCOMES } from "./agenda/types.ts";
+import { formatDiscovery, formatDiscoveryList } from "./agenda/format.ts";
+import { AGENDA_DISCOVERY_TOOL_NAMES } from "./agenda/tools.ts";
 
 const execAsync     = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -144,6 +158,7 @@ const ExtCall = Type.Object(
         "code_map_outline, code_map_symbol, code_map_diagnostics, code_map_impact, " +
         "memory_list, memory_get, memory_search, " +
         "memory_create_file, memory_delete_file, memory_validate_file. " +
+        "agenda_discovery_add, agenda_discovery_get, agenda_discovery_list, agenda_discovery_delete. " +
         "NOT allowed (concurrent writes corrupt memory files): memory_new, memory_update, memory_delete — call these sequentially via the native tools. " +
         "Pass the tool's normal arguments as additional fields alongside `tool`.",
     }),
@@ -368,6 +383,65 @@ async function opMemory(toolName: string, params: Record<string, any>, cwd: stri
   }
 }
 
+// ── agenda_discovery implementations ───────────────────────────────────────
+
+async function opAgendaDiscovery(toolName: string, params: Record<string, any>, cwd: string): Promise<string> {
+  const project = typeof params.project === "string" ? params.project : undefined;
+  const handle  = openDb(project, cwd);
+  try {
+    switch (toolName) {
+      case "agenda_discovery_add": {
+        const agendaId = agendaToPositiveInt(params.agendaId, "Agenda ID");
+        const agenda   = getAgenda(handle.db, agendaId);
+        requireAgendaInProgress(agenda);
+        const cat     = String(params.category ?? "").trim();
+        const title   = String(params.title ?? "").trim();
+        const detail  = String(params.detail ?? "").trim();
+        const outcome = String(params.outcome ?? "neutral").trim();
+        const source  = String(params.source ?? "").trim();
+        if (!(DISCOVERY_CATEGORIES as readonly string[]).includes(cat))
+          throw new Error(`Invalid category: ${cat}. Must be one of: code, web, library, finding`);
+        if (!title) throw new Error("title is required");
+        if (!(DISCOVERY_OUTCOMES as readonly string[]).includes(outcome))
+          throw new Error(`Invalid outcome: ${outcome}. Must be one of: expected, unexpected, neutral`);
+        const info = handle.db
+          .prepare(
+            `INSERT INTO agenda_discoveries (agenda_id, category, title, detail, outcome, source, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(agendaId, cat, title, detail, outcome, source, nowIso());
+        return `agenda ${agendaId}: discovery added (id=${Number(info.lastInsertRowid)})`;
+      }
+      case "agenda_discovery_get": {
+        const agendaId    = agendaToPositiveInt(params.agendaId, "Agenda ID");
+        const discoveryId = agendaToPositiveInt(params.discoveryId, "Discovery ID");
+        return formatDiscovery(getDiscovery(handle.db, discoveryId, agendaId));
+      }
+      case "agenda_discovery_list": {
+        const agendaId = agendaToPositiveInt(params.agendaId, "Agenda ID");
+        getAgenda(handle.db, agendaId);
+        const cat = typeof params.category === "string" ? params.category.trim() : undefined;
+        if (cat !== undefined && !(DISCOVERY_CATEGORIES as readonly string[]).includes(cat))
+          throw new Error(`Invalid category: ${cat}. Must be one of: code, web, library, finding`);
+        return formatDiscoveryList(getDiscoveries(handle.db, agendaId, cat as any));
+      }
+      case "agenda_discovery_delete": {
+        const agendaId    = agendaToPositiveInt(params.agendaId, "Agenda ID");
+        const discoveryId = agendaToPositiveInt(params.discoveryId, "Discovery ID");
+        const agenda      = getAgenda(handle.db, agendaId);
+        if (agenda.state === "completed") throw new Error("Completed agendas are immutable — cannot delete discoveries");
+        getDiscovery(handle.db, discoveryId, agendaId);
+        handle.db.prepare(`DELETE FROM agenda_discoveries WHERE id = ?`).run(discoveryId);
+        return `agenda ${agendaId}: discovery ${discoveryId} deleted`;
+      }
+      default:
+        throw new Error(`Unknown agenda discovery tool: ${toolName}`);
+    }
+  } finally {
+    handle.db.close();
+  }
+}
+
 // ── Extension tool dispatch ──────────────────────────────────────────────────
 
 const CODE_MAP_TOOLS = new Set([
@@ -382,6 +456,9 @@ const CODE_MAP_TOOLS = new Set([
 const MEMORY_WRITE_BLACKLIST = new Set([
   "memory_new", "memory_update", "memory_delete",
 ]);
+
+/** Agenda discovery tools — safe for parallel (SQLite WAL serialises writes). */
+const AGENDA_DISCOVERY_TOOLS = AGENDA_DISCOVERY_TOOL_NAMES;
 
 /** Memory tools safe for concurrent execution (read-only or independent file ops). */
 const MEMORY_TOOLS = new Set([
@@ -408,6 +485,9 @@ async function opExtension(
   if (CODE_MAP_TOOLS.has(toolName)) {
     return opCodeMap(toolName, params, cwd);
   }
+  if (AGENDA_DISCOVERY_TOOLS.has(toolName)) {
+    return opAgendaDiscovery(toolName, params, cwd);
+  }
   if (MEMORY_WRITE_BLACKLIST.has(toolName)) {
     throw new Error(
       `"${toolName}" is not allowed inside parallel — concurrent writes corrupt memory files. ` +
@@ -418,7 +498,7 @@ async function opExtension(
     return opMemory(toolName, params, cwd);
   }
 
-  const supported = ["ptc", "mcporter", ...CODE_MAP_TOOLS, ...MEMORY_TOOLS].join(", ");
+  const supported = ["ptc", "mcporter", ...CODE_MAP_TOOLS, ...MEMORY_TOOLS, ...AGENDA_DISCOVERY_TOOLS].join(", ");
   throw new Error(`Unsupported tool in parallel: "${toolName}". Supported: ${supported}`);
 }
 
@@ -452,6 +532,10 @@ calls targeting the same file in one \`parallel\` invocation — use the native 
 \`memory_new\`, \`memory_update\`, and \`memory_delete\` are **not allowed** inside \`parallel\`.
 Concurrent writes corrupt the markdown-backed memory files (duplicate sections, interleaved content).
 Call them sequentially via the native memory tools instead.
+
+### agenda discovery tools
+\`agenda_discovery_add\`, \`agenda_discovery_get\`, \`agenda_discovery_list\`, and \`agenda_discovery_delete\` are supported inside \`parallel\`.
+SQLite WAL mode safely serialises concurrent writes, so all four tools can be fanned out freely.
 `.trim();
 
 // ── Extension ────────────────────────────────────────────────────────────────

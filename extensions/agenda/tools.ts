@@ -21,6 +21,13 @@ import {
 } from "./db.ts";
 import { formatAgenda, formatDiscovery, formatDiscoveryList, formatList } from "./format.ts";
 
+export const AGENDA_DISCOVERY_TOOL_NAMES = new Set([
+  "agenda_discovery_add",
+  "agenda_discovery_get",
+  "agenda_discovery_list",
+  "agenda_discovery_delete",
+]);
+
 export const AGENDA_TOOL_NAMES = new Set([
   "agenda_create",
   "agenda_list",
