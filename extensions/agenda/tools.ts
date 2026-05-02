@@ -1,12 +1,14 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { DatabaseSync } from "node:sqlite";
-import { AGENDA_STATES, type AgendaRow, type ToolResult } from "./types.ts";
+import { AGENDA_STATES, DISCOVERY_CATEGORIES, DISCOVERY_OUTCOMES, type AgendaRow, type ToolResult } from "./types.ts";
 import {
   bumpAgendaRevision,
   ensureState,
   findTaskByOrder,
   getAgenda,
+  getDiscoveries,
+  getDiscovery,
   getLatestEvaluation,
   getTasks,
   normalizeNotes,
@@ -17,7 +19,7 @@ import {
   runTx,
   toPositiveInt,
 } from "./db.ts";
-import { formatAgenda, formatList } from "./format.ts";
+import { formatAgenda, formatDiscovery, formatDiscoveryList, formatList } from "./format.ts";
 
 export const AGENDA_TOOL_NAMES = new Set([
   "agenda_create",
@@ -34,6 +36,10 @@ export const AGENDA_TOOL_NAMES = new Set([
   "agenda_complete",
   "agenda_search",
   "agenda_delete",
+  "agenda_discovery_add",
+  "agenda_discovery_get",
+  "agenda_discovery_list",
+  "agenda_discovery_delete",
 ]);
 
 function ok(text: string, details: Record<string, unknown> = {}): ToolResult {
@@ -86,6 +92,13 @@ export function registerAgendaTools(pi: ExtensionAPI): void {
       description: Type.String({ description: "Agenda description." }),
       acceptanceGuard: Type.String({ description: "Agenda-level acceptance guard for terminal completion." }),
       tasks: Type.Optional(Type.Array(Type.String({ description: "One task = one meaningful phase of work (not a single tool call). With ptc/parallel, many operations can be one task. Keep to 2-6 tasks total." }))),
+      discoveries: Type.Optional(Type.Array(Type.Object({
+        category: Type.String({ description: "Discovery category: code | web | library | finding." }),
+        title: Type.String({ description: "Short discovery title." }),
+        detail: Type.Optional(Type.String({ description: "Full discovery detail body." })),
+        outcome: Type.Optional(Type.String({ description: "expected | unexpected | neutral (default: neutral)." })),
+        source: Type.Optional(Type.String({ description: "URL, file path, tool name, or query string." })),
+      }), { description: "Pre-fill discoveries at creation time (inserted in same transaction)." })),
     }),
     execute(db, params) {
       const title       = String(params.title ?? "").trim();
@@ -95,6 +108,7 @@ export function registerAgendaTools(pi: ExtensionAPI): void {
       if (!guard) throw new Error("acceptanceGuard is required");
 
       const notes = normalizeNotes(params.tasks);
+      const rawDiscoveries = Array.isArray(params.discoveries) ? params.discoveries : [];
       const now   = nowIso();
 
       const agendaId = runTx(db, () => {
@@ -118,10 +132,30 @@ export function registerAgendaTools(pi: ExtensionAPI): void {
           }
         }
 
+        if (rawDiscoveries.length > 0) {
+          const dstmt = db.prepare(
+            `INSERT INTO agenda_discoveries (agenda_id, category, title, detail, outcome, source, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          );
+          const validCategories = new Set(DISCOVERY_CATEGORIES);
+          const validOutcomes   = new Set(DISCOVERY_OUTCOMES);
+          for (const d of rawDiscoveries) {
+            const cat     = String(d.category ?? "").trim();
+            const dtitle  = String(d.title ?? "").trim();
+            const detail  = String(d.detail ?? "").trim();
+            const outcome = String(d.outcome ?? "neutral").trim();
+            const source  = String(d.source ?? "").trim();
+            if (!validCategories.has(cat as any)) throw new Error(`Invalid discovery category: ${cat}. Must be one of: code, web, library, finding`);
+            if (!dtitle) throw new Error("Discovery title is required");
+            if (!validOutcomes.has(outcome as any)) throw new Error(`Invalid discovery outcome: ${outcome}. Must be one of: expected, unexpected, neutral`);
+            dstmt.run(id, cat, dtitle, detail, outcome, source, now);
+          }
+        }
+
         return id;
       });
 
-      return ok(`created agenda id=${agendaId}`, { agendaId, taskCount: notes.length });
+      return ok(`created agenda id=${agendaId}`, { agendaId, taskCount: notes.length, discoveryCount: rawDiscoveries.length });
     },
   });
 
@@ -539,6 +573,112 @@ export function registerAgendaTools(pi: ExtensionAPI): void {
 
       db.prepare(`DELETE FROM agendas WHERE id = ?`).run(agendaId);
       return ok(`deleted agenda id=${agendaId}`, { agendaId, previousState: agenda.state });
+    },
+  });
+
+  // ── Discovery tools ──────────────────────────────────────────────────────
+
+  registerAgendaTool(pi, {
+    name: "agenda_discovery_add",
+    label: "Agenda Discovery Add",
+    description: "Add a discovery (knowledge artifact) to an in_progress agenda. Does not bump revision.",
+    parameters: Type.Object({
+      project: projectParam(),
+      agendaId: Type.Integer({ minimum: 1, description: "Agenda ID." }),
+      category: Type.String({ description: "code | web | library | finding" }),
+      title: Type.String({ description: "Short discovery title." }),
+      detail: Type.Optional(Type.String({ description: "Full discovery detail body." })),
+      outcome: Type.Optional(Type.String({ description: "expected | unexpected | neutral (default: neutral)." })),
+      source: Type.Optional(Type.String({ description: "URL, file path, tool name, or query string." })),
+    }),
+    execute(db, params) {
+      const agendaId = toPositiveInt(params.agendaId, "Agenda ID");
+      const agenda   = getAgenda(db, agendaId);
+      requireAgendaInProgress(agenda);
+
+      const cat     = String(params.category ?? "").trim();
+      const title   = String(params.title ?? "").trim();
+      const detail  = String(params.detail ?? "").trim();
+      const outcome = String(params.outcome ?? "neutral").trim();
+      const source  = String(params.source ?? "").trim();
+
+      if (!(DISCOVERY_CATEGORIES as readonly string[]).includes(cat)) {
+        throw new Error(`Invalid category: ${cat}. Must be one of: code, web, library, finding`);
+      }
+      if (!title) throw new Error("title is required");
+      if (!(DISCOVERY_OUTCOMES as readonly string[]).includes(outcome)) {
+        throw new Error(`Invalid outcome: ${outcome}. Must be one of: expected, unexpected, neutral`);
+      }
+
+      const now  = nowIso();
+      const info = db
+        .prepare(
+          `INSERT INTO agenda_discoveries (agenda_id, category, title, detail, outcome, source, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(agendaId, cat, title, detail, outcome, source, now);
+
+      return ok(`agenda ${agendaId}: discovery added`, { agendaId, discoveryId: Number(info.lastInsertRowid), category: cat, outcome });
+    },
+  });
+
+  registerAgendaTool(pi, {
+    name: "agenda_discovery_get",
+    label: "Agenda Discovery Get",
+    description: "Get full details of a single discovery.",
+    parameters: Type.Object({
+      project: projectParam(),
+      agendaId: Type.Integer({ minimum: 1, description: "Agenda ID." }),
+      discoveryId: Type.Integer({ minimum: 1, description: "Discovery ID." }),
+    }),
+    execute(db, params) {
+      const agendaId    = toPositiveInt(params.agendaId, "Agenda ID");
+      const discoveryId = toPositiveInt(params.discoveryId, "Discovery ID");
+      const row = getDiscovery(db, discoveryId, agendaId);
+      return ok(formatDiscovery(row), { row });
+    },
+  });
+
+  registerAgendaTool(pi, {
+    name: "agenda_discovery_list",
+    label: "Agenda Discovery List",
+    description: "List discoveries for an agenda. Optional category filter. Returns compact list (no detail body).",
+    parameters: Type.Object({
+      project: projectParam(),
+      agendaId: Type.Integer({ minimum: 1, description: "Agenda ID." }),
+      category: Type.Optional(Type.String({ description: "Filter by category: code | web | library | finding." })),
+    }),
+    execute(db, params) {
+      const agendaId = toPositiveInt(params.agendaId, "Agenda ID");
+      // validate agendaId exists
+      getAgenda(db, agendaId);
+      const cat = typeof params.category === "string" ? params.category.trim() : undefined;
+      if (cat !== undefined && !(DISCOVERY_CATEGORIES as readonly string[]).includes(cat)) {
+        throw new Error(`Invalid category: ${cat}. Must be one of: code, web, library, finding`);
+      }
+      const rows = getDiscoveries(db, agendaId, cat as any);
+      return ok(formatDiscoveryList(rows), { agendaId, count: rows.length, rows });
+    },
+  });
+
+  registerAgendaTool(pi, {
+    name: "agenda_discovery_delete",
+    label: "Agenda Discovery Delete",
+    description: "Delete a discovery. Agenda must not be completed.",
+    parameters: Type.Object({
+      project: projectParam(),
+      agendaId: Type.Integer({ minimum: 1, description: "Agenda ID." }),
+      discoveryId: Type.Integer({ minimum: 1, description: "Discovery ID." }),
+    }),
+    execute(db, params) {
+      const agendaId    = toPositiveInt(params.agendaId, "Agenda ID");
+      const discoveryId = toPositiveInt(params.discoveryId, "Discovery ID");
+      const agenda      = getAgenda(db, agendaId);
+      if (agenda.state === "completed") throw new Error("Completed agendas are immutable — cannot delete discoveries");
+      // verify discovery exists and belongs to this agenda
+      getDiscovery(db, discoveryId, agendaId);
+      db.prepare(`DELETE FROM agenda_discoveries WHERE id = ?`).run(discoveryId);
+      return ok(`agenda ${agendaId}: discovery ${discoveryId} deleted`, { agendaId, discoveryId });
     },
   });
 }

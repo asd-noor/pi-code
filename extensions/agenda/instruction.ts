@@ -57,6 +57,29 @@ When delegating multi-step work to a subagent:
 - \`agenda_complete\` is blocked unless the latest \`agenda_evaluate\` verdict is \`pass\` and matches the current revision.
 - Re-evaluate after any agenda update (revision bump) — stale evaluations are rejected.
 - An agenda may complete with unfinished tasks if the acceptance guard passes.
+
+### Discoveries — knowledge artifacts
+
+Use discoveries to record what you find during work (search results, findings, decisions).
+Discoveries do **not** bump the revision and are fully outside the Ralph loop.
+
+**Categories:**
+- \`code\` — source code snippets, function signatures, module structure, patterns found
+- \`web\` — pages, docs, articles retrieved from the web
+- \`library\` — third-party library APIs, versions, usage examples
+- \`finding\` — observations, conclusions, unexpected behaviours, test results
+
+**Outcome values:**
+- \`expected\` — confirms what was already assumed or planned
+- \`unexpected\` — contradicts assumptions or reveals surprises
+- \`neutral\` — informational, no assumption tested (default)
+
+**Workflow:**
+- While \`in_progress\`: add with \`agenda_discovery_add(agendaId, category, title, detail?, outcome?, source?)\`
+- At \`agenda_create\` time: pass an optional \`discoveries\` array to pre-fill for subagents before they start
+- List with \`agenda_discovery_list(agendaId, category?)\` — returns compact view (no detail body)
+- Get full detail with \`agenda_discovery_get(agendaId, discoveryId)\`
+- Delete with \`agenda_discovery_delete(agendaId, discoveryId)\` — non-completed agendas only
 `.trim();
 
 /**
@@ -70,12 +93,14 @@ export function buildSubagentAgendaInstruction(agendaId: number): string {
 You have been assigned agenda #${agendaId}. Follow this workflow exactly:
 
 1. \`agenda_start\` — move the agenda to in_progress (it is currently not_started)
-2. For each task: \`agenda_task_start\` → do the work → \`agenda_task_done\`
+2. Check for pre-filled discoveries: \`agenda_discovery_list(agendaId)\` — if any exist, review them before starting work
+3. For each task: \`agenda_task_start\` → do the work → \`agenda_task_done\`
    - Reopen a task with \`agenda_task_reopen\` if it needs revision
    - Use \`agenda_pause\` / \`agenda_resume\` if you need to pause mid-work
-3. \`agenda_evaluate\` — evaluate against the acceptance guard (verdict: pass or fail)
+   - Record findings with \`agenda_discovery_add\` (code / web / library / finding) — does not bump revision
+4. \`agenda_evaluate\` — evaluate against the acceptance guard (verdict: pass or fail)
    - Re-evaluate after any changes that bump the revision
-4. \`agenda_complete\` — requires in_progress state, ≥1 task, and latest verdict=pass
+5. \`agenda_complete\` — requires in_progress state, ≥1 task, and latest verdict=pass
 
 After completing the agenda, report back with a concise summary of what was done.
 

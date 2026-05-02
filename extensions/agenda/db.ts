@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
-import type { AgendaRow, EvaluationRow, TaskRow } from "./types.ts";
+import type { AgendaRow, DiscoveryCategory, DiscoveryRow, EvaluationRow, TaskRow } from "./types.ts";
 
 export const DEFAULT_PROJECT = ".";
 
@@ -71,8 +71,21 @@ export function openDb(project: string | undefined, cwd: string): DbHandle {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS agenda_discoveries (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      agenda_id   INTEGER NOT NULL REFERENCES agendas(id) ON DELETE CASCADE,
+      category    TEXT NOT NULL CHECK (category IN ('code', 'web', 'library', 'finding')),
+      title       TEXT NOT NULL,
+      detail      TEXT NOT NULL DEFAULT '',
+      outcome     TEXT NOT NULL DEFAULT 'neutral'
+                  CHECK (outcome IN ('expected', 'unexpected', 'neutral')),
+      source      TEXT NOT NULL DEFAULT '',
+      created_at  TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tasks_agenda_order ON tasks(agenda_id, task_order);
     CREATE INDEX IF NOT EXISTS idx_eval_agenda_latest ON agenda_evaluations(agenda_id, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_discoveries_agenda_category ON agenda_discoveries(agenda_id, category);
   `);
 
   return { db, dbPath, project: project?.trim() || DEFAULT_PROJECT };
@@ -162,6 +175,34 @@ export function findTaskByOrder(db: DatabaseSync, agendaId: number, taskNumber: 
 
   if (!task) throw new Error(`Task not found: agenda ${agendaId}, task ${taskNumber}`);
   return task;
+}
+
+export function getDiscovery(db: DatabaseSync, discoveryId: number, agendaId: number): DiscoveryRow {
+  const row = db
+    .prepare(
+      `SELECT id, agenda_id, category, title, detail, outcome, source, created_at
+       FROM agenda_discoveries WHERE id = ? AND agenda_id = ?`,
+    )
+    .get(discoveryId, agendaId) as DiscoveryRow | undefined;
+  if (!row) throw new Error(`Discovery not found: ${discoveryId}`);
+  return row;
+}
+
+export function getDiscoveries(db: DatabaseSync, agendaId: number, category?: DiscoveryCategory): DiscoveryRow[] {
+  if (category !== undefined) {
+    return db
+      .prepare(
+        `SELECT id, agenda_id, category, title, detail, outcome, source, created_at
+         FROM agenda_discoveries WHERE agenda_id = ? AND category = ? ORDER BY id ASC`,
+      )
+      .all(agendaId, category) as DiscoveryRow[];
+  }
+  return db
+    .prepare(
+      `SELECT id, agenda_id, category, title, detail, outcome, source, created_at
+       FROM agenda_discoveries WHERE agenda_id = ? ORDER BY id ASC`,
+    )
+    .all(agendaId) as DiscoveryRow[];
 }
 
 export function projectParam() {
