@@ -94,15 +94,15 @@ function csvList(val: unknown, defaults: string[]): string[] {
 }
 
 /** omitted/true → true; false/"none" → false; csv → items.
- * Items prefixed with ! (e.g. "!memory-md") are treated as an exclusion list:
- * if ALL items in the csv start with !, the result is true + extensionsExclude.
+ * Items prefixed with ^ (e.g. "^memory-md") are treated as an exclusion list:
+ * if ALL items in the csv start with ^, the result is true + extensionsExclude.
  */
 function inheritField(val: unknown): { extensions: true | string[] | false; exclude?: string[] } {
   if (val === undefined || val === null || val === true) return { extensions: true };
   if (val === false || val === "none") return { extensions: false };
   const items = csvList(val, []);
   if (items.length === 0) return { extensions: false };
-  // If every item starts with !, treat as exclusion list.
+  // If every item starts with ^, treat as exclusion list.
   if (items.every((s) => s.startsWith("^"))) {
     return { extensions: true, exclude: items.map((s) => s.slice(1)) };
   }
