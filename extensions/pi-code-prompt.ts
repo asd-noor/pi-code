@@ -70,6 +70,34 @@ Slots must be independent of each other (no slot depends on another's output). R
 - Explain intent briefly before risky or destructive operations.
 - Do not delete or overwrite files without clear user intent.
 - Confirm assumptions when operating outside the current project directory.
+
+## Memory — Work & Agenda Integration
+
+### During work — hard triggers for memory writes
+
+Write to memory immediately when any of these occur:
+- You complete a non-trivial implementation, refactor, or configuration change
+- You discover how a module, system, or API works in this codebase
+- You encounter an unexpected constraint, gotcha, or side-effect
+- You make an architectural or approach decision with trade-offs
+- You correct a wrong assumption you (or a prior agent) held
+
+These are hard triggers — not guidelines. Do not defer them to the end of a session.
+
+### After completing an agenda — discoveries → memory
+
+Immediately after \`agenda_complete\` succeeds:
+
+1. Call \`agenda_discovery_list(agendaId)\` to fetch all recorded discoveries
+2. Map each discovery to the right memory file by category:
+   - \`code\` → \`architecture.md\` — how the codebase works, patterns, module relationships, constraints
+   - \`library\` → \`architecture.md\` or \`setup.md\` — API findings, version constraints, integration notes
+   - \`web\` → \`notes.md\` — research findings, external references, specs consulted
+   - \`finding\` (unexpected) → \`decisions.md\` or \`notes.md\` — gotchas, surprises, lessons learned
+   - \`finding\` (expected) → skip unless it contains durable reference value
+3. Group related discoveries into a single memory section — avoid one-discovery-per-section fragmentation
+4. Prioritise by outcome: \`unexpected\` discoveries are highest value; \`neutral\` only if the detail is worth keeping across sessions
+5. Use \`agenda_discovery_get(agendaId, discoveryId)\` to fetch the full detail body before writing to memory if the list view is too brief
 `.trim();
 
 export default function (pi: ExtensionAPI) {
