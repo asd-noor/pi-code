@@ -274,6 +274,13 @@ export async function spawnAndRun(
 
   const { session } = await createAgentSession(sessionOpts);
 
+  // Fire session_start on all loaded extension instances.
+  // createAgentSession() does NOT call bindExtensions() — that is only done by the
+  // interactive/print/rpc modes. Without this call, extension event handlers like
+  // session_start never fire, so extensions that initialise state there (e.g.
+  // memory-md sets memDir inside session_start) remain uninitialised and broken.
+  await (session as any).bindExtensions({});
+
   // Apply tool restrictions:
   // - Always exclude delegation tools (Subagent, get_subagent_result, steer_subagent)
   //   to prevent recursive spawning beyond the configured depth.
