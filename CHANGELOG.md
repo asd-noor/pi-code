@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.7] - 2026-05-05
+
+### Fixed
+
+- **subagents — memory tools always reported "daemon is not running"**: `createAgentSession()` in the pi SDK does not call `bindExtensions()`, so `session_start` never fired on extension instances loaded inside a subagent session. The memory-md extension sets its `memDir` closure variable in `session_start`; without that event, `memDir` stayed `undefined`, causing memory tools to fall back to `ctx.cwd` (the project root) instead of the correct `.pi-memory` subdirectory. The resulting `MEMORY_MD_DIR` hash differed from the one the daemon was started with, so the socket was never found.
+  - `extensions/subagents/agent-runner.ts`: added `await (session as any).bindExtensions({})` immediately after `createAgentSession()`. Passing an empty bindings object means `hasUI` is `false` in fired events — memory-md's `session_start` handler sets `memDir` correctly and returns early without re-spawning the daemon. All subsequent memory tool calls in subagents now use the correct socket path.
+
 ## [1.12.6] - 2026-05-02
 
 ### Added
