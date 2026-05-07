@@ -65,76 +65,10 @@ Slots must be independent of each other (no slot depends on another's output). R
 
 ## pi-processes — Background Process Management
 
-Use the \`process\` tool (provided by the pi-processes extension) for any long-running command.
+Use the \`process\` tool for any long-running command (dev servers, test watchers, build watchers, log tails).
 Never use shell background tricks (\`cmd &\`, \`nohup\`, \`disown\`) — use the process tool instead.
-
-### When to use it
-
-Always use \`process\` when the command needs to stay alive across turns:
-- dev servers (\`pnpm dev\`, \`npm start\`)
-- test watchers (\`pnpm test --watch\`, \`vitest --watch\`)
-- build watchers (\`tsc --watch\`, \`vite build --watch\`)
-- local APIs, queue workers, log tails (\`tail -f <file>\`)
-
-Short-lived commands that finish quickly (installs, builds, lints) still go through \`bash\`/\`ptc\`.
-
-### Tool API
-
-The \`process\` tool takes an \`action\` field:
-
-- **\`start\`** — launch a command in the background
-  \`\`\`json
-  { "action": "start", "name": "dev-server", "command": "pnpm dev" }
-  \`\`\`
-- **\`list\`** — list all tracked processes with status
-- **\`output\`** — tail recent output from a process (quick check)
-  \`\`\`json
-  { "action": "output", "name": "dev-server" }
-  \`\`\`
-- **\`logs\`** — get full log file paths for detailed inspection
-- **\`write\`** — send stdin to a running process
-- **\`kill\`** — stop a running process
-  \`\`\`json
-  { "action": "kill", "name": "dev-server" }
-  \`\`\`
-- **\`clear\`** — remove finished/killed process entries
-
-### logWatches — runtime alerts
-
-Pass \`logWatches\` to \`start\` to get notified when a pattern appears in output.
-Use this to detect when a server is ready before continuing:
-
-\`\`\`json
-{
-  "action": "start",
-  "name": "dev-server",
-  "command": "pnpm dev",
-  "logWatches": [
-    { "pattern": "ready on http://localhost" }
-  ]
-}
-\`\`\`
-
-Options per watch:
-- \`pattern\` — regex string (invalid regex fails fast at start)
-- \`stream\` — \`"stdout"\` | \`"stderr"\` | \`"both"\` (default: \`"both"\`)
-- \`repeat\` — \`false\` (default, fires once) | \`true\` (fires on every match)
-
-### Typical workflow
-
-1. \`start\` the long-running command with a clear, stable name.
-2. Continue the main task immediately — do not block on the process.
-3. Use \`output\` or \`logs\` only when inspecting output is necessary.
-4. \`kill\` and \`clear\` processes when they are no longer needed.
-
-### User-facing commands
-
-Users manage processes directly from the TUI:
-- \`/ps\` — process panel (list, inspect, pin, kill, clear)
-- \`/ps:logs [id|name]\` — full log overlay with tab, search, follow mode
-- \`/ps:pin [id|name]\` — pin one process to the dock
-- \`/ps:dock [show|hide|toggle]\` — control dock visibility
-- \`/ps:settings\` — configure extension behaviour
+Start processes and continue the task immediately; do not block on them.
+Read the \`pi-processes\` skill for the full tool API and \`logWatches\` reference.
 
 ### Change safety
 
