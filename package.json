@@ -8,31 +8,34 @@
     "license": "GPL-3.0-only",
     "type": "module",
     "dependencies": {
-        "pi-mcporter": "*",
-        "pi-ask-tool-extension": "*"
+        "@aliou/pi-processes": "^0.8.1",
+        "pi-ask-tool-extension": "*",
+        "pi-mcporter": "*"
     },
     "bundledDependencies": [
+        "@aliou/pi-processes",
         "pi-mcporter",
         "pi-ask-tool-extension"
     ],
     "peerDependencies": {
-        "@mariozechner/pi-coding-agent": "*",
-        "@mariozechner/pi-ai": "*",
         "@mariozechner/pi-agent-core": "*",
+        "@mariozechner/pi-ai": "*",
+        "@mariozechner/pi-coding-agent": "*",
         "@sinclair/typebox": "*"
     },
     "pi": {
         "extensions": [
             "./extensions",
             "node_modules/pi-mcporter/dist/index.js",
-            "node_modules/pi-ask-tool-extension/src/index.ts"
+            "node_modules/pi-ask-tool-extension/src/index.ts",
+            "node_modules/@aliou/pi-processes/src/index.ts"
         ],
         "skills": [
-            "./skills"
+            "./skills",
+            "node_modules/@aliou/pi-processes/skills/pi-processes"
         ],
         "prompts": [
             "./prompts"
         ]
-    },
-    "devDependencies": {}
+    }
 }
