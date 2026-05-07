@@ -1,6 +1,6 @@
 {
     "name": "pi-code",
-    "version": "1.12.7",
+    "version": "1.12.8",
     "description": "A curated pi package bundling custom extensions and configurations.",
     "keywords": [
         "pi-package"
@@ -8,7 +8,7 @@
     "license": "GPL-3.0-only",
     "type": "module",
     "dependencies": {
-        "@aliou/pi-processes": "^0.8.1",
+        "@aliou/pi-processes": "*",
         "pi-ask-tool-extension": "*",
         "pi-mcporter": "*"
     },

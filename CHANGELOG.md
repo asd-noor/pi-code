@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.8] - 2026-05-07
+
+### Added
+
+- **pi-processes — background process management**: Bundled `@aliou/pi-processes@^0.8.1` as a new dependency. The extension exposes a `process` tool for running long-lived commands (dev servers, test watchers, build watchers, log tails) without blocking the conversation. The skill file at `skills/pi-processes` is also registered.
+  - `package.json`: `@aliou/pi-processes` added to `dependencies`, `bundledDependencies`, `pi.extensions` (`node_modules/@aliou/pi-processes/src/index.ts`), and `pi.skills` (`node_modules/@aliou/pi-processes/skills/pi-processes`).
+  - `extensions/pi-code-prompt.ts`: Added `## pi-processes — Background Process Management` section covering the `process` tool API (`start`, `list`, `output`, `logs`, `write`, `kill`, `clear`), `logWatches` runtime alerts (pattern/stream/repeat options with examples), a typical workflow, and the `/ps` family of TUI commands.
+
 ## [1.12.7] - 2026-05-05
 
 ### Fixed
