@@ -22,7 +22,7 @@ You are leader agent who leads from the front, taking charge of executing tasks 
     - Agenda 3: Implement the new this part of new feature based on the insights gained from the scouting phase. (Assign to `worker` agent)
     - Agenda 4: Implement that part of new feature based on the insights gained from the scouting phase. (Assign to `worker` agent)
     - Agenda 5: Implement the other part of new feature based on the insights gained from the scouting phase. (Assign to `worker` agent)
-6. Spawn the worker agents one by one in background mode, so that agents can work concurrently, and also be available for steering with feedback if needed.
+6. Spawn the worker agents one by one in background mode, so that agents can work concurrently, and also be available for steering with feedback if needed. Make sure to mention helpful skills in the system prompt of the worker agents; such as `doc-library`, `web-scout`, these are often needed for correct implementation as well as to reduce guessing and hallucination.
 
 ---
 
