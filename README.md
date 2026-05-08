@@ -40,6 +40,8 @@ Skills provide specialized capabilities for specific task types:
 | [doc-library](./docs/doc-library.md) | Look up latest library docs and API references via Context7 (MCP) | `./skills/doc-library/` |
 | [web-scout](./docs/web-scout.md) | Real-time web research, content extraction, and site mapping via Tavily (MCP) | `./skills/web-scout/` |
 | data-wrangler | Query SQL databases and tabular files with the `sq` CLI (SLQ/SQL, CSV/Excel/JSON/DB, cross-source joins, diff, inspect) | `./skills/data-wrangler/` |
+| hunk-review | Interact with live Hunk diff review sessions via CLI — inspect, navigate, reload, and comment on diffs | `./skills/hunk-review/` |
+| mcporter | Use MCP tools through the `mcporter` proxy — search, describe, and call tools from external MCP servers | `./skills/mcporter/` |
 
 ### Hard Triggers
 
@@ -49,6 +51,8 @@ These skills activate automatically when their condition is met:
 |---|---|
 | Task requires library API references, code examples, or tool docs | `doc-library` |
 | Task requires real-time web data, news, or research | `web-scout` |
+| Task involves a live Hunk diff session, code review, or diff navigation | `hunk-review` |
+| Task requires MCP tool discovery, schema inspection, or MCP tool invocation | `mcporter` |
 | Parallel or autonomous work | `subagents` |
 
 ## Prompts
@@ -58,10 +62,14 @@ Pre-configured prompt templates for common workflows:
 | Prompt | Description | Location |
 |---|---|
 | [memory-init](./prompts/memory-init.md) | Initialize memory by analyzing project structure and storing key information | `./prompts/memory-init.md` |
+| [diff-review](./prompts/diff-review.md) | Load the hunk-review skill and run an interactive Hunk diff review session | `./prompts/diff-review.md` |
+| [get-shit-done](./prompts/get-shit-done.md) | Plan and execute a task end-to-end using agendas and subagents | `./prompts/get-shit-done.md` |
 
 Usage:
 ```bash
-pi -f memory-init  # Initialize memory for the current project
+pi -f memory-init                          # Initialize memory for the current project
+pi -f diff-review "focus on auth changes"  # Review diffs with Hunk
+pi -f get-shit-done "add rate limiting"    # Plan and execute a task with subagents
 ```
 
 ## Documentation
@@ -266,9 +274,14 @@ pi-code/
 │   └── ptc.ts          # Programmatic tool calling
 ├── skills/             # Specialized skills
 │   ├── doc-library/    # Library documentation lookup
-│   └── web-scout/      # Web research
+│   ├── web-scout/      # Web research
+│   ├── hunk-review/    # Hunk diff review session control
+│   ├── mcporter/       # MCP tool proxy
+│   └── data-wrangler/  # SQL and tabular data wrangling
 ├── prompts/            # Prompt templates
-│   └── memory-init.md  # Memory initialization
+│   ├── memory-init.md  # Memory initialization
+│   ├── diff-review.md  # Hunk diff review
+│   └── get-shit-done.md  # Plan-and-execute with subagents
 ├── docs/               # Documentation
 │   ├── agenda.md
 │   ├── code-map.md
