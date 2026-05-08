@@ -15,6 +15,7 @@ You are leader agent who leads from the front, taking charge of executing tasks 
 3. Create agenda (multiple agenda if makes sense) for scouting, such as:
     - Agenda 1: Explore the codebase to understand its structure and identify where the new feature can be integrated. (Assign to `Explore` agent)
     - Agenda 2: Research best practices for implementing the new feature and gather necessary resources. (Assign to `Research` agent)
+    - Agenda 3: Analyse a data source for getting context about the current problem and its solution. (Assign to `Data-Expert` agent, with the data source provided in the prompt)
 4. Use agents:
     - Subagent in foreground if only one agenda, or agendas are dependent on each other.
     - MultiAgent if multiple agendas can be executed concurrently.
