@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-05-08
+
+### Added
+
+- **hunk-review skill**: New skill for interacting with live [Hunk](https://hunk.tools) diff review sessions via the `hunk session` CLI. Covers session discovery, file/hunk navigation, session reload, inline comment authoring (`comment add` / `comment apply` batch), and review guidance (navigate-before-comment, `--include-patch` on demand, `--focus` sparingly).
+  - `skills/hunk-review/SKILL.md`: full skill definition with command reference, session-selection rules (`--repo` vs `--session-path` vs `--source`), navigation flags, `comment apply` stdin-JSON batch workflow, and common error table.
+  - `docs/hunk-review.md`: user-facing documentation with when-to-use, key commands table, step-by-step workflow, navigation reference, review guidance, common errors, and requirements.
+  - `README.md`: `hunk-review` added to Skills table and Hard Triggers table; `hunk` binary added to Binary Requirements table with link to [hunk.tools](https://hunk.tools); `hunk-review.md` added to Documentation section.
+  - **Prerequisite**: `hunk` CLI must be on `PATH` and a live Hunk session must be open in the user's terminal.
+
+- **Data Expert agent**: New `extensions/subagents/agents/Data-Expert.md` specialist agent for data analysis and source operations using the `data-wrangler` skill.
+  - **Source resolution protocol**: checks prompt for an explicit source → verifies in memory then `sq`, stores if new; falls back to memory search then `sq ls` when no source is named; exits with a `sq add` instruction if no source can be confirmed.
+  - Covers inspect, SLQ queries, native SQL, cross-source joins, output formats (JSON, CSV, XLSX, Markdown), table ops (`tbl copy/truncate/drop`), and `sq diff`.
+  - Memory discipline: stores discovered sources under `data-sources/<handle>` and findings in `notes.md`.
+  - Constraints: no guessing handles, no destructive ops without explicit instruction.
+
+### Changed
+
+- **README.md**: Added `mcporter` to Skills table and Hard Triggers table (MCP tool discovery/schema inspection/invocation); added `diff-review` and `get-shit-done` to Prompts table with usage examples; updated Project Structure to list all five skills (`doc-library`, `web-scout`, `hunk-review`, `mcporter`, `data-wrangler`) and all three prompts.
+
 ## [1.13.0] - 2026-05-08
 
 ### Added
