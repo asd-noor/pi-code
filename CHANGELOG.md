@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-05-08
+
+### Added
+
+- **data-wrangler skill**: New skill for querying SQL databases and tabular files using the `sq` CLI. Supports SLQ (sq's jq-like query language) and native SQL, source management, output formats (JSON, CSV, XLSX, Markdown, etc.), cross-source joins, `sq inspect`, `sq diff`, and `sq tbl` operations. Driver-specific reference files included under `skills/data-wrangler/references/` for `sqlite3`, `postgres`, `sqlserver`, `mysql`, `clickhouse`, `csv`, `tsv`, `json`, `jsona`, `jsonl`, and `xlsx`.
+  - `skills/data-wrangler/SKILL.md`: skill definition with query modes, source/handle management, ping/inspect, output flags, diff/table ops, and per-driver reference index.
+  - `README.md`: `data-wrangler` added to the Skills table; `sq` binary added to the Binary Requirements table with install link to [sq.io/docs/install](https://sq.io/docs/install/).
+  - **Prerequisite**: `sq` CLI must be on `PATH` — install from https://sq.io/docs/install/
+
 ## [1.12.8] - 2026-05-07
 
 ### Added

@@ -39,6 +39,7 @@ Skills provide specialized capabilities for specific task types:
 |---|---|---|
 | [doc-library](./docs/doc-library.md) | Look up latest library docs and API references via Context7 (MCP) | `./skills/doc-library/` |
 | [web-scout](./docs/web-scout.md) | Real-time web research, content extraction, and site mapping via Tavily (MCP) | `./skills/web-scout/` |
+| data-wrangler | Query SQL databases and tabular files with the `sq` CLI (SLQ/SQL, CSV/Excel/JSON/DB, cross-source joins, diff, inspect) | `./skills/data-wrangler/` |
 
 ### Hard Triggers
 
@@ -123,7 +124,6 @@ The package will only be active in the current project directory.
 
 - **Pi coding agent** (latest version)
 - **Node.js 22+** (for `node:sqlite` used by the agenda extension)
-- **Bun** (for spawning the code-map daemon)
 
 ### Binary Requirements
 
@@ -134,6 +134,7 @@ The following binaries must be in your `PATH`:
 | `memory-md` | Memory daemon for persistent storage | memory-md extension |
 | `mcporter` | MCP bridge for tool access | doc-library and web-scout skills |
 | `uv` | Executes Python ptc scripts via `#!/usr/bin/env -S uv run --script` | ptc extension and parallel ptc slots |
+| `sq` | Command-line data wrangling for SQL databases and tabular files | data-wrangler skill — install from [sq.io/docs/install](https://sq.io/docs/install/) |
 
 ### MCP Configuration
 
