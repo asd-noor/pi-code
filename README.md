@@ -87,6 +87,7 @@ Comprehensive documentation for each component:
 - **Skills**
   - [doc-library.md](./docs/doc-library.md) — Library documentation lookup
   - [web-scout.md](./docs/web-scout.md) — Web research and content extraction
+  - [hunk-review.md](./docs/hunk-review.md) — Hunk diff review session control
 
 ## Dependencies
 
@@ -143,6 +144,7 @@ The following binaries must be in your `PATH`:
 | `mcporter` | MCP bridge for tool access | doc-library and web-scout skills |
 | `uv` | Executes Python ptc scripts via `#!/usr/bin/env -S uv run --script` | ptc extension and parallel ptc slots |
 | `sq` | Command-line data wrangling for SQL databases and tabular files | data-wrangler skill — install from [sq.io/docs/install](https://sq.io/docs/install/) |
+| `hunk` | Interactive terminal diff viewer for code review sessions | hunk-review skill — install from [hunk.tools](https://hunk.tools) |
 
 ### MCP Configuration
 
