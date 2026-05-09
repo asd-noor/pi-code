@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.17.6] - 2026-05-09
+
+### Added
+
+- **git-stage**: `x` key runs `git rm --cached` on the selected file, removing it from the index while leaving it on disk.
+
 ## [1.17.5] - 2026-05-09
 
 ### Added
