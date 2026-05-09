@@ -11,9 +11,14 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { GitStageComponent } from "./component.ts";
 
 export default function (pi: ExtensionAPI) {
+  let storedCtx: ExtensionContext | undefined;
+  let inGitRepo = false;
+
   // ── Footer badge ─────────────────────────────────────────────────────────
 
-  async function updateBadge(ctx: ExtensionContext): Promise<void> {
+  async function updateBadge(): Promise<void> {
+    if (!storedCtx || !inGitRepo) return;
+    const ctx = storedCtx;
     try {
       const result = await pi.exec("git", ["diff", "--cached", "--name-only"], {
         cwd: ctx.cwd,
@@ -42,9 +47,19 @@ export default function (pi: ExtensionAPI) {
   // ── Session events ───────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
-    if (await isGitRepo(ctx.cwd)) {
-      await updateBadge(ctx);
-    }
+    storedCtx = ctx;
+    inGitRepo = await isGitRepo(ctx.cwd);
+    await updateBadge();
+  });
+
+  pi.on("agent_end", async (_event, ctx) => {
+    storedCtx = ctx;
+    await updateBadge();
+  });
+
+  pi.on("session_shutdown", async () => {
+    storedCtx = undefined;
+    inGitRepo = false;
   });
 
   // ── /git-stage command ───────────────────────────────────────────────────
@@ -57,7 +72,6 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // Resolve git root
       const rootResult = await pi.exec("git", ["rev-parse", "--show-toplevel"], {
         cwd: ctx.cwd,
         timeout: 3000,
@@ -68,14 +82,13 @@ export default function (pi: ExtensionAPI) {
       }
       const gitRoot = rootResult.stdout.trim();
 
-      // Open TUI
       await ctx.ui.custom<void>((tui, theme, _kb, done) => {
         const component = new GitStageComponent({ tui, theme, done, pi, cwd: gitRoot });
         return component;
       });
 
-      // Refresh badge after user closes the TUI
-      await updateBadge(ctx);
+      storedCtx = ctx;
+      await updateBadge();
     },
   });
 }
