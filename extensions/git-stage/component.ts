@@ -501,38 +501,46 @@ export class GitStageOverlay {
     }
 
     // Build all diff lines with hunk highlighting
+    const totalHunks = this.fileDiff.hunks.length;
     const diffLines: string[] = [];
-    for (let hi = 0; hi < this.fileDiff.hunks.length; hi++) {
+    for (let hi = 0; hi < totalHunks; hi++) {
       const hunk = this.fileDiff.hunks[hi]!;
-      const isSelectedHunk = hi === this.hunkIndex;
+      const isSel = hi === this.hunkIndex;
+
+      // ── Hunk divider (between hunks) ──────────────────────────────────
+      if (hi > 0) {
+        const label = ` hunk ${hi + 1} / ${totalHunks} `;
+        const dashes = "─".repeat(Math.max(0, width - label.length));
+        diffLines.push(th.fg("dim", dashes + label));
+      }
 
       for (let li = 0; li < hunk.lines.length; li++) {
         const diffLine = hunk.lines[li] ?? "";
         let rendered: string;
 
         if (diffLine.startsWith("@@")) {
-          const hunkLabel = isSelectedHunk
-            ? th.fg("accent", `${this.focus === "hunks" ? "▶" : " "} ${diffLine}`)
+          // @@ header: full-width, ▶ when focused
+          const hunkLabel = isSel
+            ? th.fg("accent", `${this.focus === "hunks" ? "▶" : "▷"} ${diffLine}`)
             : th.fg("dim", `  ${diffLine}`);
           rendered = truncateToWidth(hunkLabel, width);
-        } else if (diffLine.startsWith("+")) {
-          rendered = truncateToWidth(th.fg("success", ` ${diffLine}`), width);
-        } else if (diffLine.startsWith("-")) {
-          rendered = truncateToWidth(th.fg("error", ` ${diffLine}`), width);
         } else {
-          rendered = truncateToWidth(th.fg("muted", ` ${diffLine}`), width);
-        }
-
-        // Dim non-selected hunks slightly
-        if (!isSelectedHunk && !diffLine.startsWith("@@")) {
-          rendered = truncateToWidth(th.fg("dim", ` ${diffLine}`), width);
+          // Body lines: │ gutter on selected hunk so highlight persists when @@ scrolls off
+          const gutter = isSel ? th.fg("accent", "│") : " ";
+          const cw = width - 1; // 1 char taken by gutter
+          let body: string;
+          if (diffLine.startsWith("+")) {
+            body = truncateToWidth(th.fg(isSel ? "success" : "dim", ` ${diffLine}`), cw);
+          } else if (diffLine.startsWith("-")) {
+            body = truncateToWidth(th.fg(isSel ? "error" : "dim", ` ${diffLine}`), cw);
+          } else {
+            body = truncateToWidth(th.fg(isSel ? "muted" : "dim", ` ${diffLine}`), cw);
+          }
+          rendered = gutter + body;
         }
 
         diffLines.push(rendered);
       }
-
-      // Blank separator between hunks
-      diffLines.push("");
     }
 
     // Scroll to keep selected hunk header in view
@@ -546,7 +554,7 @@ export class GitStageOverlay {
         selectedHunkLineStart = lineCount;
         break;
       }
-      lineCount += (this.fileDiff.hunks[hi]?.lines.length ?? 0) + 1;
+      lineCount += (hi > 0 ? 1 : 0) + (this.fileDiff.hunks[hi]?.lines.length ?? 0); // divider + hunk lines
     }
 
     if (selectedHunkLineStart < this.hunkScrollOffset) {
