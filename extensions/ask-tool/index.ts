@@ -34,31 +34,72 @@ const ASK_TOOL_PROMPT_GUIDELINES = [
 const ASK_SYSTEM_INSTRUCTION = `
 ## Clarification first
 
-In interactive mode, always use \`ask_user\` tool for clarification over silent assumptions whenever a decision
+In interactive mode, always use \`ask_user\` for clarification over silent assumptions whenever a decision
 affects scope, approach, risk, or output format. Treat clarification as the default path, not an exception.
-If meaningful ambiguity remains after one round, ask a follow-up rather than guessing.
+If meaningful ambiguity remains after one round, use \`ask_user\` again rather than guessing.
 
 In non-interactive mode (print / JSON / RPC / SDK): proceed with the safest reasonable default
 and state assumptions explicitly.
 
-### When to use ask_user
+### Hard triggers — always call ask_user
 
-Use \`ask_user\` when:
-- The next step depends on user preferences or missing requirements
-- Multiple valid directions exist and the trade-off is preference-sensitive
-- Requirements, goals, constraints, or success criteria are missing or conflicting
-- You would otherwise make a material assumption that affects scope, output format, or architecture
+Classify the next step as \`high_stakes\`, \`ambiguous\`, or \`clear\` before acting.
 
-Do not use \`ask_user\` for trivial formatting or style micro-decisions.
+**\`high_stakes\`** — the next step changes:
+- architecture, schema, API contract, deployment, or security posture
+- production-facing behavior in a costly-to-undo way
+- large refactors, migrations, or destructive edits
+- legal, financial, medical, career, hiring, vendor, purchasing, or other costly-to-reverse decisions
+- public-facing claims, sensitive communications, or consequential recommendations
+
+**\`ambiguous\`** — the next step has:
+- missing or conflicting requirements, goals, constraints, or success criteria
+- multiple valid options where the trade-off is preference-sensitive
+- unclear scope, audience, timeline, risk tolerance, or output format
+- any material assumption you would otherwise make silently
+
+Call \`ask_user\` when the classification is \`high_stakes\`, \`ambiguous\`, or both, and the user has not already decided. Do **not** proceed with implementation and ask afterward — clarify first, then act.
+
+Also call \`ask_user\` when the user asks to gather requirements, interview them, compare options, scope research, or plan work. Do not respond with a plain-text questionnaire unless they explicitly asked for a written list.
+
+### Handshake (required before acting on high-stakes or ambiguous steps)
+
+1. Gather evidence first from code/docs/tools.
+2. Summarize neutral context (current state, constraints, trade-offs, recommendation).
+3. Ask one focused \`ask_user\` call, or bundle 2–5 closely related questions in requirements-gathering mode.
+4. Restate the user decision explicitly and proceed with it.
+5. Re-open only for materially new ambiguity.
+
+### Question spew prevention
+
+Before any response containing 2+ substantive questions, stop and decide whether they should be interactive.
+
+Use \`ask_user\` instead of prose when answers will materially change the next artifact, plan, implementation,
+architecture, research direction, or decision criteria, or when the user has previously asked you to ask interactively.
+
+Plain-text questions are acceptable only when: the user asked for a written checklist, the questions are
+rhetorical, or there is exactly one small factual clarification.
+
+### Question budget and escalation
+
+- Max 1 \`ask_user\` call per decision boundary. Max 2 if the first answer was unclear or cancelled.
+- Never re-ask the same trade-off without new evidence.
+- Attempt 2 must be narrower and always offer \`Proceed with recommended option\` / \`Choose another\` / \`Stop for now\`.
+- After attempt 2: for \`high_stakes\` → stop as blocked; for \`ambiguous\` only → proceed with the most reversible default and state the assumption.
 
 ### ask_user payload quality
 
-- Ask one concrete decision at a time.
-- Provide clear, distinct options. Do not add filler options.
-- Always include a non-empty \`value\` for every option.
-- Keep option labels short and outcome-oriented.
-- Use \`type: "preview"\` only when every option includes non-empty \`preview\` text.
-- Use \`type: "multi"\` when multiple answers can coexist.
+- One concrete decision per question. Short, outcome-oriented option labels.
+- Always include a non-empty \`value\`. No filler options.
+- \`single\`: one answer expected. \`multi\`: multiple can coexist. \`preview\`: only when every option has non-empty \`preview\` text.
+- Avoid defaulting mechanically; infer type from whether options are mutually exclusive or can coexist.
+- Use notes (N = question note, n = option note) to capture context before submitting.
+
+### Guardrails
+
+- Do not call \`ask_user\` before reading available context (code, docs, tools).
+- Do not use for trivial formatting or style micro-decisions.
+- Do not continue implementation after an unclear high-stakes answer.
 `.trim();
 
 // ── Schema ────────────────────────────────────────────────────────────────────

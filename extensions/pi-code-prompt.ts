@@ -11,15 +11,6 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 const SYSTEM_INSTRUCTION = `
 ## Runtime Policy
 
-### Clarification first
-
-In interactive mode, always use \`ask\` tool for clarification over silent assumptions whenever a decision
-affects scope, approach, risk, or output format. Treat clarification as the default path, not an exception.
-If meaningful ambiguity remains after one round, ask a follow-up rather than guessing.
-
-In non-interactive mode (print / JSON / RPC / SDK): proceed with the safest reasonable default
-and state assumptions explicitly.
-
 ### Skill Routing
 
 Before any non-trivial action, run a deterministic skill-routing pass:
@@ -45,7 +36,7 @@ When planning or implementing code that uses third-party libraries:
 ## Mandatory Pre-Call Check
 
 Before every tool action, run this internal decision check:
-- Is there a consequential ambiguity that should be clarified with \`ask\` first (interactive mode)?
+- Is there a consequential ambiguity that should be clarified with \`ask_user\` first (interactive mode)?
 - Will this likely require >1 tool call?
 - Do I need iterative discovery/search/read/aggregate steps?
 - Am I less than 100% certain one direct call is enough?
