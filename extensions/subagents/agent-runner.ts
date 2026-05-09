@@ -246,7 +246,7 @@ export async function spawnAndRun(
     agentDir: agentDirPath,
     settingsManager: SettingsManager.create(cwd, agentDirPath),
     noExtensions,
-    noSkills: true,
+    noSkills: false,
     noPromptTemplates: true,
     noThemes: true,
     noContextFiles: true,
