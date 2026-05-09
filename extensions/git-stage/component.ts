@@ -546,22 +546,26 @@ export class GitStageOverlay {
     // Scroll to keep selected hunk header in view
     const contentH = Math.max(1, height - 2);
 
-    // Find the line index of the selected hunk's @@ header
+    // Find the line index of the selected hunk's @@ header.
+    // Divider is emitted BEFORE the hunk, so accumulate it first, then check.
     let selectedHunkLineStart = 0;
     let lineCount = 0;
     for (let hi = 0; hi < this.fileDiff.hunks.length; hi++) {
+      if (hi > 0) lineCount++; // divider line comes before this hunk
       if (hi === this.hunkIndex) {
         selectedHunkLineStart = lineCount;
         break;
       }
-      lineCount += (hi > 0 ? 1 : 0) + (this.fileDiff.hunks[hi]?.lines.length ?? 0); // divider + hunk lines
+      lineCount += this.fileDiff.hunks[hi]?.lines.length ?? 0;
     }
 
     if (selectedHunkLineStart < this.hunkScrollOffset) {
-      this.hunkScrollOffset = selectedHunkLineStart;
+      // Selected hunk scrolled above viewport — snap to show divider + @@ at top
+      this.hunkScrollOffset = Math.max(0, selectedHunkLineStart - 1);
     }
     if (selectedHunkLineStart >= this.hunkScrollOffset + contentH) {
-      this.hunkScrollOffset = selectedHunkLineStart - contentH + 1;
+      // Selected hunk below viewport — bring @@ near the top (1 line margin for divider)
+      this.hunkScrollOffset = Math.max(0, selectedHunkLineStart - 1);
     }
 
     const visible = diffLines.slice(this.hunkScrollOffset, this.hunkScrollOffset + contentH);
