@@ -172,6 +172,7 @@ export class AskController {
     width: number,
   ): void {
     const { state, theme } = this;
+    const th = (k: string, s: string) => theme.fg(k, s);
     const isActive = state.activeOptionIndex === index && !isSubmitTab(state) && getCurrentQuestion(state)?.id === q.id;
     const selected = isOptionSelected(state, q.id, opt.value);
     const isCustom = opt.value === OTHER_VALUE;
