@@ -1,5 +1,5 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { SocketClient } from "./client.ts";
 
 export function registerTools(pi: ExtensionAPI, getRoot: () => string | undefined): void {

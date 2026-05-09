@@ -8,7 +8,7 @@
 
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // ── Module-level constants ────────────────────────────────────────────────────
 
@@ -55,7 +55,11 @@ export default function (pi: ExtensionAPI) {
     try {
       const result = await pi.exec("hunk", ["session", "list", "--json"], { timeout: 5000 });
       if (result.code !== 0 || !result.stdout.trim()) return [];
-      return JSON.parse(result.stdout.trim()) as any[];
+      const parsed = JSON.parse(result.stdout.trim());
+      if (Array.isArray(parsed)) return parsed;
+      // newer hunk versions wrap the list: { sessions: [...] }
+      if (parsed && Array.isArray(parsed.sessions)) return parsed.sessions;
+      return [];
     } catch {
       return [];
     }

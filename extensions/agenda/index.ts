@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { openAgendaBrowserInteractive } from "./browser.ts";
 import { openDb } from "./db.ts";
 import { AGENDA_INSTRUCTION } from "./instruction.ts";

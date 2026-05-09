@@ -9,9 +9,9 @@
  *   mcporter list --schema
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { StringEnum } from "@mariozechner/pi-ai";
-import { Type } from "@sinclair/typebox";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { execFile } from "node:child_process";

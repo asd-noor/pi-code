@@ -1,5 +1,5 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { DatabaseSync } from "node:sqlite";
 import { AGENDA_STATES, DISCOVERY_CATEGORIES, DISCOVERY_OUTCOMES, type AgendaRow, type ToolResult } from "./types.ts";
 import {

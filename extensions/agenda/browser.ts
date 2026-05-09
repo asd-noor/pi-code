@@ -1,5 +1,5 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { getTasks, openDb } from "./db.ts";
 import { formatTaskState } from "./format.ts";
 import type { AgendaBrowserFilters, AgendaBrowserRow, AgendaRow, TaskRow } from "./types.ts";

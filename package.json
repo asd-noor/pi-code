@@ -9,33 +9,40 @@
     "type": "module",
     "dependencies": {
         "@aliou/pi-processes": "*",
-        "pi-ask-tool-extension": "*",
-        "pi-mcporter": "*"
+        "@eko24ive/pi-ask": "^0.9.0",
+        "pi-mcporter": "^0.3.2"
     },
     "bundledDependencies": [
         "@aliou/pi-processes",
         "pi-mcporter",
-        "pi-ask-tool-extension"
+        "@eko24ive/pi-ask"
     ],
-    "peerDependencies": {
-        "@mariozechner/pi-agent-core": "*",
-        "@mariozechner/pi-ai": "*",
-        "@mariozechner/pi-coding-agent": "*",
-        "@sinclair/typebox": "*"
-    },
+
     "pi": {
         "extensions": [
             "./extensions",
             "node_modules/pi-mcporter/dist/index.js",
-            "node_modules/pi-ask-tool-extension/src/index.ts",
+            "node_modules/@eko24ive/pi-ask/src/index.ts",
             "node_modules/@aliou/pi-processes/src/index.ts"
         ],
         "skills": [
             "./skills",
-            "node_modules/@aliou/pi-processes/skills/pi-processes"
+            "node_modules/@aliou/pi-processes/skills/pi-processes",
+            "node_modules/@eko24ive/pi-ask/skills"
         ],
         "prompts": [
             "./prompts"
         ]
+    },
+    "bundleDependencies": [
+        "@aliou/pi-processes",
+        "pi-mcporter",
+        "@eko24ive/pi-ask"
+    ],
+    "overrides": {
+        "basic-ftp": "6.0.1",
+        "fast-uri": "3.1.2",
+        "fast-xml-builder": "1.2.0",
+        "fast-xml-parser": "5.7.3"
     }
 }

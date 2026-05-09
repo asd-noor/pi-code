@@ -98,15 +98,15 @@ These are included automatically when you install `pi-code`:
 | Package | Purpose |
 |---|---|
 | [pi-mcporter](https://github.com/mavam/pi-mcporter) | MCP bridge — enables `doc-library` and `web-scout` skills via `mcporter` binary |
-| [pi-ask-tool-extension](https://github.com/devkade/pi-ask-tool) | Interactive clarification tool with tabbed questioning |
+| [@eko24ive/pi-ask](https://www.npmjs.com/package/@eko24ive/pi-ask) | Interactive clarification tool with tabbed questioning |
 
 ### Peer Dependencies
 
 Required by the Pi runtime (automatically satisfied if you have Pi installed):
 
-- `@mariozechner/pi-coding-agent`
-- `@mariozechner/pi-ai`
-- `@mariozechner/pi-agent-core`
+- `@earendil-works/pi-coding-agent`
+- `@earendil-works/pi-ai`
+- `@earendil-works/pi-agent-core`
 - `@sinclair/typebox`
 
 ## Installation

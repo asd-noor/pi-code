@@ -5,7 +5,7 @@
  * Auto-refreshes while the agent is running. Close with q / Escape.
  */
 
-import { matchesKey, Key, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
+import { matchesKey, Key, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { AgentRecord, AgentActivity, TurnEntry } from "./types.ts";
 import { formatMs } from "./widget.ts";
 
