@@ -6,7 +6,8 @@
  *
  * Dir resolution (first match wins):
  *   1. MEMORY_MD_DIR env var (if already set in the environment)
- *   2. <current-directory>/.pi-memory (project-local default)
+ *   2. <git-root>/.pi-memory (if cwd is inside a git repository)
+ *   3. <current-directory>/.pi-memory (project-local default)
  *
  * Binary:  memory-md (must be in PATH)
  * Socket:  ~/.cache/memory-md/<sha256[:16] of MEMORY_MD_DIR>/channel.sock
@@ -30,7 +31,10 @@ import { registerTools } from "./tools.ts";
 // ── Dir resolution ────────────────────────────────────────────────────────────
 
 function resolveMemDir(cwd: string): string {
-  return process.env.MEMORY_MD_DIR?.trim() || join(cwd, ".pi-memory");
+  if (process.env.MEMORY_MD_DIR?.trim()) return process.env.MEMORY_MD_DIR.trim();
+  const result = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf-8" });
+  if (result.status === 0) return join(result.stdout.trim(), ".pi-memory");
+  return join(cwd, ".pi-memory");
 }
 
 // ── Cache path helpers ────────────────────────────────────────────────────────
