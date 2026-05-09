@@ -196,6 +196,34 @@ function formatNonInteractiveMessage(params: AskParams): string {
   return lines.join("\n");
 }
 
+// ── Notify integration ──────────────────────────────────────────────────────
+
+const NOTIFY_STATE_TYPE = "notify-state";
+
+async function maybeNotify(
+  pi: ExtensionAPI,
+  ctx: { sessionManager: { getEntries(): Array<{ type: string; customType?: string; data?: unknown }> } },
+  params: AskParams,
+): Promise<void> {
+  // Check whether the notify extension has notifications enabled.
+  let enabled = false;
+  for (const entry of ctx.sessionManager.getEntries()) {
+    if (entry.type === "custom" && entry.customType === NOTIFY_STATE_TYPE) {
+      enabled = Boolean((entry.data as Record<string, unknown>)?.enabled);
+    }
+  }
+  if (!enabled) return;
+
+  const body = (params.title?.trim() || "Needs your input")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+  try {
+    await pi.exec("osascript", ["-e", `display notification "${body}" with title "pi"`], { timeout: 3000 });
+  } catch {
+    // best-effort
+  }
+}
+
 // ── Extension ─────────────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
@@ -220,7 +248,10 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
-      // 2. Non-interactive fallback
+      // 2. Notify (if enabled)
+      await maybeNotify(pi, ctx, askParams);
+
+      // 3. Non-interactive fallback
       if (!ctx.hasUI) {
         return {
           content: [{ type: "text" as const, text: formatNonInteractiveMessage(askParams) }],
@@ -228,14 +259,14 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
-      // 3. Show TUI
+      // 4. Show TUI
       ctx.ui.setWorkingVisible(false);
       const result = await ctx.ui.custom<AskResult>(
         (_tui, theme, _kb, done) => new AskController(askParams, theme, done),
       );
       ctx.ui.setWorkingVisible(true);
 
-      // 4. Return result
+      // 5. Return result
       return {
         content: [{ type: "text" as const, text: summarizeResult(result) }],
         details: result,
