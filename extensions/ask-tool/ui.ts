@@ -11,9 +11,11 @@ import {
   confirm,
   createInitialState,
   digitShortcut,
-  elaborateFlow,
   enterInput,
+  enterOptionNote,
+  enterQuestionNote,
   exitInput,
+  exitNote,
   getCurrentQuestion,
   getRenderableOptions,
   isOptionSelected,
@@ -22,6 +24,7 @@ import {
   moveTab,
   OTHER_VALUE,
   saveInput,
+  saveNote,
   submitFlow,
   submitInput,
   toggle,
@@ -49,6 +52,7 @@ function isAnswered(state: AskState, questionId: string): boolean {
 export class AskController {
   private state: AskState;
   private inputDraft = "";
+  private noteDraft = "";
 
   constructor(
     private params: AskParams,
@@ -137,6 +141,14 @@ export class AskController {
 
     // Prompt
     lines.push(th("text", ` ${q.prompt}`));
+
+    // Question-level note
+    const inQuestionNote = state.view === "note" && state.noteTarget?.questionId === q.id && !state.noteTarget.optionValue;
+    if (inQuestionNote) {
+      lines.push(th("syntaxString", " Note: ") + theme.bg("selectedBg", " " + this.noteDraft + "|  "));
+    } else if (state.questionNotes[q.id]) {
+      lines.push(th("syntaxString", " Note: ") + th("muted", state.questionNotes[q.id]));
+    }
     lines.push("");
 
     const isPreviewWide = q.type === "preview" && width >= 90;
@@ -186,7 +198,16 @@ export class AskController {
     } else if (isCustom && state.customText[q.id] && state.customSelected[q.id]) {
       lines.push(clamp(theme.fg("success", "  ✓ " + state.customText[q.id]), width));
     }
-  }
+
+    // Option-level note (only for real options, not the custom sentinel)
+    if (!isCustom) {
+      const inOptNote = state.view === "note" && state.noteTarget?.questionId === q.id && state.noteTarget.optionValue === opt.value;
+      if (inOptNote) {
+        lines.push(clamp(th("syntaxString", "     note: ") + theme.bg("selectedBg", " " + this.noteDraft + "|  "), width));
+      } else if (state.optionNotes[q.id]?.[opt.value]) {
+        lines.push(clamp(th("syntaxString", "     note: ") + th("muted", state.optionNotes[q.id][opt.value]), width));
+      }
+    }
 
   private renderPreviewWide(lines: string[], q: AskQuestion, opts: AskOption[], width: number): void {
     const { state, theme } = this;
@@ -239,6 +260,18 @@ export class AskController {
       }
       const answerText = labels.length > 0 ? labels.join(", ") : th("dim", "(unanswered)");
       lines.push(th("text", ` ${q.label}: ${answerText}`));
+      // Question note
+      if (state.questionNotes[q.id]) {
+        lines.push(th("syntaxString", "   note: ") + th("dim", state.questionNotes[q.id]));
+      }
+      // Option notes
+      for (const v of ans) {
+        const optNote = state.optionNotes[q.id]?.[v];
+        if (optNote) {
+          const optLabel = q.options.find((o) => o.value === v)?.label ?? v;
+          lines.push(th("syntaxString", `   ${optLabel} note: `) + th("dim", optNote));
+        }
+      }
     }
 
     lines.push("");
@@ -258,14 +291,17 @@ export class AskController {
     if (state.view === "input") {
       return dim("Enter: confirm  Esc: cancel  Tab: next tab");
     }
+    if (state.view === "note") {
+      return dim("Enter: save note  Esc: cancel");
+    }
     if (isSubmitTab(state)) {
       return dim("↑↓: move  Enter / 1-3: select  Esc: cancel");
     }
     const q = getCurrentQuestion(state);
     const isMulti = q?.type === "multi";
     return dim(isMulti
-      ? "Tab: next  ↑↓: move  Space: toggle  Enter: advance  1-9: shortcut  Esc: cancel"
-      : "Tab: next  ↑↓: move  Space: toggle  Enter: select  1-9: shortcut  Esc: cancel");
+      ? "Tab: next  ↑↓: move  Space: toggle  Enter: advance  N: q-note  n: opt-note  1-9: shortcut  Esc: cancel"
+      : "Tab: next  ↑↓: move  Space: toggle  Enter: select  N: q-note  n: opt-note  1-9: shortcut  Esc: cancel");
   }
 
   // ── Input handling ─────────────────────────────────────────────────────────
@@ -273,11 +309,33 @@ export class AskController {
   handleInput(data: string): void {
     if (this.state.view === "input") {
       this.handleInputMode(data);
+    } else if (this.state.view === "note") {
+      this.handleNoteMode(data);
     } else {
       this.handleNavigateMode(data);
     }
     if (this.state.completed) {
       this.done(toResult(this.state));
+    }
+  }
+
+  private handleNoteMode(data: string): void {
+    if (matchesKey(data, "enter")) {
+      this.state = saveNote(this.state, this.noteDraft);
+      this.noteDraft = "";
+      return;
+    }
+    if (matchesKey(data, "escape")) {
+      this.state = exitNote(this.state);
+      this.noteDraft = "";
+      return;
+    }
+    if (matchesKey(data, "backspace")) {
+      this.noteDraft = this.noteDraft.slice(0, -1);
+      return;
+    }
+    if (data.length === 1 && data.charCodeAt(0) >= 32) {
+      this.noteDraft += data;
     }
   }
 
@@ -338,13 +396,27 @@ export class AskController {
       this.state = confirm(this.state);
       return;
     }
-    // `n` on "Type your own" option
+    // `N` (shift+n) → question note
+    if (data === "N") {
+      const q = getCurrentQuestion(this.state);
+      if (q && !isSubmitTab(this.state)) {
+        this.noteDraft = this.state.questionNotes[q.id] ?? "";
+        this.state = enterQuestionNote(this.state, q.id);
+        return;
+      }
+    }
+    // `n` → option note on current option, or freeform input on "Type your own"
     if (data === "n") {
       const q = getCurrentQuestion(this.state);
       const opts = q ? getRenderableOptions(q) : [];
       const opt = opts[this.state.activeOptionIndex];
-      if (q && opt?.value === OTHER_VALUE) {
-        this.state = enterInput(this.state, q.id);
+      if (q && opt && !isSubmitTab(this.state)) {
+        if (opt.value === OTHER_VALUE) {
+          this.state = enterInput(this.state, q.id);
+        } else {
+          this.noteDraft = this.state.optionNotes[q.id]?.[opt.value] ?? "";
+          this.state = enterOptionNote(this.state, q.id, opt.value);
+        }
         return;
       }
     }

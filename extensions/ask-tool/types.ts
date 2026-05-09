@@ -48,7 +48,13 @@ export interface AskValidationIssue {
   message: string;
 }
 
-export type AskView = "navigate" | "input" | "submit";
+export type AskView = "navigate" | "input" | "note" | "submit";
+
+export interface AskNoteTarget {
+  questionId: string;
+  /** undefined = question-level note; set = option-level note */
+  optionValue?: string;
+}
 
 export interface AskState {
   title?: string;
@@ -65,6 +71,12 @@ export interface AskState {
   view: AskView;
   /** Set when view === "input". */
   editingQuestionId?: string;
+  /** Set when view === "note". */
+  noteTarget?: AskNoteTarget;
+  /** Question-level notes keyed by question id. */
+  questionNotes: Record<string, string>;
+  /** Option-level notes keyed by question id → option value. */
+  optionNotes: Record<string, Record<string, string>>;
   completed: boolean;
   cancelled: boolean;
   mode: "submit" | "elaborate";
@@ -73,6 +85,10 @@ export interface AskState {
 export interface AskResultAnswer {
   values: string[];
   labels: string[];
+  /** Question-level note, if any. */
+  note?: string;
+  /** Option-level notes keyed by option value. */
+  optionNotes?: Record<string, string>;
 }
 
 export interface AskResult {

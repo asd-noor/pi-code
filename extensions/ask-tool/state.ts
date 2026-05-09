@@ -4,7 +4,7 @@
  * No IO or side effects — all functions take a state and return a new state.
  */
 
-import type { AskOption, AskParams, AskQuestion, AskResult, AskState } from "./types.ts";
+import type { AskNoteTarget, AskOption, AskParams, AskQuestion, AskResult, AskState } from "./types.ts";
 import { normalizeQuestions } from "./validate.ts";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -56,6 +56,8 @@ export function createInitialState(params: AskParams): AskState {
     answers: {},
     customText: {},
     customSelected: {},
+    questionNotes: {},
+    optionNotes: {},
     view: "navigate",
     completed: false,
     cancelled: false,
@@ -246,6 +248,41 @@ export function submitInput(state: AskState, text: string): AskState {
   return exited;
 }
 
+// ── Note mode ────────────────────────────────────────────────────────────────
+
+export function enterQuestionNote(state: AskState, questionId: string): AskState {
+  return { ...state, view: "note", noteTarget: { questionId } };
+}
+
+export function enterOptionNote(state: AskState, questionId: string, optionValue: string): AskState {
+  return { ...state, view: "note", noteTarget: { questionId, optionValue } };
+}
+
+export function saveNote(state: AskState, text: string): AskState {
+  if (!state.noteTarget) return exitNote(state);
+  const { questionId, optionValue } = state.noteTarget;
+  if (optionValue) {
+    const qNotes = { ...(state.optionNotes[questionId] ?? {}) };
+    if (text.trim()) qNotes[optionValue] = text;
+    else delete qNotes[optionValue];
+    const optionNotes = { ...state.optionNotes, [questionId]: qNotes };
+    if (Object.keys(qNotes).length === 0) delete optionNotes[questionId];
+    return exitNote({ ...state, optionNotes });
+  }
+  const questionNotes = { ...state.questionNotes };
+  if (text.trim()) questionNotes[questionId] = text;
+  else delete questionNotes[questionId];
+  return exitNote({ ...state, questionNotes });
+}
+
+export function exitNote(state: AskState): AskState {
+  return {
+    ...state,
+    view: isSubmitTab(state) ? "submit" : "navigate",
+    noteTarget: undefined,
+  };
+}
+
 // ── Cancel / submit / elaborate ───────────────────────────────────────────────
 
 export function cancelFlow(state: AskState): AskState {
@@ -274,8 +311,21 @@ export function toResult(state: AskState): AskResult {
       values.push(state.customText[q.id]);
       labels.push(state.customText[q.id]);
     }
-    if (values.length > 0) {
-      answers[q.id] = { values, labels };
+    const note = state.questionNotes[q.id];
+    const rawOptionNotes = state.optionNotes[q.id];
+    // Only keep option notes for values that exist in the answer
+    const optionNotes = rawOptionNotes
+      ? Object.fromEntries(
+          Object.entries(rawOptionNotes).filter(([v]) => values.includes(v)),
+        )
+      : undefined;
+    if (values.length > 0 || note || (optionNotes && Object.keys(optionNotes).length > 0)) {
+      answers[q.id] = {
+        values,
+        labels,
+        ...(note ? { note } : {}),
+        ...(optionNotes && Object.keys(optionNotes).length > 0 ? { optionNotes } : {}),
+      };
     }
   }
   return {

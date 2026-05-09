@@ -111,6 +111,7 @@ function summarizeResult(result: AskResult): string {
       const ans = result.answers[q.id];
       if (ans) {
         lines.push(`  ${q.label}: ${ans.labels.join(", ")}`);
+        if (ans.note) lines.push(`    note: ${ans.note}`);
       } else {
         lines.push(`  ${q.label}: (unanswered)`);
       }
@@ -122,6 +123,13 @@ function summarizeResult(result: AskResult): string {
     const ans = result.answers[q.id];
     if (ans) {
       lines.push(`${q.label}: ${ans.labels.join(", ")}`);
+      if (ans.note) lines.push(`  note: ${ans.note}`);
+      if (ans.optionNotes) {
+        for (const [val, note] of Object.entries(ans.optionNotes)) {
+          const label = ans.labels[ans.values.indexOf(val)] ?? val;
+          lines.push(`  ${label} note: ${note}`);
+        }
+      }
     }
   }
   return lines.join("\n") || "No answers provided";
