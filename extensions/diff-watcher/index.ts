@@ -79,7 +79,8 @@ export default function (pi: ExtensionAPI) {
     if (poller) return;
     poller = setInterval(async () => {
       const sessions = await listSessions();
-      setFooter(sessionCountLabel(sessions.length));
+      if (sessions.length > 0) setFooter(sessionCountLabel(sessions.length));
+      else clearFooter();
     }, 4000);
   }
 
@@ -95,14 +96,11 @@ export default function (pi: ExtensionAPI) {
     if (!gitRoot) return;
 
     hunkOnPath = await isHunkOnPath();
-    if (!hunkOnPath) {
-      setFooter("⬡ hunk: not installed   ");
-      return;
-    }
+    if (!hunkOnPath) return;
 
     // Show initial count immediately, then start polling
     const sessions = await listSessions();
-    setFooter(sessionCountLabel(sessions.length));
+    if (sessions.length > 0) setFooter(sessionCountLabel(sessions.length));
     startPoller();
   });
 
