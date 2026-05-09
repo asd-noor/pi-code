@@ -208,6 +208,7 @@ export class AskController {
         lines.push(clamp(th("syntaxString", "     note: ") + th("muted", state.optionNotes[q.id][opt.value]), width));
       }
     }
+  }
 
   private renderPreviewWide(lines: string[], q: AskQuestion, opts: AskOption[], width: number): void {
     const { state, theme } = this;
