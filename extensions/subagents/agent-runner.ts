@@ -80,6 +80,7 @@ You are operating as a sub-agent invoked to handle a specific task.
 - Use absolute file paths
 - Do not use emojis
 - Be concise but complete
+- When a skill references a relative path (e.g. references/postgres.md), resolve it against the skill's directory — the directory containing the SKILL.md shown in <available_skills> — and use that absolute path with the read tool
 </sub_agent_context>`;
 
 const GENERIC_BASE = `# Role
@@ -109,6 +110,10 @@ function buildSystemPrompt(config: AgentConfig, cwd: string, parentSystemPrompt?
     "You have been invoked to handle a specific task autonomously.",
     "",
     envBlock,
+    "",
+    "When a skill references a relative path (e.g. references/postgres.md), resolve it against",
+    "the skill's directory — the directory containing the SKILL.md shown in <available_skills> —",
+    "and use that absolute path with the read tool.",
     "",
     config.systemPrompt,
   ].join("\n");
