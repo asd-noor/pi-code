@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.3] - 2026-05-09
+
+### Added
+
+- **Auto-generated `workflow.md` entries** (`extensions/memory-md/index.ts`): After every agent loop, an `agent_end` hook extracts tool calls and the final assistant text, calls a configurable model, and appends a timestamped nested entry (`## YYYY-MM-DD` / `### HH:MM — title`) directly to `workflow.md`. The daemon reindexes the file automatically. Skips turns with zero tool calls. Errors are caught silently so the hook never disrupts the agent loop.
+- **`/memory init` command**: Runs a full memory-initialization agent session using the configured model. Analyzes the project (reads files, README, package.json) and creates canonical memory files with properly nested sections.
+- **`/memory curate [file]` command**: Runs a memory-curation agent session that audits all memory files (or one specific file) for flat sections, duplicates, stale facts, and missing nesting — fixes them in place. Skips `workflow.md`.
+- **Argument completion for `/memory`**: Two-level autocomplete — first token completes sub-commands (`status`, `restart`, `snapshot`, `logs`, `init`, `curate`); second token after `curate` completes memory file names from the active memory directory, excluding `workflow.md`.
+- **`~/.pi/agent/pi-code.json`** (new): Project-level config file. `workflowLog.model` sets the summarizer model for the `agent_end` hook; `memoryAgent.model` sets the model for `/memory init` and `/memory curate`.
+
+### Changed
+
+- **`workflow.md` is now read-only from the LLM's perspective**: The `MEMORY_INSTRUCTION` canonical files table marks it as auto-generated. The LLM is instructed to use `memory_search` / `memory_get` to read it and never write to it. Same update applied to `prompts/memory-init.md` (now deleted).
+
+### Removed
+
+- **`prompts/memory-init.md`** and **`prompts/memory-curate.md`**: Content inlined as TypeScript string constants inside `extensions/memory-md/index.ts`. The commands are now invoked via `/memory init` and `/memory curate` rather than as slash prompt templates.
+
 ## [1.17.2] - 2026-05-09
 
 ### Fixed
