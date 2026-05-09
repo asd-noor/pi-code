@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.2] - 2026-05-09
+
+### Fixed
+
+- **`ask_user` review screen overflow crash** (`extensions/ask-tool/ui.ts`): The "Review answers" tab crashed the TUI when a long answer label exceeded the terminal width. Answer text, question notes, and option notes in `renderSubmitScreen` were not wrapped with `clamp()` / `truncateToWidth()`, unlike all other render paths. All three line types are now properly truncated to terminal width.
+
 ## [1.17.1] - 2026-05-09
 
 ### Added
