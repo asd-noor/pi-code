@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0] - 2026-05-09
+
+### Added
+
+- **`ask_user` tool** (`extensions/ask-tool/`): Native interactive clarification tool replacing the `@eko24ive/pi-ask` npm dependency. Implemented from scratch following the existing extension conventions.
+  - Supports `single`, `multi`, and `preview` question types with full keyboard navigation (Tab, arrow keys, digit shortcuts 1–9, Space to toggle).
+  - **Question notes** (`N`): annotate the current question with freeform context before submitting.
+  - **Option notes** (`n`): annotate a specific option choice with freeform context.
+  - Freeform "Type your own" input on every question.
+  - Review tab summarising all answers and notes before final Submit / Elaborate / Cancel.
+  - Non-interactive fallback: lists questions as plain text when UI is unavailable (print/RPC/SDK modes).
+  - Notes flow through to `AskResult` (`AskResultAnswer.note`, `AskResultAnswer.optionNotes`) and are included in the text returned to the LLM.
+  - System prompt injection (`ASK_SYSTEM_INSTRUCTION`) with hard triggers, high-stakes/ambiguous classification, 5-step handshake protocol, question spew prevention, budget and escalation rules, and guardrails — baked in, no skill routing required.
+
+### Changed
+
+- **Package scope migration**: all `@mariozechner/*` packages renamed to `@earendil-works/*` following upstream repo move to `earendil-works/pi-mono`.
+- **`@sinclair/typebox` → `typebox`**: all extension imports updated to the renamed package; `@sinclair/typebox` removed from `peerDependencies`.
+- **Peer dependencies dropped**: `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, and `typebox` removed from `peerDependencies` — pi provides these at runtime.
+- **`pi-ask-tool-extension` → `@eko24ive/pi-ask` → native**: bundled npm ask dependency fully replaced by `extensions/ask-tool/`.
+- **`pi-coding-agent` version**: bumped peer dependency references from `0.69.0` to `0.74.0`.
+- **Bundled extensions updated**: `pi-ask-tool-extension` → `@eko24ive/pi-ask@0.9.0` (then removed), `pi-mcporter` → `0.3.2`, `@aliou/pi-processes` → `0.8.1`.
+- **`pi-code-prompt.ts`**: removed duplicate `## Clarification first` section (owned by `ask-tool`); fixed stale `` `ask` `` → `` `ask_user` `` reference in Mandatory Pre-Call Check.
+- **`diff-watcher`**: footer now shown only when ≥1 Hunk session is active; fixed `sessions.map is not a function` crash when `hunk session list --json` returns a wrapped object instead of a bare array.
+
+### Removed
+
+- `@eko24ive/pi-ask` npm dependency and all references.
+- `skills/ask-user/SKILL.md` — guidance merged into `ASK_SYSTEM_INSTRUCTION` in `extensions/ask-tool/index.ts`.
+- `bun.lock` — project no longer uses Bun.
+
 ## [1.15.0] - 2026-05-09
 
 ### Added

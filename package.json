@@ -1,6 +1,6 @@
 {
     "name": "pi-code",
-    "version": "1.15.0",
+    "version": "1.16.0",
     "description": "A curated pi package bundling custom extensions and configurations.",
     "keywords": [
         "pi-package"
@@ -9,26 +9,21 @@
     "type": "module",
     "dependencies": {
         "@aliou/pi-processes": "*",
-        "@eko24ive/pi-ask": "^0.9.0",
         "pi-mcporter": "^0.3.2"
     },
     "bundledDependencies": [
         "@aliou/pi-processes",
-        "pi-mcporter",
-        "@eko24ive/pi-ask"
+        "pi-mcporter"
     ],
-
     "pi": {
         "extensions": [
             "./extensions",
             "node_modules/pi-mcporter/dist/index.js",
-            "node_modules/@eko24ive/pi-ask/src/index.ts",
             "node_modules/@aliou/pi-processes/src/index.ts"
         ],
         "skills": [
             "./skills",
-            "node_modules/@aliou/pi-processes/skills/pi-processes",
-            "node_modules/@eko24ive/pi-ask/skills"
+            "node_modules/@aliou/pi-processes/skills/pi-processes"
         ],
         "prompts": [
             "./prompts"
@@ -36,8 +31,7 @@
     },
     "bundleDependencies": [
         "@aliou/pi-processes",
-        "pi-mcporter",
-        "@eko24ive/pi-ask"
+        "pi-mcporter"
     ],
     "overrides": {
         "basic-ftp": "6.0.1",
