@@ -42,6 +42,7 @@ export class LspClient extends EventEmitter {
 
   constructor(opts: LspClientOptions) {
     super();
+    this.setMaxListeners(0); // fix 5: unlimited listeners for waitForQuietDiagnostics
     this.opts = opts;
     this.proc = spawn(opts.command, opts.args, {
       stdio: ["pipe", "pipe", "pipe"],
@@ -50,13 +51,30 @@ export class LspClient extends EventEmitter {
     this.proc.stdout.on("data", (chunk: Buffer) => this.onData(chunk));
     this.proc.stderr.on("data", () => {}); // swallow LSP server logs
     this.proc.on("error", (err) => this.emit("error", err));
-    this.proc.on("exit", (code) => this.emit("exit", code));
+    this.proc.on("exit", (code) => {
+      // fix 4: reject all pending requests immediately on process exit
+      for (const [id, p] of this.pending) {
+        clearTimeout(p.timer);
+        p.reject(new Error("LSP process exited unexpectedly"));
+      }
+      this.pending.clear();
+      this.emit("exit", code);
+    });
   }
 
   // ── Transport ─────────────────────────────────────────────────────────
 
+  private static readonly MAX_BUFFER_SIZE = 16 * 1024 * 1024; // 16 MB
+
   private onData(chunk: Buffer) {
     this.buffer += chunk.toString("utf8");
+    // fix 1: guard against unbounded buffer growth from malformed LSP data
+    if (this.buffer.length > LspClient.MAX_BUFFER_SIZE) {
+      console.error("[LspClient] buffer exceeded 16 MB — discarding buffer and killing process");
+      this.buffer = "";
+      this.proc.kill();
+      return;
+    }
     while (true) {
       const header = this.buffer.match(/Content-Length: (\d+)\r\n\r\n/);
       if (!header) break;
@@ -152,6 +170,21 @@ export class LspClient extends EventEmitter {
     });
   }
 
+  /** Send textDocument/didClose and clean up tracking state for a file. */
+  closeFile(filePath: string): void {
+    const uri = pathToFileURL(filePath).href;
+    if (!this.openFiles.has(uri)) return;
+    this.send("textDocument/didClose", { textDocument: { uri } });
+    this.openFiles.delete(uri);
+    this.fileVersions.delete(uri);
+    this.clearDiagnostics(uri);
+  }
+
+  /** Remove cached diagnostics for a file URI (e.g. after close or rename). */
+  clearDiagnostics(uri: string): void {
+    this.diagnostics.delete(uri);
+  }
+
   /** Notify the LSP that an already-open file has changed on disk (full re-sync). */
   updateFile(filePath: string): void {
     const uri = pathToFileURL(filePath).href;
@@ -202,6 +235,13 @@ export class LspClient extends EventEmitter {
   }
 
   async shutdown(): Promise<void> {
+    // fix 2/3: close all open files and clear diagnostics before shutting down
+    for (const uri of [...this.openFiles]) {
+      this.send("textDocument/didClose", { textDocument: { uri } });
+    }
+    this.openFiles.clear();
+    this.fileVersions.clear();
+    this.diagnostics.clear();
     try { await this.request("shutdown", null, 3000); this.send("exit", null); } catch (_) {}
     this.proc.kill();
   }

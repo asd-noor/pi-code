@@ -32,6 +32,8 @@ const LANG_TO_EXT: Record<string, string> = {
 export class TreeSitterParser {
   /** Compiled queries keyed by language id */
   private queryCache = new Map<string, any>();
+  /** Reusable Parser instances keyed by language id */
+  private parserCache = new Map<string, any>();
 
   private grammars: LoadedGrammars;
   constructor(grammars: LoadedGrammars) {
@@ -69,8 +71,14 @@ export class TreeSitterParser {
     const resolvedLanguage = language ?? langId;
 
     try {
-      const parser = new this.grammars.Parser();
-      parser.setLanguage(lang);
+      let parser = this.parserCache.get(langId);
+      if (!parser) {
+        parser = new this.grammars.Parser();
+        parser.setLanguage(lang);
+        this.parserCache.set(langId, parser);
+      } else {
+        parser.setLanguage(lang); // ensure correct language is set
+      }
       const tree    = parser.parse(source);
       const query   = this.getQuery(langId, lang, queryDef.query);
       if (!query) return [];

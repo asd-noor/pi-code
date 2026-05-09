@@ -49,6 +49,8 @@ export interface ImpactRow {
 export class DaemonServer {
   private server: Server;
   private activeConnections = 0;
+  /** All currently open sockets — used to force-close them on shutdown. */
+  private activeSockets = new Set<Socket>();
   /** Set of language ids whose LSP has finished initializing. */
   private readyLangs = new Set<string>();
 
@@ -89,15 +91,33 @@ export class DaemonServer {
   }
 
   close(): Promise<void> {
-    return new Promise((res) => this.server.close(() => res()));
+    return new Promise((res) => {
+      // Destroy all open sockets so server.close() callback fires immediately.
+      for (const s of this.activeSockets) s.destroy();
+      this.activeSockets.clear();
+
+      // Hard timeout in case something slips through.
+      const timer = setTimeout(() => res(), 2000);
+
+      this.server.close(() => {
+        clearTimeout(timer);
+        res();
+      });
+    });
   }
 
   private handleConnection(socket: Socket) {
     this.activeConnections++;
+    this.activeSockets.add(socket);
     let buf = "";
 
     socket.on("data", (chunk) => {
       buf += chunk.toString("utf8");
+      // Guard against unbounded buffer growth from clients that never send newlines.
+      if (buf.length > 1_000_000) {
+        socket.destroy();
+        return;
+      }
       const lines = buf.split("\n");
       buf = lines.pop() ?? "";
       for (const line of lines) {
@@ -105,8 +125,12 @@ export class DaemonServer {
         if (t) this.handleLine(t, socket);
       }
     });
-    socket.on("close", () => { this.activeConnections--; });
-    socket.on("error", () => { this.activeConnections--; });
+    socket.on("close", () => {
+      this.activeConnections--;
+      this.activeSockets.delete(socket);
+    });
+    // Node.js always fires 'close' after 'error', so only decrement once (on 'close').
+    socket.on("error", () => { /* handled by 'close' */ });
   }
 
   private async handleLine(line: string, socket: Socket) {

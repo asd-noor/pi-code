@@ -97,9 +97,89 @@ const REF_KINDS_SQL = [...REF_KINDS].map((k) => `'${k}'`).join(", ");
 export class CodeMapDB {
   private db: DatabaseSync;
 
+  // ── Cached prepared statements ─────────────────────────────────────────────
+  private stmtGetByFile:             ReturnType<DatabaseSync["prepare"]>;
+  private stmtFindByNameMain:        ReturnType<DatabaseSync["prepare"]>;
+  private stmtFindByNameFallback:    ReturnType<DatabaseSync["prepare"]>;
+  private stmtGetNodeById:           ReturnType<DatabaseSync["prepare"]>;
+  private stmtIsIndexed:             ReturnType<DatabaseSync["prepare"]>;
+  private stmtMarkIndexed:           ReturnType<DatabaseSync["prepare"]>;
+  private stmtGetReverseRefs:        ReturnType<DatabaseSync["prepare"]>;
+  private stmtGetMtime:              ReturnType<DatabaseSync["prepare"]>;
+  private stmtSetMtime:              ReturnType<DatabaseSync["prepare"]>;
+  private stmtGetTrackedFiles:       ReturnType<DatabaseSync["prepare"]>;
+  private stmtGetAffectedNodeIds:    ReturnType<DatabaseSync["prepare"]>;
+  private stmtStatsNodes:            ReturnType<DatabaseSync["prepare"]>;
+  private stmtStatsFiles:            ReturnType<DatabaseSync["prepare"]>;
+  private stmtStatsRefsBuilt:        ReturnType<DatabaseSync["prepare"]>;
+  private stmtStatsRefsTotal:        ReturnType<DatabaseSync["prepare"]>;
+  private stmtStatsDiagFiles:        ReturnType<DatabaseSync["prepare"]>;
+
   constructor(dbPath: string) {
     this.db = new DatabaseSync(dbPath);
     this.db.exec(SCHEMA);
+
+    // Prepare all hot-path statements once
+    this.stmtGetByFile = this.db.prepare(
+      `SELECT id, name, kind, language, file, line_start, line_end, col_start
+       FROM nodes WHERE file = ?`,
+    );
+    this.stmtFindByNameMain = this.db.prepare(`
+      SELECT DISTINCT id, name, kind, language, file, line_start, line_end, col_start
+      FROM nodes
+      WHERE language = ?
+        AND (
+          lower(name) = lower(?)
+          OR lower(name) LIKE '%.' || lower(?)
+          OR (lower(name) GLOB '(**).*' AND lower(name) LIKE '%.' || lower(?))
+        )
+    `);
+    this.stmtFindByNameFallback = this.db.prepare(`
+      SELECT id, name, kind, language, file, line_start, line_end, col_start
+      FROM nodes
+      WHERE language = ?
+        AND lower(name) LIKE '%' || lower(?) || '%'
+    `);
+    this.stmtGetNodeById = this.db.prepare(
+      `SELECT id, name, kind, language, file, line_start, line_end, col_start
+       FROM nodes WHERE id = ?`,
+    );
+    this.stmtIsIndexed = this.db.prepare(
+      `SELECT 1 FROM indexed_nodes WHERE node_id = ?`,
+    );
+    this.stmtMarkIndexed = this.db.prepare(
+      `INSERT OR IGNORE INTO indexed_nodes (node_id) VALUES (?)`,
+    );
+    this.stmtGetReverseRefs = this.db.prepare(
+      `SELECT ref_file, ref_line_start, ref_line_end FROM reverse_refs WHERE node_id = ?`,
+    );
+    this.stmtGetMtime = this.db.prepare(
+      `SELECT mtime_ms FROM file_meta WHERE file = ?`,
+    );
+    this.stmtSetMtime = this.db.prepare(
+      `INSERT OR REPLACE INTO file_meta (file, mtime_ms) VALUES (?, ?)`,
+    );
+    this.stmtGetTrackedFiles = this.db.prepare(
+      `SELECT file FROM file_meta`,
+    );
+    this.stmtGetAffectedNodeIds = this.db.prepare(
+      `SELECT DISTINCT node_id FROM reverse_refs WHERE ref_file = ?`,
+    );
+    this.stmtStatsNodes = this.db.prepare(
+      `SELECT COUNT(*) AS c FROM nodes`,
+    );
+    this.stmtStatsFiles = this.db.prepare(
+      `SELECT COUNT(DISTINCT file) AS c FROM nodes`,
+    );
+    this.stmtStatsRefsBuilt = this.db.prepare(
+      `SELECT COUNT(*) AS c FROM indexed_nodes`,
+    );
+    this.stmtStatsRefsTotal = this.db.prepare(
+      `SELECT COUNT(*) AS c FROM nodes WHERE kind IN (${REF_KINDS_SQL})`,
+    );
+    this.stmtStatsDiagFiles = this.db.prepare(
+      `SELECT COUNT(DISTINCT file) AS c FROM diagnostics`,
+    );
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -133,8 +213,7 @@ export class CodeMapDB {
   /** Returns node_ids of symbols in OTHER files whose caller list included relFile.
    *  Call this BEFORE deleteFile so the ids can be eagerly recomputed. */
   getAffectedNodeIds(relFile: string): string[] {
-    return this.db
-      .prepare(`SELECT DISTINCT node_id FROM reverse_refs WHERE ref_file = ?`)
+    return this.stmtGetAffectedNodeIds
       .all(relFile)
       .map((r: any) => r.node_id as string);
   }
@@ -185,43 +264,27 @@ export class CodeMapDB {
    *   4. Substring fallback (only when 1-3 return nothing)
    */
   findByName(name: string, language: string): GraphNode[] {
-    const rows = this.db.prepare(`
-      SELECT DISTINCT id, name, kind, language, file, line_start, line_end, col_start
-      FROM nodes
-      WHERE language = ?
-        AND (
-          lower(name) = lower(?)
-          OR lower(name) LIKE '%.' || lower(?)
-          OR (lower(name) GLOB '(**).*' AND lower(name) LIKE '%.' || lower(?))
-        )
-    `).all(language, name, name, name) as Record<string, unknown>[];
+    const rows = this.stmtFindByNameMain
+      .all(language, name, name, name) as Record<string, unknown>[];
 
     if (rows.length > 0) return rows.map(rowToNode);
 
     // Tier 4: substring fallback
-    const fallback = this.db.prepare(`
-      SELECT id, name, kind, language, file, line_start, line_end, col_start
-      FROM nodes
-      WHERE language = ?
-        AND lower(name) LIKE '%' || lower(?) || '%'
-    `).all(language, name) as Record<string, unknown>[];
+    const fallback = this.stmtFindByNameFallback
+      .all(language, name) as Record<string, unknown>[];
 
     return fallback.map(rowToNode);
   }
 
   getByFile(relFile: string): GraphNode[] {
-    const rows = this.db.prepare(
-      `SELECT id, name, kind, language, file, line_start, line_end, col_start
-       FROM nodes WHERE file = ?`,
-    ).all(relFile) as Record<string, unknown>[];
+    const rows = this.stmtGetByFile
+      .all(relFile) as Record<string, unknown>[];
     return rows.map(rowToNode);
   }
 
   getNodeById(nodeId: string): GraphNode | undefined {
-    const row = this.db.prepare(
-      `SELECT id, name, kind, language, file, line_start, line_end, col_start
-       FROM nodes WHERE id = ?`,
-    ).get(nodeId) as Record<string, unknown> | undefined;
+    const row = this.stmtGetNodeById
+      .get(nodeId) as Record<string, unknown> | undefined;
     return row ? rowToNode(row) : undefined;
   }
 
@@ -256,9 +319,8 @@ export class CodeMapDB {
   }
 
   getReverseRefs(nodeId: string): RefLocation[] {
-    const rows = this.db.prepare(
-      `SELECT ref_file, ref_line_start, ref_line_end FROM reverse_refs WHERE node_id = ?`,
-    ).all(nodeId) as Record<string, unknown>[];
+    const rows = this.stmtGetReverseRefs
+      .all(nodeId) as Record<string, unknown>[];
     return rows.map((r) => ({
       file:      r.ref_file as string,
       lineStart: r.ref_line_start as number,
@@ -267,13 +329,11 @@ export class CodeMapDB {
   }
 
   isIndexed(nodeId: string): boolean {
-    return this.db.prepare(
-      `SELECT 1 FROM indexed_nodes WHERE node_id = ?`,
-    ).get(nodeId) != null;
+    return this.stmtIsIndexed.get(nodeId) != null;
   }
 
   markIndexed(nodeId: string): void {
-    this.db.prepare(`INSERT OR IGNORE INTO indexed_nodes (node_id) VALUES (?)`).run(nodeId);
+    this.stmtMarkIndexed.run(nodeId);
   }
 
   // ── Diagnostics ─────────────────────────────────────────────────────────────
@@ -320,35 +380,32 @@ export class CodeMapDB {
   // ── File metadata ───────────────────────────────────────────────────────────
 
   getMtime(relFile: string): number | undefined {
-    const row = this.db.prepare(
-      `SELECT mtime_ms FROM file_meta WHERE file = ?`,
-    ).get(relFile) as Record<string, number> | null;
+    const row = this.stmtGetMtime
+      .get(relFile) as Record<string, number> | null;
     return row?.mtime_ms;
   }
 
   setMtime(relFile: string, mtimeMs: number): void {
-    this.db.prepare(
-      `INSERT OR REPLACE INTO file_meta (file, mtime_ms) VALUES (?, ?)`,
-    ).run(relFile, mtimeMs);
+    this.stmtSetMtime.run(relFile, mtimeMs);
   }
 
   getTrackedFiles(): Set<string> {
-    const rows = this.db.prepare(`SELECT file FROM file_meta`).all() as Array<{ file: string }>;
+    const rows = this.stmtGetTrackedFiles.all() as Array<{ file: string }>;
     return new Set(rows.map((r) => r.file));
   }
 
   // ── Stats ───────────────────────────────────────────────────────────────────
 
   stats(): object {
-    const count = (sql: string) =>
-      (this.db.prepare(sql).get() as Record<string, number>).c;
+    const count = (stmt: ReturnType<DatabaseSync["prepare"]>) =>
+      (stmt.get() as Record<string, number>).c;
 
     return {
-      nodes:             count(`SELECT COUNT(*) AS c FROM nodes`),
-      files:             count(`SELECT COUNT(DISTINCT file) AS c FROM nodes`),
-      reverseRefsBuilt:  count(`SELECT COUNT(*) AS c FROM indexed_nodes`),
-      reverseRefsTotal:  count(`SELECT COUNT(*) AS c FROM nodes WHERE kind IN (${REF_KINDS_SQL})`),
-      diagnosticFiles:   count(`SELECT COUNT(DISTINCT file) AS c FROM diagnostics`),
+      nodes:             count(this.stmtStatsNodes),
+      files:             count(this.stmtStatsFiles),
+      reverseRefsBuilt:  count(this.stmtStatsRefsBuilt),
+      reverseRefsTotal:  count(this.stmtStatsRefsTotal),
+      diagnosticFiles:   count(this.stmtStatsDiagFiles),
     };
   }
 

@@ -67,7 +67,7 @@ export class SocketClient {
             const msg = JSON.parse(trimmed) as { id: number; result?: T; error?: string };
             if (msg.id === reqId) {
               clearTimeout(timer);
-              socket.end();
+              socket.destroy();
               if (msg.error) reject(new Error(msg.error));
               else resolve(msg.result as T);
             }

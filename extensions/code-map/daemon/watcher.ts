@@ -36,6 +36,7 @@ export class FileWatcher {
       try { w.close(); } catch (_) {}
     }
     this.watchers = [];
+    this.watchedDirs.clear();
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();
   }
@@ -54,6 +55,18 @@ export class FileWatcher {
           this.timers.delete(full);
           this.handleChange(full);
         }, DEBOUNCE_MS));
+      });
+      const cleanupWatcher = () => {
+        try { watcher.close(); } catch (_) {}
+        const idx = this.watchers.indexOf(watcher);
+        if (idx !== -1) this.watchers.splice(idx, 1);
+        this.watchedDirs.delete(dir);
+      };
+      watcher.on("error", cleanupWatcher);
+      watcher.on("close", () => {
+        const idx = this.watchers.indexOf(watcher);
+        if (idx !== -1) this.watchers.splice(idx, 1);
+        this.watchedDirs.delete(dir);
       });
       this.watchers.push(watcher);
 

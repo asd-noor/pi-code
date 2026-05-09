@@ -8,7 +8,7 @@
  * Cache:  ~/.pi/cache/<encoded-project>/
  */
 
-import { existsSync, readFileSync, writeFileSync, openSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, openSync, closeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -149,6 +149,7 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
       [DAEMON_SCRIPT, root, "--auto-install", `--file-limit=${config.fileLimit}`],
       { stdio: ["ignore", logFd, logFd], detached: false },
     );
+    closeSync(logFd);
     child.on("error", (err) => {
       process.stderr.write(`[code-map] daemon spawn error: ${err.message}\n`);
     });
