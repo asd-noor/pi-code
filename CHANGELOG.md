@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.2] - 2026-05-09
+
+### Added
+
+- **`agenda_create` whitelisted in `parallel`** (`extensions/parallel.ts`): `agenda_create` can now be fanned out inside a `parallel` call alongside other operations. Added `opAgendaCreate` implementation (mirrors `tools.ts` logic), `AGENDA_CREATE_TOOLS` dispatch set, updated `ExtCall` description, `supported` error string, and `BASE_INSTRUCTION` system-prompt note. Also added missing `normalizeNotes` and `runTx` imports from `./agenda/db.ts`.
+
 ## [1.16.1] - 2026-05-09
 
 ### Fixed
