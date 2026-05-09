@@ -11,6 +11,7 @@
  *            code_map_outline, code_map_symbol, code_map_diagnostics, code_map_impact
  *            memory_list, memory_get, memory_search,
  *            memory_create_file, memory_delete_file, memory_validate_file
+ *            agenda_create
  *            agenda_discovery_add, agenda_discovery_get,
  *            agenda_discovery_list, agenda_discovery_delete
  *
@@ -34,7 +35,9 @@ import {
   getAgenda,
   getDiscoveries,
   getDiscovery,
+  normalizeNotes,
   requireAgendaInProgress,
+  runTx,
   toPositiveInt as agendaToPositiveInt,
   nowIso,
 } from "./agenda/db.ts";
@@ -158,6 +161,7 @@ const ExtCall = Type.Object(
         "code_map_outline, code_map_symbol, code_map_diagnostics, code_map_impact, " +
         "memory_list, memory_get, memory_search, " +
         "memory_create_file, memory_delete_file, memory_validate_file. " +
+        "agenda_create. " +
         "agenda_discovery_add, agenda_discovery_get, agenda_discovery_list, agenda_discovery_delete. " +
         "NOT allowed (concurrent writes corrupt memory files): memory_new, memory_update, memory_delete — call these sequentially via the native tools. " +
         "Pass the tool's normal arguments as additional fields alongside `tool`.",
@@ -383,6 +387,75 @@ async function opMemory(toolName: string, params: Record<string, any>, cwd: stri
   }
 }
 
+// ── agenda_create implementation ────────────────────────────────────────────
+
+async function opAgendaCreate(params: Record<string, any>, cwd: string): Promise<string> {
+  const project = typeof params.project === "string" ? params.project : undefined;
+  const handle  = openDb(project, cwd);
+  try {
+    const title       = String(params.title ?? "").trim();
+    const description = String(params.description ?? "").trim();
+    const guard       = String(params.acceptanceGuard ?? "").trim();
+    if (!title) throw new Error("Title is required");
+    if (!guard) throw new Error("acceptanceGuard is required");
+
+    const notes          = normalizeNotes(params.tasks);
+    const rawDiscoveries = Array.isArray(params.discoveries) ? params.discoveries : [];
+    const now            = nowIso();
+    let discoveryCount   = 0;
+
+    const agendaId = runTx(handle.db, () => {
+      const info = handle.db
+        .prepare(
+          `INSERT INTO agendas (title, description, acceptance_guard, state, revision, created_at, updated_at)
+           VALUES (?, ?, ?, 'not_started', 0, ?, ?)`,
+        )
+        .run(title, description, guard, now, now);
+
+      const id = Number(info.lastInsertRowid);
+
+      if (notes.length > 0) {
+        const stmt = handle.db.prepare(
+          `INSERT INTO tasks (agenda_id, task_order, note, state, created_at, updated_at)
+           VALUES (?, ?, ?, 'not_started', ?, ?)`,
+        );
+        let order = 1;
+        for (const note of notes) {
+          stmt.run(id, order, note, now, now);
+          order += 1;
+        }
+      }
+
+      if (rawDiscoveries.length > 0) {
+        const dstmt = handle.db.prepare(
+          `INSERT INTO agenda_discoveries (agenda_id, category, title, detail, outcome, source, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        );
+        const validCategories = new Set(DISCOVERY_CATEGORIES);
+        const validOutcomes   = new Set(DISCOVERY_OUTCOMES);
+        for (const d of rawDiscoveries) {
+          const cat     = String(d.category ?? "").trim();
+          const dtitle  = String(d.title ?? "").trim();
+          const detail  = String(d.detail ?? "").trim();
+          const outcome = String(d.outcome ?? "neutral").trim();
+          const source  = String(d.source ?? "").trim();
+          if (!validCategories.has(cat as any)) throw new Error(`Invalid discovery category: ${cat}. Must be one of: code, web, library, finding`);
+          if (!dtitle) throw new Error("Discovery title is required");
+          if (!validOutcomes.has(outcome as any)) throw new Error(`Invalid discovery outcome: ${outcome}. Must be one of: expected, unexpected, neutral`);
+          dstmt.run(id, cat, dtitle, detail, outcome, source, now);
+          discoveryCount += 1;
+        }
+      }
+
+      return id;
+    });
+
+    return `created agenda id=${agendaId} (tasks=${notes.length}, discoveries=${discoveryCount})`;
+  } finally {
+    handle.db.close();
+  }
+}
+
 // ── agenda_discovery implementations ───────────────────────────────────────
 
 async function opAgendaDiscovery(toolName: string, params: Record<string, any>, cwd: string): Promise<string> {
@@ -457,6 +530,9 @@ const MEMORY_WRITE_BLACKLIST = new Set([
   "memory_new", "memory_update", "memory_delete",
 ]);
 
+/** agenda_create — safe for parallel (SQLite WAL serialises writes). */
+const AGENDA_CREATE_TOOLS = new Set(["agenda_create"]);
+
 /** Agenda discovery tools — safe for parallel (SQLite WAL serialises writes). */
 const AGENDA_DISCOVERY_TOOLS = AGENDA_DISCOVERY_TOOL_NAMES;
 
@@ -485,6 +561,9 @@ async function opExtension(
   if (CODE_MAP_TOOLS.has(toolName)) {
     return opCodeMap(toolName, params, cwd);
   }
+  if (AGENDA_CREATE_TOOLS.has(toolName)) {
+    return opAgendaCreate(params, cwd);
+  }
   if (AGENDA_DISCOVERY_TOOLS.has(toolName)) {
     return opAgendaDiscovery(toolName, params, cwd);
   }
@@ -498,7 +577,7 @@ async function opExtension(
     return opMemory(toolName, params, cwd);
   }
 
-  const supported = ["ptc", "mcporter", ...CODE_MAP_TOOLS, ...MEMORY_TOOLS, ...AGENDA_DISCOVERY_TOOLS].join(", ");
+  const supported = ["ptc", "mcporter", ...CODE_MAP_TOOLS, ...MEMORY_TOOLS, ...AGENDA_CREATE_TOOLS, ...AGENDA_DISCOVERY_TOOLS].join(", ");
   throw new Error(`Unsupported tool in parallel: "${toolName}". Supported: ${supported}`);
 }
 
@@ -532,6 +611,9 @@ calls targeting the same file in one \`parallel\` invocation — use the native 
 \`memory_new\`, \`memory_update\`, and \`memory_delete\` are **not allowed** inside \`parallel\`.
 Concurrent writes corrupt the markdown-backed memory files (duplicate sections, interleaved content).
 Call them sequentially via the native memory tools instead.
+
+### agenda_create
+\`agenda_create\` is supported inside \`parallel\`. SQLite WAL mode safely serialises concurrent writes.
 
 ### agenda discovery tools
 \`agenda_discovery_add\`, \`agenda_discovery_get\`, \`agenda_discovery_list\`, and \`agenda_discovery_delete\` are supported inside \`parallel\`.
