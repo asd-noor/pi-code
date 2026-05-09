@@ -38,6 +38,16 @@ All transitions are strict — invalid or repeated transitions throw hard errors
 | `agenda_task_reopen` | `completed → in_progress` (reopen a task) |
 | `agenda_evaluate` | Record acceptance guard evaluation with summary, evidence, and `pass`/`fail` verdict (agenda must be `in_progress`) |
 | `agenda_complete` | Complete agenda (requires latest eval = `pass` at current revision; unfinished tasks are allowed if the acceptance guard passes) |
+
+## Pre-completion staging
+
+After `agenda_evaluate` returns `pass` and before calling `agenda_complete`, agents stage the hunks they authored:
+
+1. `git diff -- <file>` for each file touched during the agenda
+2. For each hunk authored by this agenda, write a minimal patch to a temp file and run `git apply --cached --whitespace=nowarn <tmpfile>`
+3. Delete the temp file
+
+Only hunks introduced by this agenda are staged — pre-existing unstaged changes in the same files are left alone. The step is skipped if the working tree is clean.
 | `agenda_search` | Search agendas by title, description, or acceptance guard |
 | `agenda_delete` | Delete agenda (blocked while `in_progress`) |
 

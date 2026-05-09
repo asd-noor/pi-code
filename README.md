@@ -161,9 +161,10 @@ See the [doc-library](./docs/doc-library.md) and [web-scout](./docs/web-scout.md
 
 ### Git Staging (git-stage)
 
-- Interactive TUI via `/git-stage` — browse staged, modified, and untracked files
-- `space` / `enter` to toggle stage/unstage; `a` stage all; `u` unstage all; `x` git rm --cached
-- Footer badge `⊕ N staged` auto-refreshes after each agent turn
+- Overlay popup via `/git-stage` — split-panel layout with file list (left) and diff/hunk viewer (right)
+- Hunk-level staging: `space` stages or unstages the selected hunk via `git apply --cached`; `s` stages the whole file; `a` stages everything
+- `Tab` switches focus between the file list and the diff viewer
+- Footer badge `⊕ N staged` polls every 3 s
 - See [git-stage.md](./docs/git-stage.md)
 
 ### Structured Task Management (agenda)
