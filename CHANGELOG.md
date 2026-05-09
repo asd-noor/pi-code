@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.1] - 2026-05-09
+
+### Added
+
+- **`ask_user` notify integration** (`extensions/ask-tool/index.ts`): When the `notify` extension has notifications enabled, invoking `ask_user` now sends a macOS OS notification before the dialog appears. Message uses `params.title` if provided, otherwise `"Needs your input"`. Reads `notify-state` session entries directly — no coupling between extensions, works regardless of load order.
+
 ## [1.17.0] - 2026-05-09
 
 ### Added
