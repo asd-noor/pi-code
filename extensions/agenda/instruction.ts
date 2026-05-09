@@ -42,7 +42,17 @@ A well-scoped agenda has 2–6 tasks. More than that usually means over-splittin
 3. \`agenda_task_start\` / \`agenda_task_done\` / \`agenda_task_reopen\` — track task progress
 4. \`agenda_pause\` / \`agenda_resume\` — as needed
 5. \`agenda_evaluate\` — summary + evidence + verdict (pass/fail) against the acceptance guard
-6. \`agenda_complete\` — requires in_progress, ≥1 task, latest evaluation verdict=pass at current revision
+6. **Stage changes** — after a passing evaluation, stage only the hunks this agenda introduced.
+   For each file you touched:
+   1. \`git diff -- <file>\` to get the current unstaged diff
+   2. For each hunk you recognise as your change, write a minimal patch to a temp file:
+      ```
+      diff --git a/<file> b/<file>\n<index line>\n--- a/<file>\n+++ b/<file>\n<@@ hunk header @@>\n<hunk lines>
+      ```
+   3. \`git apply --cached --whitespace=nowarn /tmp/patch-<n>.patch\` to stage that hunk
+   4. Delete the temp file
+   Do not stage hunks you did not author. Skip the step entirely if the working tree is clean.
+7. \`agenda_complete\` — requires in_progress, ≥1 task, latest evaluation verdict=pass at current revision
 
 ### Workflow — delegating to a subagent
 
@@ -100,7 +110,17 @@ You have been assigned agenda #${agendaId}. Follow this workflow exactly:
    - Record findings with \`agenda_discovery_add\` (code / web / library / finding) — does not bump revision
 4. \`agenda_evaluate\` — evaluate against the acceptance guard (verdict: pass or fail)
    - Re-evaluate after any changes that bump the revision
-5. \`agenda_complete\` — requires in_progress state, ≥1 task, and latest verdict=pass
+5. **Stage changes** — after a passing evaluation, stage only the hunks this agenda introduced.
+   For each file you touched:
+   1. \`git diff -- <file>\` to get the current unstaged diff
+   2. For each hunk you recognise as your change, write a minimal patch to a temp file:
+      ```
+      diff --git a/<file> b/<file>\n<index line>\n--- a/<file>\n+++ b/<file>\n<@@ hunk header @@>\n<hunk lines>
+      ```
+   3. \`git apply --cached --whitespace=nowarn /tmp/patch-<n>.patch\` to stage that hunk
+   4. Delete the temp file
+   Do not stage hunks you did not author. Skip the step entirely if the working tree is clean.
+6. \`agenda_complete\` — requires in_progress state, ≥1 task, and latest verdict=pass
 
 After completing the agenda, report back with a concise summary of what was done.
 
