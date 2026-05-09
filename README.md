@@ -27,6 +27,7 @@ All extensions are automatically loaded from `./extensions/`:
 | [code-map](./docs/code-map.md) | LSP-backed code intelligence: outline, symbol, diagnostics, impact | Directory |
 | [memory-md](./docs/memory-md.md) | Persistent markdown-backed memory store with hybrid FTS + vector search | Directory |
 | [subagents](./docs/subagents.md) | Spawn autonomous sub-agents for parallel and delegated work | Directory |
+| [git-stage](./docs/git-stage.md) | Interactive TUI for staging and unstaging git files via `/git-stage` | Directory |
 | [parallel](./docs/parallel.md) | Fan out multiple independent operations (read/bash/write/edit/ptc) in one call | Standalone |
 | [pi-code-prompt](./docs/system-prompt.md) | Package-wide runtime policy injection | Standalone |
 | [ptc](./docs/ptc.md) | Programmatic Tool Calling — run Python/bash scripts in a single call with MCP access | Standalone |
@@ -77,6 +78,7 @@ pi -f get-shit-done "add rate limiting"    # Plan and execute a task with subage
 Comprehensive documentation for each component:
 
 - **Extensions**
+  - [git-stage.md](./docs/git-stage.md) — Interactive git staging TUI
   - [agenda.md](./docs/agenda.md) — Structured task tracking with acceptance guards
   - [code-map.md](./docs/code-map.md) — LSP-backed code intelligence tools
   - [memory-md.md](./docs/memory-md.md) — Persistent memory system
@@ -98,7 +100,7 @@ These are included automatically when you install `pi-code`:
 | Package | Purpose |
 |---|---|
 | [pi-mcporter](https://github.com/mavam/pi-mcporter) | MCP bridge — enables `doc-library` and `web-scout` skills via `mcporter` binary |
-| [@eko24ive/pi-ask](https://www.npmjs.com/package/@eko24ive/pi-ask) | Interactive clarification tool with tabbed questioning |
+| ask-tool | Interactive clarification tool — native extension replacing `@eko24ive/pi-ask` |
 
 ### Peer Dependencies
 
@@ -156,6 +158,13 @@ For `doc-library` and `web-scout` skills to work, you need:
 See the [doc-library](./docs/doc-library.md) and [web-scout](./docs/web-scout.md) documentation for setup instructions.
 
 ## Features
+
+### Git Staging (git-stage)
+
+- Interactive TUI via `/git-stage` — browse staged, modified, and untracked files
+- `space` / `enter` to toggle stage/unstage; `a` stage all; `u` unstage all; `x` git rm --cached
+- Footer badge `⊕ N staged` auto-refreshes after each agent turn
+- See [git-stage.md](./docs/git-stage.md)
 
 ### Structured Task Management (agenda)
 
@@ -267,6 +276,7 @@ pi "Read package.json and tsconfig.json, then analyze both"
 ```
 pi-code/
 ├── extensions/          # All extensions (auto-loaded)
+│   ├── git-stage/      # Interactive git staging TUI
 │   ├── agenda/         # Task tracking
 │   ├── code-map/       # Code intelligence
 │   ├── memory-md/      # Persistent memory

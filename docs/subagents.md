@@ -71,6 +71,9 @@ Agents are defined as `.md` files with YAML frontmatter. On first install, the b
 | `Explore` | grok-code-fast-1 | replace | Fast codebase exploration agent (read-only) |
 | `Research` | claude-haiku-4.5 | replace | Performs comprehensive research on topics, libraries, and APIs using web sources and documentation, with memory integration |
 | `memory-compact` | claude-haiku-4.5 | replace | Compacts markdown memory files by snapshotting, summarizing noisy sections into concise bullets, and recreating cleaner memory files |
+| `memory-init` | claude-haiku-4.5 | replace | Analyses the codebase and populates canonical memory files from scratch |
+| `memory-curate` | claude-haiku-4.5 | replace | Audits and restructures existing memory files — fixes flat sections, duplicates, and stale facts |
+| `git-commit` | gpt-5-mini | replace | Reads staged diff (via Hunk if available, otherwise `git diff --staged`), generates a Conventional Commits message, and runs `git commit`. No extensions, thinking off |
 
 **`tools` values:**
 
