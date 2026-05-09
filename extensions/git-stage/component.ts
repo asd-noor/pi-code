@@ -532,9 +532,9 @@ export class GitStageOverlay {
           if (diffLine.startsWith("+")) {
             body = truncateToWidth(th.fg(isSel ? "success" : "dim", ` ${diffLine}`), cw);
           } else if (diffLine.startsWith("-")) {
-            body = truncateToWidth(th.fg(isSel ? "error" : "dim", ` ${diffLine}`), cw);
+            body = truncateToWidth(th.fg(isSel ? "dim" : "dim", ` ${diffLine}`), cw);
           } else {
-            body = truncateToWidth(th.fg(isSel ? "muted" : "dim", ` ${diffLine}`), cw);
+            body = truncateToWidth(th.fg(isSel ? "text" : "dim", ` ${diffLine}`), cw);
           }
           rendered = gutter + body;
         }
