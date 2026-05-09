@@ -46,9 +46,9 @@ A well-scoped agenda has 2–6 tasks. More than that usually means over-splittin
    For each file you touched:
    1. \`git diff -- <file>\` to get the current unstaged diff
    2. For each hunk you recognise as your change, write a minimal patch to a temp file:
-      ```
+      \`\`\`
       diff --git a/<file> b/<file>\n<index line>\n--- a/<file>\n+++ b/<file>\n<@@ hunk header @@>\n<hunk lines>
-      ```
+      \`\`\`
    3. \`git apply --cached --whitespace=nowarn /tmp/patch-<n>.patch\` to stage that hunk
    4. Delete the temp file
    Do not stage hunks you did not author. Skip the step entirely if the working tree is clean.
@@ -114,9 +114,9 @@ You have been assigned agenda #${agendaId}. Follow this workflow exactly:
    For each file you touched:
    1. \`git diff -- <file>\` to get the current unstaged diff
    2. For each hunk you recognise as your change, write a minimal patch to a temp file:
-      ```
+      \`\`\`
       diff --git a/<file> b/<file>\n<index line>\n--- a/<file>\n+++ b/<file>\n<@@ hunk header @@>\n<hunk lines>
-      ```
+      \`\`\`
    3. \`git apply --cached --whitespace=nowarn /tmp/patch-<n>.patch\` to stage that hunk
    4. Delete the temp file
    Do not stage hunks you did not author. Skip the step entirely if the working tree is clean.
