@@ -1,18 +1,22 @@
 /**
  * git-stage extension
  *
- * Registers the /git-stage command which opens an interactive TUI for staging
- * and unstaging files in the current git repository.
+ * Registers the /git-stage command which opens an interactive TUI overlay
+ * for hunk-level staging and unstaging in the current git repository.
  *
- * Footer badge: shows "⊕ N staged" when staged files exist.
+ * Footer badge: polls every 3s and shows "⊕ N staged" when staged files exist.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { GitStageComponent } from "./component.ts";
+import { GitStageOverlay } from "./component.ts";
+
+const POLL_INTERVAL_MS = 3000;
 
 export default function (pi: ExtensionAPI) {
   let storedCtx: ExtensionContext | undefined;
   let inGitRepo = false;
+  let pollTimer: ReturnType<typeof setInterval> | undefined;
+  let lastBadge: string | undefined;  // track last value to avoid redundant setStatus calls
 
   // ── Footer badge ─────────────────────────────────────────────────────────
 
@@ -22,16 +26,31 @@ export default function (pi: ExtensionAPI) {
     try {
       const result = await pi.exec("git", ["diff", "--cached", "--name-only"], {
         cwd: ctx.cwd,
-        timeout: 5000,
+        timeout: 3000,
       });
       const lines = result.stdout.trim().split("\n").filter(Boolean);
-      if (lines.length > 0) {
-        ctx.ui.setStatus("git-stage", ctx.ui.theme.fg("success", `⊕ ${lines.length} staged`));
-      } else {
-        ctx.ui.setStatus("git-stage", undefined);
+      const next = lines.length > 0 ? ctx.ui.theme.fg("success", `⊕ ${lines.length} staged`) : undefined;
+      if (next !== lastBadge) {
+        lastBadge = next;
+        ctx.ui.setStatus("git-stage", next);
       }
     } catch {
-      ctx.ui.setStatus("git-stage", undefined);
+      if (lastBadge !== undefined) {
+        lastBadge = undefined;
+        ctx.ui.setStatus("git-stage", undefined);
+      }
+    }
+  }
+
+  function startPolling(): void {
+    if (pollTimer) return;
+    pollTimer = setInterval(() => { void updateBadge(); }, POLL_INTERVAL_MS);
+  }
+
+  function stopPolling(): void {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = undefined;
     }
   }
 
@@ -49,23 +68,24 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     storedCtx = ctx;
     inGitRepo = await isGitRepo(ctx.cwd);
-    await updateBadge();
-  });
-
-  pi.on("agent_end", async (_event, ctx) => {
-    storedCtx = ctx;
-    await updateBadge();
+    lastBadge = undefined;
+    if (inGitRepo) {
+      await updateBadge();
+      startPolling();
+    }
   });
 
   pi.on("session_shutdown", async () => {
+    stopPolling();
     storedCtx = undefined;
     inGitRepo = false;
+    lastBadge = undefined;
   });
 
   // ── /git-stage command ───────────────────────────────────────────────────
 
   pi.registerCommand("git-stage", {
-    description: "Interactively stage and unstage git files",
+    description: "Interactively stage and unstage git hunks",
     handler: async (_args, ctx) => {
       if (!ctx.hasUI) {
         ctx.ui.notify("/git-stage requires interactive mode", "error");
@@ -82,13 +102,17 @@ export default function (pi: ExtensionAPI) {
       }
       const gitRoot = rootResult.stdout.trim();
 
-      await ctx.ui.custom<void>((tui, theme, _kb, done) => {
-        const component = new GitStageComponent({ tui, theme, done, pi, cwd: gitRoot });
-        return component;
-      });
-
-      storedCtx = ctx;
-      await updateBadge();
+      await ctx.ui.custom<void>(
+        (tui, theme, _kb, done) => {
+          const comp = new GitStageOverlay({ tui, theme, done, pi, cwd: gitRoot });
+          return {
+            render:      (w) => comp.render(w),
+            invalidate:  ()  => comp.invalidate(),
+            handleInput: (d) => { comp.handleInput(d); tui.requestRender(); },
+          };
+        },
+        { overlay: true, overlayOptions: { anchor: "center", width: "95%", maxHeight: "95%" } },
+      );
     },
   });
 }
