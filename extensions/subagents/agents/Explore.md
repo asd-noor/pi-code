@@ -2,7 +2,7 @@
 description: Fast codebase exploration agent (read-only)
 display_name: Explore
 tools: read, bash, grep, find, ls
-model: github-copilot/grok-code-fast-1
+model: github-copilot/claude-haiku-4.5
 prompt_mode: replace
 ---
 
