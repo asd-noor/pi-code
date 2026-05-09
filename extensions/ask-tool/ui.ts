@@ -261,17 +261,17 @@ export class AskController {
         labels.push(state.customText[q.id]);
       }
       const answerText = labels.length > 0 ? labels.join(", ") : th("dim", "(unanswered)");
-      lines.push(th("text", ` ${q.label}: ${answerText}`));
+      lines.push(clamp(th("text", ` ${q.label}: ${answerText}`), width));
       // Question note
       if (state.questionNotes[q.id]) {
-        lines.push(th("syntaxString", "   note: ") + th("dim", state.questionNotes[q.id]));
+        lines.push(clamp(th("syntaxString", "   note: ") + th("dim", state.questionNotes[q.id]), width));
       }
       // Option notes
       for (const v of ans) {
         const optNote = state.optionNotes[q.id]?.[v];
         if (optNote) {
           const optLabel = q.options.find((o) => o.value === v)?.label ?? v;
-          lines.push(th("syntaxString", `   ${optLabel} note: `) + th("dim", optNote));
+          lines.push(clamp(th("syntaxString", `   ${optLabel} note: `) + th("dim", optNote), width));
         }
       }
     }
