@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.17.8] - 2026-05-10
+
+### Changed
+
+- **git-stage**: Replaced blank line hunk separators with labelled `─── hunk N / total ───` dividers for clear positional context when navigating multi-hunk diffs.
+- **git-stage**: Added `│` left-gutter marker on all body lines of the selected hunk — selection highlight is now visible even when the `@@` header has scrolled off-screen.
+- **git-stage**: Fixed scroll offset calculation: divider line was not counted before `selectedHunkLineStart` was captured, causing the selected hunk to appear at the bottom of the viewport. Navigating to any hunk now snaps the divider and `@@` header to the top.
+- **git-stage**: Adjusted diff line colours — added lines are green (`success`), deleted lines are dim gray, context lines are white (`text`). Additions are now the clear focal point.
+
 ## [1.17.7] - 2026-05-09
 
 ### Changed

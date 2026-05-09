@@ -388,8 +388,8 @@ Always prefer a canonical file over creating a new one. Create additional files 
       if (msg.role !== "assistant") continue;
       const content = Array.isArray(msg.content) ? msg.content : [];
       for (const block of content) {
-        if (block.type === "tool_use") {
-          const inp = block.input ?? {};
+        if (block.type === "toolCall") {
+          const inp = block.arguments ?? {};
           let summary = "";
           switch (block.name) {
             case "bash":  summary = String(inp.command ?? "").replace(/\s+/g, " ").slice(0, 100); break;
