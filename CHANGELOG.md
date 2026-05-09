@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-05-09
+
+### Added
+
+- **diff-watcher extension**: New `extensions/diff-watcher/` extension that monitors live [Hunk](https://hunk.tools) diff review sessions and surfaces them to the agent automatically.
+  - Polls `hunk session list --json` every 4 seconds and reflects the active session count in the pi footer (`⬡ hunk: no sessions` / `⬡ hunk: 1 session` / `⬡ hunk: N sessions`).
+  - `before_agent_start`: live-queries sessions and injects their repo paths and IDs into the system prompt so the agent knows which Hunk windows are open without being asked.
+  - `/diff-watcher status` command: lists all active Hunk sessions by repo path.
+  - Zero daemon management — per the official Hunk agent-workflows docs the TUI starts the local daemon automatically; the extension is purely observational.
+  - Requires `hunk` CLI on `PATH`; silently skips when not installed.
+
+### Fixed
+
+- **code-map — 14 memory leaks, resource cleanup, and correctness bugs** across the daemon, LSP client, file watcher, tree-sitter parser, socket client, and SQLite layer:
+
+  **`lsp/client.ts`**
+  - `onData` buffer now capped at 16 MB — malformed LSP output no longer causes unbounded string growth.
+  - `diagnostics` Map is pruned via new `clearDiagnostics(uri)` method; called in `closeFile()` and `shutdown()`.
+  - New `closeFile(filePath)` method sends `textDocument/didClose` and removes entries from `openFiles` and `fileVersions` — files are no longer held open indefinitely.
+  - `proc.on("exit")` now immediately rejects all pending requests and clears the `pending` Map — previously requests waited up to 60 s for their individual timers after the LSP process died.
+  - `setMaxListeners(0)` added in constructor to prevent Node.js max-listener warnings from concurrent `waitForQuietDiagnostics` callers.
+
+  **`daemon/server.ts`**
+  - `close()` now tracks all active sockets in a `Set<Socket>`, destroys them before calling `server.close()`, and falls back to a hard 2-second timeout — previously `close()` hung indefinitely if any connection was still open.
+  - `activeConnections` double-decrement fixed: removed the `socket.on("error")` decrement since Node.js always fires `close` after `error`.
+  - Per-connection `buf` capped at 1 MB — clients streaming data without newlines can no longer exhaust memory; socket is destroyed on overflow.
+
+  **`daemon/watcher.ts`**
+  - `stop()` now calls `watchedDirs.clear()` — previously a daemon restart via `/code-map restart` would register zero watchers (all dirs already in the set) leaving the watcher completely silent.
+  - Each `FSWatcher` now has `error` and `close` handlers that evict the watcher from `this.watchers` and the dir from `watchedDirs` — dead watchers for deleted directories no longer accumulate.
+
+  **`tree-sitter/parser.ts`**
+  - `parseSource()` now reuses a cached `Parser` instance per language (via `parserCache: Map<string, any>`) instead of allocating a new native `Parser` object for every file — eliminates native heap pressure during initial indexing of hundreds of files.
+
+  **`index.ts`** (extension entry point)
+  - `spawnDaemon()` now calls `closeSync(logFd)` immediately after `spawn()` — the log file descriptor was previously leaked in the parent process on every daemon restart.
+
+  **`client.ts`** (SocketClient)
+  - `socket.end()` replaced with `socket.destroy()` after receiving a query response — `end()` left the socket half-open until the server closed its side.
+
+  **`daemon/db.ts`**
+  - 16 hot-path `db.prepare()` calls moved to constructor-initialised private fields (`StatementSync`) — statements are now compiled once at startup instead of on every method invocation.
+
 ## [1.14.0] - 2026-05-08
 
 ### Added
