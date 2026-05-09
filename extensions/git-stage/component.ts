@@ -141,6 +141,13 @@ export class GitStageComponent {
     await this.refresh();
   }
 
+  private async removeFromIndex(): Promise<void> {
+    const file = this.files[this.selectedIndex];
+    if (!file) return;
+    await this.pi.exec("git", ["rm", "--cached", "--", file.path], { cwd: this.cwd, timeout: 5000 });
+    await this.refresh();
+  }
+
   private async unstageAll(): Promise<void> {
     await this.pi.exec("git", ["restore", "--staged", "."], { cwd: this.cwd, timeout: 5000 });
     await this.refresh();
@@ -174,6 +181,11 @@ export class GitStageComponent {
 
     if (matchesKey(data, "space") || matchesKey(data, "return")) {
       void this.toggleSelected();
+      return;
+    }
+
+    if (data === "x") {
+      void this.removeFromIndex();
       return;
     }
 
@@ -273,6 +285,7 @@ export class GitStageComponent {
       [th.fg("accent", "space"), "stage/unstage"],
       [th.fg("accent", "a"), "stage all"],
       [th.fg("accent", "u"), "unstage all"],
+      [th.fg("accent", "x"), "rm --cached"],
       [th.fg("accent", "r"), "refresh"],
       [th.fg("accent", "q"), "close"],
     ]
