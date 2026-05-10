@@ -34,10 +34,20 @@ export default function (pi: ExtensionAPI) {
         lastBadge = next;
         ctx.ui.setStatus("git-stage", next);
       }
-    } catch {
+    } catch (err) {
+      // If the context became stale (session replacement / reload), stop the
+      // poll timer and clear state. The next session_start event will restart.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("stale")) {
+        stopPolling();
+        storedCtx = undefined;
+        inGitRepo = false;
+        lastBadge = undefined;
+        return;
+      }
       if (lastBadge !== undefined) {
         lastBadge = undefined;
-        ctx.ui.setStatus("git-stage", undefined);
+        try { ctx.ui.setStatus("git-stage", undefined); } catch { /* ignore if also stale */ }
       }
     }
   }
