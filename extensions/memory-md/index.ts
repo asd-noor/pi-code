@@ -384,13 +384,18 @@ Always prefer a canonical file over creating a new one. Create additional files 
     const config = loadWorkflowLogConfig();
     if (!config) return;
 
+    // Skip aborted/errored sessions — user interrupted, no point logging
+    const msgs = (event as any).messages ?? [];
+    const wasAborted = msgs.some((m: any) => m.stopReason === "aborted" || m.stopReason === "error");
+    if (wasAborted) return;
+
     // Fire-and-forget — must not block the agent_end hook
     void (async () => {
       // Extract tool calls
       const toolCalls: Array<{ name: string; inputSummary: string }> = [];
       let lastAssistantText = "";
 
-      for (const msg of ((event as any).messages ?? [])) {
+      for (const msg of msgs) {
         if (msg.role !== "assistant") continue;
         const content = Array.isArray(msg.content) ? msg.content : [];
         for (const block of content) {
