@@ -378,78 +378,81 @@ Always prefer a canonical file over creating a new one. Create additional files 
 
   // ── agent_end hook ────────────────────────────────────────────────────────
 
-  pi.on("agent_end", async (event, ctx) => {
+  pi.on("agent_end", (event, ctx) => {
     if (!memDir) return;
 
     const config = loadWorkflowLogConfig();
     if (!config) return;
 
-    // Extract tool calls
-    const toolCalls: Array<{ name: string; inputSummary: string }> = [];
-    let lastAssistantText = "";
+    // Fire-and-forget — must not block the agent_end hook
+    void (async () => {
+      // Extract tool calls
+      const toolCalls: Array<{ name: string; inputSummary: string }> = [];
+      let lastAssistantText = "";
 
-    for (const msg of ((event as any).messages ?? [])) {
-      if (msg.role !== "assistant") continue;
-      const content = Array.isArray(msg.content) ? msg.content : [];
-      for (const block of content) {
-        if (block.type === "toolCall") {
-          const inp = block.arguments ?? {};
-          let summary = "";
-          switch (block.name) {
-            case "bash":  summary = String(inp.command ?? "").replace(/\s+/g, " ").slice(0, 100); break;
-            case "read":
-            case "edit":
-            case "write": summary = String(inp.path ?? ""); break;
-            case "grep":  summary = [inp.pattern, inp.path].filter(Boolean).join(" in ").slice(0, 100); break;
-            default: try { summary = JSON.stringify(inp).slice(0, 100); } catch { summary = ""; }
+      for (const msg of ((event as any).messages ?? [])) {
+        if (msg.role !== "assistant") continue;
+        const content = Array.isArray(msg.content) ? msg.content : [];
+        for (const block of content) {
+          if (block.type === "toolCall") {
+            const inp = block.arguments ?? {};
+            let summary = "";
+            switch (block.name) {
+              case "bash":  summary = String(inp.command ?? "").replace(/\s+/g, " ").slice(0, 100); break;
+              case "read":
+              case "edit":
+              case "write": summary = String(inp.path ?? ""); break;
+              case "grep":  summary = [inp.pattern, inp.path].filter(Boolean).join(" in ").slice(0, 100); break;
+              default: try { summary = JSON.stringify(inp).slice(0, 100); } catch { summary = ""; }
+            }
+            toolCalls.push({ name: block.name, inputSummary: summary });
           }
-          toolCalls.push({ name: block.name, inputSummary: summary });
-        }
-        if (block.type === "text" && block.text?.trim()) {
-          lastAssistantText = block.text.trim();
+          if (block.type === "text" && block.text?.trim()) {
+            lastAssistantText = block.text.trim();
+          }
         }
       }
-    }
 
-    // Skip pure text conversations
-    if (toolCalls.length === 0) return;
+      // Skip pure text conversations
+      if (toolCalls.length === 0) return;
 
-    const toolSummary = toolCalls
-      .map((t) => `- ${t.name}${t.inputSummary ? `: ${t.inputSummary}` : ""}`)
-      .join("\n");
+      const toolSummary = toolCalls
+        .map((t) => `- ${t.name}${t.inputSummary ? `: ${t.inputSummary}` : ""}`)
+        .join("\n");
 
-    const summaryPrompt = [
-      "Write a workflow log entry for this agent session.",
-      "",
-      "Tool calls made:",
-      toolSummary,
-      "",
-      lastAssistantText ? `Final response:\n${lastAssistantText.slice(0, 500)}` : "",
-      "",
-      "Format your response as:",
-      "Line 1: one-line action title (no heading markers, no timestamp)",
-      "Line 2: blank",
-      "Lines 3+: 2-5 bullet points (- prefix) listing specific files changed, commands run, or key findings",
-      "",
-      "Be factual and specific. Use past tense. No preamble or closing remarks.",
-    ].filter(Boolean).join("\n");
+      const summaryPrompt = [
+        "Write a workflow log entry for this agent session.",
+        "",
+        "Tool calls made:",
+        toolSummary,
+        "",
+        lastAssistantText ? `Final response:\n${lastAssistantText.slice(0, 500)}` : "",
+        "",
+        "Format your response as:",
+        "Line 1: one-line action title (no heading markers, no timestamp)",
+        "Line 2: blank",
+        "Lines 3+: 2-5 bullet points (- prefix) listing specific files changed, commands run, or key findings",
+        "",
+        "Be factual and specific. Use past tense. No preamble or closing remarks.",
+      ].filter(Boolean).join("\n");
 
-    try {
-      const cwd = (ctx as any).cwd ?? process.cwd();
-      const raw = await callModelForSummary(config.model, summaryPrompt, ctx, cwd);
-      if (!raw) return;
+      try {
+        const cwd = (ctx as any).cwd ?? process.cwd();
+        const raw = await callModelForSummary(config.model, summaryPrompt, ctx, cwd);
+        if (!raw) return;
 
-      // Parse: first line is title, rest is body
-      const lines = raw.trim().split("\n");
-      const title = lines[0].trim();
-      const body = lines.slice(1).join("\n").trim();
-      if (!title) return;
+        // Parse: first line is title, rest is body
+        const lines = raw.trim().split("\n");
+        const title = lines[0].trim();
+        const body = lines.slice(1).join("\n").trim();
+        if (!title) return;
 
-      appendWorkflowEntry(memDir, title, body, new Date());
-    } catch (err) {
-      // Never crash the agent loop — log silently
-      process.stderr.write(`[memory-md] workflow log error: ${(err as any)?.message ?? err}\n`);
-    }
+        appendWorkflowEntry(memDir, title, body, new Date());
+      } catch (err) {
+        // Never crash the agent loop — log silently
+        process.stderr.write(`[memory-md] workflow log error: ${(err as any)?.message ?? err}\n`);
+      }
+    })();
   });
 
   // ── /memory command ───────────────────────────────────────────────────────
