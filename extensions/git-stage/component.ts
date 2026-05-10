@@ -515,7 +515,9 @@ export class GitStageOverlay {
       }
 
       for (let li = 0; li < hunk.lines.length; li++) {
-        const diffLine = hunk.lines[li] ?? "";
+        // Expand tabs → spaces so visibleWidth() measures correctly and
+        // truncateToWidth() clips before the terminal's own tab expansion overflows.
+        const diffLine = (hunk.lines[li] ?? "").replace(/\t/g, "    ");
         let rendered: string;
 
         if (diffLine.startsWith("@@")) {
