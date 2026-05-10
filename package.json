@@ -1,6 +1,6 @@
 {
     "name": "pi-code",
-    "version": "1.17.8",
+    "version": "1.17.9",
     "description": "A curated pi package bundling custom extensions and configurations.",
     "keywords": [
         "pi-package"

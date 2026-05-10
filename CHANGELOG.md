@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.17.9] - 2026-05-10
+
+### Fixed
+
+- **memory-md**: `agent_end` workflow log is now fire-and-forget — the hook returns synchronously so it no longer blocks the agent session lifecycle while the LLM summarisation call runs in the background.
+- **memory-md**: Workflow log is skipped entirely for interrupted (`stopReason: "aborted"`) and errored (`stopReason: "error"`) sessions, preventing incomplete or noisy entries.
+
 ## [1.17.8] - 2026-05-10
 
 ### Changed
