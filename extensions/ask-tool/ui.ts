@@ -76,7 +76,7 @@ export class AskController {
 
     // 2. Title
     if (state.title) {
-      lines.push(th("text", ` ${state.title}`));
+      lines.push(clamp(th("text", ` ${state.title}`), width));
     }
 
     // 3. Tab bar
@@ -140,14 +140,14 @@ export class AskController {
     const th = (k: string, s: string) => theme.fg(k, s);
 
     // Prompt
-    lines.push(th("text", ` ${q.prompt}`));
+    lines.push(clamp(th("text", ` ${q.prompt}`), width));
 
     // Question-level note
     const inQuestionNote = state.view === "note" && state.noteTarget?.questionId === q.id && !state.noteTarget.optionValue;
     if (inQuestionNote) {
-      lines.push(th("syntaxString", " Note: ") + theme.bg("selectedBg", " " + this.noteDraft + "|  "));
+      lines.push(clamp(th("syntaxString", " Note: ") + theme.bg("selectedBg", " " + this.noteDraft + "|  "), width));
     } else if (state.questionNotes[q.id]) {
-      lines.push(th("syntaxString", " Note: ") + th("muted", state.questionNotes[q.id]));
+      lines.push(clamp(th("syntaxString", " Note: ") + th("muted", state.questionNotes[q.id]), width));
     }
     lines.push("");
 
@@ -243,7 +243,7 @@ export class AskController {
     for (let i = 0; i < maxLines; i++) {
       const l = leftLines[i] ?? blank;
       const r = previewLines[i] ?? blankR;
-      lines.push(l + " " + r);
+      lines.push(clamp(l + " " + r, width));
     }
   }
 
@@ -251,7 +251,7 @@ export class AskController {
     const { state, theme } = this;
     const th = (k: string, s: string) => theme.fg(k, s);
 
-    lines.push(th("accent", " Review answers"));
+    lines.push(clamp(th("accent", " Review answers"), width));
     lines.push("");
 
     for (const q of state.questions) {
@@ -283,7 +283,7 @@ export class AskController {
       const isActive = state.activeSubmitIndex === i;
       const pointer = isActive ? "❯ " : "  ";
       const color = isActive ? "accent" : "text";
-      lines.push(th(color, `${pointer}${i + 1}. ${label}`));
+      lines.push(clamp(th(color, `${pointer}${i + 1}. ${label}`), width));
     }
   }
 
