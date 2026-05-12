@@ -14,6 +14,7 @@
  *            agenda_create
  *            agenda_discovery_add, agenda_discovery_get,
  *            agenda_discovery_list, agenda_discovery_delete
+ *            ffgrep, fffind  (via shared FileFinder from extensions/fff)
  *
  * Blacklisted (concurrent writes corrupt memory files):
  *            memory_new, memory_update, memory_delete
@@ -44,10 +45,76 @@ import {
 import { DISCOVERY_CATEGORIES, DISCOVERY_OUTCOMES } from "./agenda/types.ts";
 import { formatDiscovery, formatDiscoveryList } from "./agenda/format.ts";
 import { AGENDA_DISCOVERY_TOOL_NAMES } from "./agenda/tools.ts";
+import type { FileFinder, GrepCursor } from "@ff-labs/fff-node";
+import { buildQuery } from "./fff/query.ts";
 
 const execAsync     = promisify(exec);
 const execFileAsync = promisify(execFile);
 const SANDBOX_DIR   = "/tmp/pi-sandbox";
+
+// ── fff state (shared FileFinder received from extensions/fff via pi.events) ──
+let sharedFinder: FileFinder | null = null;
+
+const fffGrepCursorCache = new Map<string, GrepCursor>();
+let   fffGrepCursorCounter = 0;
+
+interface FffFindCursor { query: string; pattern: string; pageSize: number; nextPageIndex: number; }
+const fffFindCursorCache = new Map<string, FffFindCursor>();
+let   fffFindCursorCounter = 0;
+
+function fffStoreCursor(cursor: GrepCursor): string {
+  const id = `fffp_c${++fffGrepCursorCounter}`;
+  fffGrepCursorCache.set(id, cursor);
+  if (fffGrepCursorCache.size > 200) {
+    const first = fffGrepCursorCache.keys().next().value;
+    if (first) fffGrepCursorCache.delete(first);
+  }
+  return id;
+}
+
+function fffStoreFindCursor(c: FffFindCursor): string {
+  const id = `${++fffFindCursorCounter}`;
+  fffFindCursorCache.set(id, c);
+  if (fffFindCursorCache.size > 200) {
+    const first = fffFindCursorCache.keys().next().value;
+    if (first) fffFindCursorCache.delete(first);
+  }
+  return id;
+}
+
+const FFF_GREP_MAX_LINE = 500;
+const FFF_HOT_FRECENCY  = 25;
+const FFF_WARM_FRECENCY = 20;
+
+function fffAnnotation(item: { gitStatus?: string; totalFrecencyScore?: number; accessFrecencyScore?: number }): string {
+  const git = item.gitStatus;
+  if (git && git !== "clean" && git !== "unknown" && git !== "") return `  [${git} in git]`;
+  const score = item.totalFrecencyScore ?? item.accessFrecencyScore ?? 0;
+  if (score >= FFF_HOT_FRECENCY)  return "  [VERY often touched file]";
+  if (score >= FFF_WARM_FRECENCY) return "  [often touched file]";
+  return "";
+}
+
+function fffFormatGrep(result: any): string {
+  if (!result.items.length) return "No matches found";
+  const lines: string[] = [];
+  let currentFile = "";
+  for (const match of result.items) {
+    if (match.relativePath !== currentFile) {
+      if (lines.length > 0) lines.push("");
+      currentFile = match.relativePath;
+      lines.push(`${currentFile}${fffAnnotation(match)}`);
+    }
+    (match.contextBefore ?? []).forEach((line: string, i: number) => {
+      lines.push(` ${match.lineNumber - (match.contextBefore?.length ?? 0) + i}- ${line.trim().slice(0, FFF_GREP_MAX_LINE)}`);
+    });
+    lines.push(` ${match.lineNumber}: ${match.lineContent.trim().slice(0, FFF_GREP_MAX_LINE)}`);
+    (match.contextAfter ?? []).forEach((line: string, i: number) => {
+      lines.push(` ${match.lineNumber + 1 + i}- ${line.trim().slice(0, FFF_GREP_MAX_LINE)}`);
+    });
+  }
+  return lines.join("\n");
+}
 
 // ── Memory helpers ───────────────────────────────────────────────────────────
 
@@ -163,6 +230,7 @@ const ExtCall = Type.Object(
         "memory_create_file, memory_delete_file, memory_validate_file. " +
         "agenda_create. " +
         "agenda_discovery_add, agenda_discovery_get, agenda_discovery_list, agenda_discovery_delete. " +
+        "ffgrep, fffind (requires extensions/fff to be loaded — shares its FileFinder via pi.events). " +
         "NOT allowed (concurrent writes corrupt memory files): memory_new, memory_update, memory_delete — call these sequentially via the native tools. " +
         "Pass the tool's normal arguments as additional fields alongside `tool`.",
     }),
@@ -387,6 +455,92 @@ async function opMemory(toolName: string, params: Record<string, any>, cwd: stri
   }
 }
 
+// ── fff tool implementations ─────────────────────────────────────────────────
+
+async function opFfgrep(params: Record<string, any>, cwd: string): Promise<string> {
+  if (!sharedFinder || sharedFinder.isDestroyed)
+    throw new Error("fff finder not available — is extensions/fff loaded?");
+
+  const effectiveLimit = Math.max(1, params.limit ?? 20);
+  const query          = buildQuery(params.path, params.pattern, params.exclude, cwd);
+  const hasRegex       = params.pattern !== params.pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let mode: "plain" | "regex" | "fuzzy" = hasRegex ? "regex" : "plain";
+  if (mode === "regex") { try { new RegExp(params.pattern); } catch { mode = "plain"; } }
+
+  const p = params.pattern.trim();
+  if (hasRegex && /^(?:[.^$]*(?:[.][*+?]|\*|\+)[.^$]*|[.^$\s]*|\.\*\??|\.\*[+?]?|\.\+\??|\.|\*|\?)$/.test(p))
+    return `Pattern '${params.pattern}' matches everything — grep needs a concrete substring.`;
+
+  const smartCase  = params.caseSensitive !== true;
+  const grepResult = sharedFinder.grep(query, {
+    mode,
+    smartCase,
+    maxMatchesPerFile:   Math.min(effectiveLimit, 50),
+    cursor:              (params.cursor ? fffGrepCursorCache.get(params.cursor) : null) ?? null,
+    beforeContext:       params.context ?? 0,
+    afterContext:        params.context ?? 0,
+    classifyDefinitions: true,
+  });
+  if (!grepResult.ok) throw new Error(grepResult.error);
+
+  let result      = grepResult.value;
+  let fuzzyNotice: string | null = null;
+
+  if (result.items.length === 0 && !params.cursor && mode !== "regex") {
+    const fuzzy = sharedFinder.grep(params.pattern, {
+      mode: "fuzzy", smartCase,
+      maxMatchesPerFile: Math.min(effectiveLimit, 50),
+      cursor: null, beforeContext: 0, afterContext: 0, classifyDefinitions: true,
+    });
+    if (fuzzy.ok && fuzzy.value.items.length > 0) { fuzzyNotice = "0 exact matches. Maybe you meant this?"; result = fuzzy.value; }
+  }
+
+  let output = fffFormatGrep(result);
+  const notices: string[] = [];
+  if (result.regexFallbackError) notices.push(`Invalid regex: ${result.regexFallbackError}, used literal match`);
+  if (result.nextCursor)         notices.push(`Continue with cursor="${fffStoreCursor(result.nextCursor)}"`);
+  if (notices.length > 0) output += `\n\n[${notices.join(". ")}]`;
+  if (fuzzyNotice)        output  = `[${fuzzyNotice}]\n${output}`;
+  return output;
+}
+
+async function opFfffind(params: Record<string, any>, cwd: string): Promise<string> {
+  if (!sharedFinder || sharedFinder.isDestroyed)
+    throw new Error("fff finder not available — is extensions/fff loaded?");
+
+  const resumed        = params.cursor ? fffFindCursorCache.get(params.cursor) : undefined;
+  const effectiveLimit = resumed ? resumed.pageSize : Math.max(1, params.limit ?? 30);
+  const query          = resumed ? resumed.query    : buildQuery(params.path, params.pattern, params.exclude, cwd);
+  const pattern        = resumed ? resumed.pattern  : params.pattern;
+  const pageIndex      = resumed?.nextPageIndex ?? 0;
+
+  const r = sharedFinder.fileSearch(query, { pageIndex, pageSize: effectiveLimit });
+  if (!r.ok) throw new Error(r.error);
+
+  const result     = r.value;
+  const topScore   = result.scores[0]?.total ?? 0;
+  const weak       = topScore < Math.floor((pattern.length * 12 * 50) / 100);
+  const cap        = weak ? Math.min(5, effectiveLimit) : effectiveLimit;
+  const shown      = result.items.slice(0, cap);
+  let output       = shown.length === 0
+    ? "No files found matching pattern"
+    : shown.map((item: any) => `${item.relativePath}${fffAnnotation(item)}`).join("\n");
+
+  const shownSoFar = pageIndex * effectiveLimit + result.items.length;
+  const hasMore    = result.items.length >= effectiveLimit && result.totalMatched > shownSoFar;
+  const notices: string[] = [];
+  if (weak && shown.length > 0) {
+    notices.push(`Query "${pattern}" produced only weak scattered fuzzy matches. Output capped at ${shown.length}/${result.totalMatched}.`);
+  }
+  if (!weak && hasMore) {
+    const remaining = result.totalMatched - shownSoFar;
+    const cursorId  = fffStoreFindCursor({ query, pattern, pageSize: effectiveLimit, nextPageIndex: pageIndex + 1 });
+    notices.push(`${remaining} more match${remaining === 1 ? "" : "es"} available. cursor="${cursorId}" to continue`);
+  }
+  if (notices.length > 0) output += `\n\n[${notices.join(". ")}]`;
+  return output;
+}
+
 // ── agenda_create implementation ────────────────────────────────────────────
 
 async function opAgendaCreate(params: Record<string, any>, cwd: string): Promise<string> {
@@ -536,6 +690,9 @@ const AGENDA_CREATE_TOOLS = new Set(["agenda_create"]);
 /** Agenda discovery tools — safe for parallel (SQLite WAL serialises writes). */
 const AGENDA_DISCOVERY_TOOLS = AGENDA_DISCOVERY_TOOL_NAMES;
 
+/** fff search tools — share the FileFinder singleton from extensions/fff via pi.events. */
+const FFF_TOOLS = new Set(["ffgrep", "fffind"]);
+
 /** Memory tools safe for concurrent execution (read-only or independent file ops). */
 const MEMORY_TOOLS = new Set([
   "memory_list", "memory_get", "memory_search",
@@ -577,7 +734,12 @@ async function opExtension(
     return opMemory(toolName, params, cwd);
   }
 
-  const supported = ["ptc", "mcporter", ...CODE_MAP_TOOLS, ...MEMORY_TOOLS, ...AGENDA_CREATE_TOOLS, ...AGENDA_DISCOVERY_TOOLS].join(", ");
+  if (FFF_TOOLS.has(toolName)) {
+    if (toolName === "ffgrep") return opFfgrep(params, cwd);
+    return opFfffind(params, cwd);
+  }
+
+  const supported = ["ptc", "mcporter", ...CODE_MAP_TOOLS, ...MEMORY_TOOLS, ...AGENDA_CREATE_TOOLS, ...AGENDA_DISCOVERY_TOOLS, ...FFF_TOOLS].join(", ");
   throw new Error(`Unsupported tool in parallel: "${toolName}". Supported: ${supported}`);
 }
 
@@ -599,6 +761,7 @@ Python + uv by default and only choose bash when the task is clearly pure shell;
 - Any supported extension tool (including \`ptc\`, \`mcporter\`) — pass \`tool: "<name>"\` plus the tool's normal args as additional fields
 - Python \`ptc\` slots execute the saved script file directly so the shebang triggers \`uv run --script\`
 - Prefer uv-backed Python scripts because uv is robust at dependency management and its cache makes repeated runs very fast
+- `ffgrep` and `fffind` are supported when the fff extension is loaded
 
 Typical pattern: fan out several independent \`read\`, \`ptc\`, or other extension-tool calls, get all
 results back in one shot, then decide what to do. Use a raw \`bash\` slot only for a one-shot shell command; otherwise prefer a bash script via \`ptc\`.
@@ -678,6 +841,16 @@ export default function (pi: ExtensionAPI) {
         isError: errorCount === results.length,
       };
     },
+  });
+
+  // Receive the shared FileFinder from extensions/fff
+  pi.events.on("fff:finder", (data: any) => {
+    sharedFinder = data.finder as FileFinder;
+  });
+
+  // Request the finder on session start (in case fff initialised before us)
+  pi.on("session_start", async () => {
+    pi.events.emit("fff:request", null);
   });
 
   pi.on("before_agent_start", async (event) => ({

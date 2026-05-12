@@ -9,6 +9,7 @@
     "type": "module",
     "dependencies": {
         "@tmustier/pi-files-widget": "*",
+        "@ff-labs/fff-node": "*",
         "@aliou/pi-processes": "*"
     },
     "pi": {
@@ -27,6 +28,7 @@
     },
     "bundleDependencies": [
         "@tmustier/pi-files-widget",
+        "@ff-labs/fff-node",
         "@aliou/pi-processes"
     ],
     "overrides": {
