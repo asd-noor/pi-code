@@ -1,8 +1,8 @@
 /**
  * GitStageOverlay — split-panel TUI overlay for hunk-level git staging.
  *
- * Left panel (~35%): file list
- * Right panel (~65%): diff / hunk viewer
+ * Top panel (~35% height): file list
+ * Bottom panel (~65% height): diff / hunk viewer
  *
  * Keyboard:
  *   ↑ / k        move up in focused panel
@@ -388,22 +388,20 @@ export class GitStageOverlay {
       th.fg("border", "─".repeat(width)),
     ];
 
-    const contentH = Math.max(5, overlayRows - headerLines.length - footerLines.length);
+    const contentH = Math.max(10, overlayRows - headerLines.length - footerLines.length);
 
-    // ── Split panels ──
-    const leftW  = Math.floor(width * 0.35);
-    const rightW = width - leftW - 1; // 1 for separator
+    // ── Vertical split ──
+    const filePanelH = Math.max(3, Math.floor(contentH * 0.35));
+    const diffPanelH = Math.max(5, contentH - filePanelH - 1); // -1 for separator
 
-    const leftLines  = this.renderFilePanel(leftW, contentH);
-    const rightLines = this.renderDiffPanel(rightW, contentH);
+    const fileLines = this.renderFilePanel(width, filePanelH);
+    const diffLines = this.renderDiffPanel(width, diffPanelH);
 
-    const maxRows = Math.max(leftLines.length, rightLines.length, contentH);
-    const panelLines: string[] = [];
-    for (let i = 0; i < maxRows; i++) {
-      const l = truncateToWidth(leftLines[i] ?? "", leftW);
-      const r = truncateToWidth(rightLines[i] ?? "", rightW);
-      panelLines.push(l + th.fg("border", "│") + r);
-    }
+    const panelLines: string[] = [
+      ...fileLines,
+      th.fg("border", "─".repeat(width)),
+      ...diffLines,
+    ];
 
     const allLines = [...headerLines, ...panelLines, ...footerLines];
     const result = applyBgToLines(allLines, width, th, "customMessageBg");
