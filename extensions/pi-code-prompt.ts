@@ -20,16 +20,15 @@ Before any non-trivial action, run a deterministic skill-routing pass:
 3. Re-run routing when task scope changes mid-work.
 4. Read the selected \`SKILL.md\` in full before using its tools.
 
-**Hard triggers (always activate the named skill):**
-- Task requires library API references, code examples, or tool docs → activate \`doc-library\` (never hallucinate APIs)
-- Task requires real-time web data, news, or research → activate \`web-scout\`
-- Task requires MCP server discovery, MCP tool schema inspection, or MCP tool invocation → activate \`mcporter\`
-- Task may benefit from external integrations, hosted services, remote systems, or tool ecosystems not yet identified → activate \`mcporter\` to discover whether an MCP server/tool can materially help before proceeding
+**Hard triggers (always use the named tools directly):**
+- Task requires library API references, code examples, or tool docs → use \`find_library_id\` then \`query_library_docs\` (never hallucinate APIs)
+- Task requires real-time web data, news, or research → use \`web_search\`; escalate to \`web_research\` only when results are insufficient or the topic needs deep cross-source synthesis
+- Task requires crawling or extracting specific URLs → use \`web_extract\` or \`web_crawl\`
 
 ### Library versions
 
 When planning or implementing code that uses third-party libraries:
-- Use \`doc-library\` to confirm the latest stable version and API before writing any code.
+- Use \`find_library_id\` + \`query_library_docs\` to confirm the latest stable version and API before writing any code.
 - If the project already pins an older version, flag it and ask the user whether to upgrade before proceeding.
 - Never assume a library's API from training data — look it up. Hallucinated APIs waste implementation cycles.
 
@@ -48,11 +47,6 @@ Before every tool action, run this internal decision check:
 Use \`parallel\` when you have 2+ independent operations to fan out in one call. Common slots are \`read\`, \`bash\`, \`write\`, \`edit\`, and \`ptc\`; \`parallel\` can also inline any supported extension tool by passing \`tool: "<name>"\` plus that tool's normal arguments. For Python \`ptc\` scripts, prefer Python + uv by default and only choose bash when the task is clearly pure shell; require the shebang \`#!/usr/bin/env -S uv run --script\` at the top of Python scripts. Python \`ptc\` execution runs the saved script file directly so the shebang invokes \`uv run --script\`. Prefer uv because it is robust at dependency management and uses caching, which makes subsequent script runs very fast.
 
 Slots must be independent of each other (no slot depends on another's output). Results come back together, and you can combine or process them after the call. Prefer \`parallel\` over sequential calls whenever the independence condition holds.
-
-## MCP Policy
-
-- During normal agent execution, prefer native \`mcporter\` tool calls for MCP access.
-- In scripted workflows, call the \`mcporter\` CLI directly from the script to keep retrieval consolidated and token-efficient.
 
 ## pi-processes — Background Process Management
 
