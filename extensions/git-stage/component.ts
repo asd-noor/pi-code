@@ -404,6 +404,10 @@ export class GitStageOverlay {
     ];
 
     const allLines = [...headerLines, ...panelLines, ...footerLines];
+
+    // Pad to fixed height so the overlay never resizes between renders (prevents flickering)
+    while (allLines.length < overlayRows) allLines.push("");
+
     const result = applyBgToLines(allLines, width, th, "customMessageBg");
 
     this.cachedWidth = width;
