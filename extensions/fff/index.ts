@@ -13,26 +13,56 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { CustomEditor } from "@earendil-works/pi-coding-agent";
+import {
+  Text,
+  type AutocompleteItem,
+  type AutocompleteProvider,
+} from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { FileFinder } from "@ff-labs/fff-node";
-import type { GrepCursor, GrepMode, GrepResult, SearchResult } from "@ff-labs/fff-node";
+import type {
+  GrepCursor,
+  GrepMode,
+  GrepResult,
+  SearchResult,
+  MixedItem,
+} from "@ff-labs/fff-node";
 import { buildQuery } from "./query.ts";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_GREP_LIMIT  = 20;
-const DEFAULT_FIND_LIMIT  = 30;
-const GREP_MAX_LINE       = 500;
-const HOT_FRECENCY        = 25;
-const WARM_FRECENCY       = 20;
-const FIND_WEAK_SAMPLE    = 5;
+const DEFAULT_GREP_LIMIT = 20;
+const DEFAULT_FIND_LIMIT = 30;
+const GREP_MAX_LINE      = 500;
+const HOT_FRECENCY       = 25;
+const WARM_FRECENCY      = 20;
+const FIND_WEAK_SAMPLE   = 5;
 
-// ── Singleton state ──────────────────────────────────────────────────────────
+// ── Mode system ───────────────────────────────────────────────────────────────
 
-let finder:        FileFinder | null         = null;
-let finderCwd:     string     | null         = null;
-let finderPromise: Promise<FileFinder> | null = null;
-let activeCwd = process.cwd();
+type FffMode = "tools-and-ui" | "tools-only" | "override";
+
+const VALID_MODES: FffMode[] = ["tools-and-ui", "tools-only", "override"];
+
+interface ToolNames {
+  grep: string;
+  find: string;
+}
+
+const FFF_TOOL_NAMES: ToolNames = {
+  grep: "ffgrep",
+  find: "fffind",
+};
+
+const OVERRIDE_TOOL_NAMES: ToolNames = {
+  grep: "grep",
+  find: "find",
+};
+
+function resolveToolNames(mode: FffMode): ToolNames {
+  return mode === "override" ? OVERRIDE_TOOL_NAMES : FFF_TOOL_NAMES;
+}
 
 // ── Cursor caches ─────────────────────────────────────────────────────────────
 
@@ -69,33 +99,6 @@ function storeFindCursor(c: FindCursor): string {
 
 function getFindCursor(id: string): FindCursor | undefined {
   return findCursorCache.get(id);
-}
-
-// ── Finder lifecycle ─────────────────────────────────────────────────────────
-
-function ensureFinder(cwd: string, onReady?: (f: FileFinder) => void): Promise<FileFinder> {
-  if (finder && !finder.isDestroyed && finderCwd === cwd) {
-    onReady?.(finder);
-    return Promise.resolve(finder);
-  }
-  if (finderPromise) return finderPromise;
-
-  finderPromise = (async () => {
-    if (finder && !finder.isDestroyed) { finder.destroy(); finder = null; finderCwd = null; }
-    const result = FileFinder.create({ basePath: cwd, aiMode: true });
-    if (!result.ok) throw new Error(`FileFinder.create failed: ${result.error}`);
-    finder    = result.value;
-    finderCwd = cwd;
-    await finder.waitForScan(15_000);
-    onReady?.(finder);
-    return finder;
-  })().finally(() => { finderPromise = null; });
-
-  return finderPromise;
-}
-
-function destroyFinder() {
-  if (finder && !finder.isDestroyed) { finder.destroy(); finder = null; finderCwd = null; }
 }
 
 // ── Output formatting ────────────────────────────────────────────────────────
@@ -154,6 +157,51 @@ function formatFindOutput(
   };
 }
 
+// ── Mention autocomplete helpers ──────────────────────────────────────────────
+
+function extractAtPrefix(textBeforeCursor: string): string | null {
+  const match = textBeforeCursor.match(/(?:^|[ \t])(@(?:"[^"]*|[^\s]*))$/);
+  return match?.[1] ?? null;
+}
+
+function buildAtCompletionValue(path: string): string {
+  return path.includes(" ") ? `@"${path}"` : `@${path}`;
+}
+
+function createFffMentionProvider(
+  getItems: (query: string, signal: AbortSignal) => Promise<AutocompleteItem[]>,
+): AutocompleteProvider {
+  return {
+    async getSuggestions(lines, cursorLine, cursorCol, options) {
+      const currentLine = lines[cursorLine] || "";
+      const prefix = extractAtPrefix(currentLine.slice(0, cursorCol));
+      if (!prefix || options.signal.aborted) return null;
+
+      const query = prefix.startsWith('@"') ? prefix.slice(2) : prefix.slice(1);
+      const items = await getItems(query, options.signal);
+      return options.signal.aborted || items.length === 0
+        ? null
+        : { items, prefix };
+    },
+    applyCompletion(_lines, cursorLine, cursorCol, item, prefix) {
+      const currentLine = _lines[cursorLine] || "";
+      const before = currentLine.slice(0, cursorCol - prefix.length);
+      const after = currentLine.slice(cursorCol);
+      const newLine = before + item.value + after;
+      const newCursorCol = cursorCol - prefix.length + item.value.length;
+      return {
+        lines: [
+          ..._lines.slice(0, cursorLine),
+          newLine,
+          ..._lines.slice(cursorLine + 1),
+        ],
+        cursorLine,
+        cursorCol: newCursorCol,
+      };
+    },
+  };
+}
+
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
 const grepSchema = Type.Object({
@@ -206,7 +254,199 @@ const findSchema = Type.Object({
 
 export default function fffExtension(pi: ExtensionAPI) {
 
-  // ── Event bridge ────────────────────────────────────────────────────────────
+  // ── Singleton state (inside factory for flag/env access) ──────────────────
+
+  let finder:        FileFinder | null          = null;
+  let finderCwd:     string     | null          = null;
+  let finderPromise: Promise<FileFinder> | null = null;
+  let activeCwd = process.cwd();
+
+  // ── Mode resolution: flag > env > default ─────────────────────────────────
+
+  let currentMode: FffMode =
+    (pi.getFlag("fff-mode") as FffMode) ??
+    (process.env.PI_FFF_MODE as FffMode) ??
+    "tools-and-ui";
+
+  const toolNames = resolveToolNames(currentMode);
+
+  // ── DB path resolution: flag > env > undefined ────────────────────────────
+
+  const frecencyDbPath =
+    (pi.getFlag("fff-frecency-db") as string | undefined) ??
+    process.env.FFF_FRECENCY_DB ??
+    undefined;
+
+  const historyDbPath =
+    (pi.getFlag("fff-history-db") as string | undefined) ??
+    process.env.FFF_HISTORY_DB ??
+    undefined;
+
+  // ── Mode helpers ──────────────────────────────────────────────────────────
+
+  function getMode(): FffMode {
+    return currentMode;
+  }
+
+  function setMode(mode: FffMode): void {
+    currentMode = mode;
+  }
+
+  function shouldEnableMentions(): boolean {
+    return currentMode !== "tools-only";
+  }
+
+  // ── Finder lifecycle ──────────────────────────────────────────────────────
+
+  function ensureFinder(cwd: string, onReady?: (f: FileFinder) => void): Promise<FileFinder> {
+    if (finder && !finder.isDestroyed && finderCwd === cwd) {
+      onReady?.(finder);
+      return Promise.resolve(finder);
+    }
+    if (finderPromise) return finderPromise;
+
+    finderPromise = (async () => {
+      if (finder && !finder.isDestroyed) { finder.destroy(); finder = null; finderCwd = null; }
+      const result = FileFinder.create({
+        basePath: cwd,
+        frecencyDbPath,
+        historyDbPath,
+        aiMode: true,
+      });
+      if (!result.ok) throw new Error(`FileFinder.create failed: ${result.error}`);
+      finder    = result.value;
+      finderCwd = cwd;
+      await finder.waitForScan(15_000);
+      onReady?.(finder);
+      return finder;
+    })().finally(() => { finderPromise = null; });
+
+    return finderPromise;
+  }
+
+  function destroyFinder() {
+    if (finder && !finder.isDestroyed) { finder.destroy(); finder = null; finderCwd = null; }
+  }
+
+  // ── Mention items ─────────────────────────────────────────────────────────
+
+  async function getMentionItems(
+    query: string,
+    signal: AbortSignal,
+  ): Promise<AutocompleteItem[]> {
+    if (signal.aborted) return [];
+    const f = await ensureFinder(activeCwd);
+    if (signal.aborted) return [];
+
+    const result = f.mixedSearch(query, { pageSize: 20 });
+    if (!result.ok) return [];
+
+    return result.value.items
+      .slice(0, 20)
+      .map((mixed: MixedItem) => {
+        if (mixed.type === "directory") {
+          return {
+            value: buildAtCompletionValue(mixed.item.relativePath),
+            label: mixed.item.dirName,
+            description: mixed.item.relativePath,
+          };
+        }
+        return {
+          value: buildAtCompletionValue(mixed.item.relativePath),
+          label: mixed.item.fileName,
+          description: mixed.item.relativePath,
+        };
+      });
+  }
+
+  // ── FffEditor (defined inside factory to capture getMentionItems via closure) ──
+
+  class FffEditor extends CustomEditor {
+    private baseProvider: AutocompleteProvider | undefined;
+
+    override setAutocompleteProvider(provider: AutocompleteProvider): void {
+      this.baseProvider = provider;
+      const mentionProvider = createFffMentionProvider(getMentionItems);
+      const compositeProvider: AutocompleteProvider = {
+        getSuggestions: async (lines, cursorLine, cursorCol, options) => {
+          const mentionResult = await mentionProvider.getSuggestions(
+            lines,
+            cursorLine,
+            cursorCol,
+            options,
+          );
+          if (mentionResult) return mentionResult;
+          return (
+            this.baseProvider?.getSuggestions(
+              lines,
+              cursorLine,
+              cursorCol,
+              options,
+            ) ?? null
+          );
+        },
+        applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
+          if (prefix?.startsWith("@")) {
+            return mentionProvider.applyCompletion!(
+              lines,
+              cursorLine,
+              cursorCol,
+              item,
+              prefix,
+            );
+          }
+          return (
+            this.baseProvider?.applyCompletion?.(
+              lines,
+              cursorLine,
+              cursorCol,
+              item,
+              prefix,
+            ) ?? { lines, cursorLine, cursorCol }
+          );
+        },
+      };
+      super.setAutocompleteProvider(compositeProvider);
+    }
+  }
+
+  // ── applyEditorMode ───────────────────────────────────────────────────────
+
+  function applyEditorMode(ctx: {
+    ui: {
+      setEditorComponent: (
+        factory: ((tui: any, theme: any, keybindings: any) => any) | undefined,
+      ) => void;
+    };
+  }) {
+    if (!shouldEnableMentions()) {
+      ctx.ui.setEditorComponent(undefined);
+    } else {
+      ctx.ui.setEditorComponent(
+        (tui: any, theme: any, keybindings: any) =>
+          new FffEditor(tui, theme, keybindings),
+      );
+    }
+  }
+
+  // ── Flags ─────────────────────────────────────────────────────────────────
+
+  pi.registerFlag("fff-mode", {
+    description: "FFF mode: tools-and-ui | tools-only | override",
+    type: "string",
+  });
+
+  pi.registerFlag("fff-frecency-db", {
+    description: "Path to the frecency database (overrides FFF_FRECENCY_DB env)",
+    type: "string",
+  });
+
+  pi.registerFlag("fff-history-db", {
+    description: "Path to the query history database (overrides FFF_HISTORY_DB env)",
+    type: "string",
+  });
+
+  // ── Event bridge ──────────────────────────────────────────────────────────
   // parallel.ts (and any other extension) can emit "fff:request" to receive the
   // current finder. Registration here runs once at extension load time.
   pi.events.on("fff:request", () => {
@@ -215,11 +455,12 @@ export default function fffExtension(pi: ExtensionAPI) {
     }
   });
 
-  // ── Lifecycle ────────────────────────────────────────────────────────────────
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
     try {
       activeCwd = ctx.cwd;
+      if (shouldEnableMentions()) applyEditorMode(ctx);
       await ensureFinder(activeCwd, (f) => {
         pi.events.emit("fff:finder", { finder: f, cwd: activeCwd });
       });
@@ -233,12 +474,46 @@ export default function fffExtension(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => { destroyFinder(); });
 
-  // ── ffgrep ───────────────────────────────────────────────────────────────────
+  // ── Shared render helper ──────────────────────────────────────────────────
+
+  const renderTextResult = (
+    result: { content?: { type: string; text?: string }[] },
+    options: { expanded?: boolean },
+    theme: any,
+    context: any,
+    maxLines = 15,
+  ) => {
+    const text =
+      (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+    const output =
+      result.content?.find((c) => c.type === "text")?.text?.trim() ?? "";
+    if (!output) {
+      text.setText(theme.fg("muted", "No output"));
+      return text;
+    }
+
+    const lines = output.split("\n");
+    const displayLines = lines.slice(
+      0,
+      options.expanded ? lines.length : maxLines,
+    );
+    let content = `\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
+    if (lines.length > displayLines.length) {
+      content += theme.fg(
+        "muted",
+        `\n... (${lines.length - displayLines.length} more lines)`,
+      );
+    }
+    text.setText(content);
+    return text;
+  };
+
+  // ── ffgrep ────────────────────────────────────────────────────────────────
 
   pi.registerTool({
-    name:        "ffgrep",
-    label:       "ffgrep",
-    description: `Grep file contents. Smart-case, auto-detects regex vs literal, git-aware. Results are ranked by frecency (most-accessed files first); matches within a file stay in source order. Default limit ${DEFAULT_GREP_LIMIT}.`,
+    name:          toolNames.grep,
+    label:         toolNames.grep,
+    description:   `Grep file contents. Smart-case, auto-detects regex vs literal, git-aware. Results are ranked by frecency (most-accessed files first); matches within a file stay in source order. Default limit ${DEFAULT_GREP_LIMIT}.`,
     promptSnippet: "Grep contents",
     promptGuidelines: [
       "Prefer bare identifiers as patterns. Literal queries are most efficient.",
@@ -309,14 +584,32 @@ export default function fffExtension(pi: ExtensionAPI) {
         details: { totalMatched: result.totalMatched, totalFiles: result.totalFiles },
       };
     },
+
+    renderCall(args, theme, context) {
+      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const pattern = args?.pattern ?? "";
+      const path = args?.path ?? ".";
+      let content =
+        theme.fg("toolTitle", theme.bold(toolNames.grep))
+        + " " + theme.fg("accent", `/${pattern}/`)
+        + theme.fg("toolOutput", ` in ${path}`);
+      if (args?.limit !== undefined) content += theme.fg("toolOutput", ` limit ${args.limit}`);
+      if (args?.cursor) content += theme.fg("muted", ` (page)`);
+      text.setText(content);
+      return text;
+    },
+
+    renderResult(result, options, theme, context) {
+      return renderTextResult(result, options, theme, context, 15);
+    },
   });
 
-  // ── fffind ────────────────────────────────────────────────────────────────────
+  // ── fffind ────────────────────────────────────────────────────────────────
 
   pi.registerTool({
-    name:        "fffind",
-    label:       "fffind",
-    description: `Fuzzy path search and glob search. Matches against the whole repo-relative path, not just the filename. Frecency-ranked, git-aware. Multi-word = narrower (AND). Default limit ${DEFAULT_FIND_LIMIT}.`,
+    name:          toolNames.find,
+    label:         toolNames.find,
+    description:   `Fuzzy path search and glob search. Matches against the whole repo-relative path, not just the filename. Frecency-ranked, git-aware. Multi-word = narrower (AND). Default limit ${DEFAULT_FIND_LIMIT}.`,
     promptSnippet: "Find files by path or glob",
     promptGuidelines: [
       "Matches the WHOLE path, not just the filename — `profile` hits `chrome/browser/profiles/x.cc` too.",
@@ -364,9 +657,60 @@ export default function fffExtension(pi: ExtensionAPI) {
         details: { totalMatched: result.totalMatched, totalFiles: result.totalFiles, pageIndex, hasMore },
       };
     },
+
+    renderCall(args, theme, context) {
+      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const pattern = args?.pattern ?? "";
+      const path = args?.path ?? ".";
+      let content =
+        theme.fg("toolTitle", theme.bold(toolNames.find))
+        + " " + theme.fg("accent", pattern)
+        + theme.fg("toolOutput", ` in ${path}`);
+      if (args?.limit !== undefined) content += theme.fg("toolOutput", ` (limit ${args.limit})`);
+      if (args?.cursor) content += theme.fg("muted", ` (page)`);
+      text.setText(content);
+      return text;
+    },
+
+    renderResult(result, options, theme, context) {
+      return renderTextResult(result, options, theme, context, 20);
+    },
   });
 
-  // ── Commands ──────────────────────────────────────────────────────────────────
+  // ── Commands ──────────────────────────────────────────────────────────────
+
+  pi.registerCommand("fff-mode", {
+    description: "Show or set FFF mode: /fff-mode [tools-and-ui | tools-only | override]",
+    handler: async (args, ctx) => {
+      const arg = (args || "").trim();
+
+      // No args — show current mode
+      if (!arg) {
+        const mode = getMode();
+        const flag = pi.getFlag("fff-mode") ?? "unset";
+        const env  = process.env.PI_FFF_MODE ?? "unset";
+        ctx.ui.notify(`Current mode: '${mode}'\nFlag: ${flag}, Env: ${env}`, "info");
+        return;
+      }
+
+      // Validate and set mode
+      if (!VALID_MODES.includes(arg as FffMode)) {
+        ctx.ui.notify(`Usage: /fff-mode [${VALID_MODES.join(" | ")}]`, "warning");
+        return;
+      }
+
+      const newMode = arg as FffMode;
+      const oldMode = getMode();
+      setMode(newMode);
+      applyEditorMode(ctx);
+
+      const note =
+        (oldMode === "override") !== (newMode === "override")
+          ? " (tool name change requires restart)"
+          : "";
+      ctx.ui.notify(`Mode changed: '${oldMode}' → '${newMode}'${note}`, "info");
+    },
+  });
 
   pi.registerCommand("fff-health", {
     description: "Show FFF file finder health and status",
@@ -376,9 +720,12 @@ export default function fffExtension(pi: ExtensionAPI) {
       if (!health.ok) { ctx.ui.notify(`Health check failed: ${health.error}`, "error"); return; }
       const h = health.value;
       const lines = [
+        `FFF v${h.version}`,
+        `Mode: ${getMode()}`,
         `Git: ${h.git.repositoryFound ? `yes (${h.git.workdir ?? "unknown"})` : "no"}`,
         `Picker: ${h.filePicker.initialized ? `${h.filePicker.indexedFiles ?? 0} files` : "not initialized"}`,
         `Frecency: ${h.frecency.initialized ? "active" : "disabled"}`,
+        `Query tracker: ${h.queryTracker.initialized ? "active" : "disabled"}`,
       ];
       const progress = finder.getScanProgress();
       if (progress.ok) {
