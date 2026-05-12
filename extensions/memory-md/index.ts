@@ -13,7 +13,7 @@
  * Socket:  ~/.cache/memory-md/<sha256[:16] of MEMORY_MD_DIR>/channel.sock
  */
 
-import { existsSync, openSync, mkdirSync, readFileSync, appendFileSync } from "node:fs";
+import { existsSync, openSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +26,7 @@ import {
   DefaultResourceLoader,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { registerTools, run, runWithInput, type ExecFn } from "./tools.ts";
+import { registerTools } from "./tools.ts";
 
 // ── Dir resolution ────────────────────────────────────────────────────────────
 
@@ -96,37 +96,45 @@ function loadWorkflowLogConfig(): WorkflowLogConfig | null {
   }
 }
 
-/** Create a section with an empty body, silently succeeding if it already exists. */
-async function ensureSection(memDir: string, path: string, heading: string): Promise<void> {
-  try {
-    await runWithInput(memDir, ["new", path, "--heading", heading], "");
-  } catch (err: any) {
-    if (!err.message?.includes("already exists")) throw err;
-  }
-}
-
-async function appendWorkflowEntry(memDir: string, title: string, body: string, ts: Date, execFn: ExecFn): Promise<void> {
+/**
+ * Write a workflow entry directly to workflow.md, bypassing the daemon.
+ *
+ * memory-md's write commands mutate only the markdown file and rely on the
+ * daemon's 500 ms fsnotify debounce to update the index. Chaining multiple
+ * `memory-md new` socket calls back-to-back races that window: step N+1 can
+ * ask the daemon for a parent that step N just wrote but hasn't been indexed
+ * yet. Writing the markdown directly avoids all daemon round-trips; the watcher
+ * picks up the single file change and indexes everything atomically.
+ */
+async function appendWorkflowEntry(memDir: string, title: string, body: string, ts: Date): Promise<void> {
   const pad = (n: number) => String(n).padStart(2, "0");
-  const hh = pad(ts.getHours()); const mm = pad(ts.getMinutes()); const ss = pad(ts.getSeconds());
-  const dateStr    = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}`;  // local "2026-05-12"
-  const timeSlug   = `${hh}-${mm}-${ss}`;                                                    // local "14-23-05"
-  const displayTime = `${hh}:${mm}`;                                                         // local "14:23"
+  const dateStr     = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}`;
+  const displayTime = `${pad(ts.getHours())}:${pad(ts.getMinutes())}`;
 
-  // 1. Ensure workflow.md file exists
-  const fileResult = await run(memDir, ["create-file", "workflow", "Workflow"], execFn);
-  if (!fileResult.ok && !fileResult.stderr.includes("already exists")) {
-    throw new Error(`Failed to create workflow file: ${fileResult.stderr}`);
+  const filePath = join(memDir, "workflow.md");
+
+  // Bootstrap the file if it doesn't exist yet (first ever workflow entry).
+  if (!existsSync(filePath)) {
+    mkdirSync(memDir, { recursive: true });
+    writeFileSync(filePath, "# Workflow\n\nAuto-generated activity log — do not edit manually.\n");
   }
 
-  // 2. Ensure ## YYYY-MM-DD date section exists
-  await ensureSection(memDir, `workflow/${dateStr}`, dateStr);
+  const content = readFileSync(filePath, "utf-8");
 
-  // 3. Create ### HH:MM:SS — title entry
-  await runWithInput(
-    memDir,
-    ["new", `workflow/${dateStr}/${timeSlug}`, "--heading", `${displayTime} \u2014 ${title}`],
-    body,
-  );
+  const parts: string[] = [];
+
+  // Add ## YYYY-MM-DD section header on first entry of the day.
+  if (!content.includes(`## ${dateStr}`)) {
+    parts.push(`\n## ${dateStr}\n`);
+  }
+
+  // ### HH:MM — title
+  parts.push(`\n### ${displayTime} \u2014 ${title}\n`);
+  if (body.trim()) {
+    parts.push(`\n${body.trim()}\n`);
+  }
+
+  appendFileSync(filePath, parts.join(""));
 }
 
 async function callModelForSummary(
@@ -452,7 +460,7 @@ Always prefer a canonical file over creating a new one. Create additional files 
         const body = lines.slice(1).join("\n").trim();
         if (!title) return;
 
-        await appendWorkflowEntry(memDir, title, body, new Date(), pi.exec.bind(pi));
+        await appendWorkflowEntry(memDir, title, body, new Date());
       } catch (err) {
         // Never crash the agent loop — append to daemon log + fire OS notification
         try {
