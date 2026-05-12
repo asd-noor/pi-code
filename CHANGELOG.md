@@ -13,6 +13,14 @@ All notable changes to this project will be documented in this file.
 - **git-stage**: Overlay layout changed from horizontal split (file list left 35%, diff right 65%) to vertical split (file list top ~35%, diff bottom ~65%). Both panels now use full overlay width.
 - **prompts/get-shit-done**: Steps section rewritten — scouting bypass gate added, `MultiAgent` typo fixed to `MultiSubagent`, worker spawning clarified to use individual `Subagent` background calls, dependency handling step separated, hunk-staging step added before git-commit, memory write step added after commit.
 
+## [1.18.1] - 2026-05-12
+
+### Fixed
+
+- **memory-md**: Workflow log errors no longer write to `process.stderr` (which broke the TUI). Errors are now appended to the daemon log (`~/.cache/memory-md/<hash>/daemon.log`, inspectable via `/memory logs`) and trigger a best-effort macOS OS notification.
+- **memory-md**: Date section existence check in `appendWorkflowEntry` now uses `memory-md get` instead of catching `"already exists"` error strings. The old approach could silently mask file corruption and let step 3 (`new workflow/<date>/<time>`) fail with a confusing "parent section not found" error.
+- **git-stage**: Fixed overlay flickering when switching between files. `allLines` is now padded to exactly `overlayRows` empty lines before rendering, so the overlay height is constant across all frames.
+
 ## [1.17.9] - 2026-05-10
 
 ### Fixed
