@@ -8,15 +8,14 @@
     "license": "GPL-3.0-only",
     "type": "module",
     "dependencies": {
+        "@tmustier/pi-files-widget": "*",
         "@aliou/pi-processes": "*"
     },
-    "bundledDependencies": [
-        "@aliou/pi-processes"
-    ],
     "pi": {
         "extensions": [
             "./extensions",
-            "node_modules/@aliou/pi-processes/src/index.ts"
+            "node_modules/@aliou/pi-processes/src/index.ts",
+            "node_modules/@tmustier/pi-files-widget/index.ts"
         ],
         "skills": [
             "./skills",
@@ -27,6 +26,7 @@
         ]
     },
     "bundleDependencies": [
+        "@tmustier/pi-files-widget",
         "@aliou/pi-processes"
     ],
     "overrides": {
