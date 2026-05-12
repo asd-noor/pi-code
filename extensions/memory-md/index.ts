@@ -96,6 +96,15 @@ function loadWorkflowLogConfig(): WorkflowLogConfig | null {
   }
 }
 
+/** Create a section with an empty body, silently succeeding if it already exists. */
+async function ensureSection(memDir: string, path: string, heading: string): Promise<void> {
+  try {
+    await runWithInput(memDir, ["new", path, "--heading", heading], "");
+  } catch (err: any) {
+    if (!err.message?.includes("already exists")) throw err;
+  }
+}
+
 async function appendWorkflowEntry(memDir: string, title: string, body: string, ts: Date, execFn: ExecFn): Promise<void> {
   const pad = (n: number) => String(n).padStart(2, "0");
   const hh = pad(ts.getHours()); const mm = pad(ts.getMinutes()); const ss = pad(ts.getSeconds());
@@ -104,20 +113,15 @@ async function appendWorkflowEntry(memDir: string, title: string, body: string, 
   const displayTime = `${hh}:${mm}`;                                                         // local "14:23"
 
   // 1. Ensure workflow.md file exists
-  try {
-    await run(memDir, ["create-file", "workflow", "Workflow"], execFn);
-  } catch (err: any) {
-    if (!err.message?.includes("already exists")) throw err;
+  const fileResult = await run(memDir, ["create-file", "workflow", "Workflow"], execFn);
+  if (!fileResult.ok && !fileResult.stderr.includes("already exists")) {
+    throw new Error(`Failed to create workflow file: ${fileResult.stderr}`);
   }
 
-  // 2. Ensure ## YYYY-MM-DD date section exists — use get to check rather than
-  // catching "already exists" strings, which is fragile and can mask corruption.
-  const dateCheck = await run(memDir, ["get", `workflow/${dateStr}`], execFn);
-  if (!dateCheck.ok) {
-    await runWithInput(memDir, ["new", `workflow/${dateStr}`, "--heading", dateStr], "");
-  }
+  // 2. Ensure ## YYYY-MM-DD date section exists
+  await ensureSection(memDir, `workflow/${dateStr}`, dateStr);
 
-  // 3. Create ### HH:MM — title entry
+  // 3. Create ### HH:MM:SS — title entry
   await runWithInput(
     memDir,
     ["new", `workflow/${dateStr}/${timeSlug}`, "--heading", `${displayTime} \u2014 ${title}`],
