@@ -13,7 +13,7 @@
  * Socket:  ~/.cache/memory-md/<sha256[:16] of MEMORY_MD_DIR>/channel.sock
  */
 
-import { existsSync, openSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, openSync, mkdirSync, readFileSync, appendFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -450,8 +450,15 @@ Always prefer a canonical file over creating a new one. Create additional files 
 
         await appendWorkflowEntry(memDir, title, body, new Date(), pi.exec.bind(pi));
       } catch (err) {
-        // Never crash the agent loop — log silently
-        process.stderr.write(`[memory-md] workflow log error: ${(err as any)?.message ?? err}\n`);
+        // Never crash the agent loop — append to daemon log + fire OS notification
+        try {
+          appendFileSync(getLogPath(memDir), `[workflow] error: ${(err as any)?.message ?? err}\n`);
+        } catch { /* ignore if log write also fails */ }
+        void pi.exec(
+          "osascript",
+          ["-e", `display notification "workflow log error — run /memory logs" with title "pi — memory-md"`],
+          { timeout: 3000 },
+        ).catch(() => { /* best-effort */ });
       }
     })();
   });
