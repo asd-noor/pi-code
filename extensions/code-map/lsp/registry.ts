@@ -38,7 +38,7 @@ const SERVER_DEFS: Array<{ detect: (root: string) => boolean; server: () => LspS
     }),
   },
   {
-    detect: (r) => existsSync(join(r, "go.mod")),
+    detect: (r) => existsSync(join(r, "go.mod")) || existsSync(join(r, "go.work")),
     server: () => ({
       command: resolveCmd("gopls"),
       args: [],
