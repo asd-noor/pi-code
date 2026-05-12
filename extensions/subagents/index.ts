@@ -157,11 +157,18 @@ function buildSubagentInstruction(): string {
     "**Use foreground ONLY when the result is immediately required to make a decision** — for example, you are researching options and need information before you can proceed.",
     "Any other case → background. Never block the conversation unless you have no choice.",
     "",
-    "### Parallel work — fan-out with MultiSubagent",
+    "### Parallel work — MultiSubagent vs individual Subagent",
     "",
-    "To run multiple independent agents in one shot, use the `MultiSubagent` tool.",
-    "Pass a `tasks` array — all agents start concurrently and results come back aggregated in one response.",
-    "Use `MultiSubagent` instead of calling `Subagent` repeatedly when tasks are independent.",
+    "**Use `MultiSubagent`** for read-only, autonomous agents that run to completion without guidance:",
+    "- Explore, Research, Data-Expert — they don't need mid-run steering and have no interdependencies.",
+    "- One tool call starts all agents concurrently; results come back aggregated.",
+    "",
+    "**Use individual `Subagent(run_in_background: true)` calls** for worker agents:",
+    "- Workers may hit ambiguity mid-task and need `steer_subagent` intervention.",
+    "- You may need to react to one worker's output before deciding what to spawn next.",
+    "- Spawning one at a time keeps you in control of sequencing and lets you intercept issues early.",
+    "",
+    "Note: `MultiSubagent` with `run_in_background: true` does return agent IDs, so `steer_subagent` technically works — but individual `Subagent` calls are the right mental model for workers you actively orchestrate.",
     "",
     "### Available agents",
     "",
@@ -513,7 +520,7 @@ Guidelines:
 
 All agents start concurrently. Foreground (default): blocks until every agent finishes, returns aggregated results. Background (run_in_background: true): returns all agent IDs immediately — use get_subagent_result to collect each result later.
 
-Use this instead of calling Subagent repeatedly when tasks are independent and you want them to run in parallel.
+Best suited for read-only, autonomous agents (Explore, Research, Data-Expert) that run to completion without mid-run steering. For worker agents that may need steer_subagent or have interdependencies, prefer individual Subagent(run_in_background: true) calls instead.
 
 Each task in the tasks array accepts the same per-agent options as the Subagent tool (subagent_type, prompt, description, model, thinking, max_turns, isolated, inherit_context, agenda_id).`,
     parameters: Type.Object({
