@@ -12,7 +12,7 @@ function q(s: string): string {
 }
 
 /** Run a memory-md subcommand via bash with MEMORY_MD_DIR set. */
-async function run(
+export async function run(
   memDir: string,
   args: string[],
   exec: ExecFn,
@@ -24,7 +24,7 @@ async function run(
 }
 
 /** Run a memory-md subcommand that reads the body from stdin (new / update). */
-function runWithInput(memDir: string, args: string[], body: string): Promise<string> {
+export function runWithInput(memDir: string, args: string[], body: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("memory-md", args, {
       env: { ...process.env, MEMORY_MD_DIR: memDir },

@@ -13,7 +13,7 @@
  * Socket:  ~/.cache/memory-md/<sha256[:16] of MEMORY_MD_DIR>/channel.sock
  */
 
-import { existsSync, openSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, openSync, mkdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +26,7 @@ import {
   DefaultResourceLoader,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { registerTools } from "./tools.ts";
+import { registerTools, run, runWithInput, type ExecFn } from "./tools.ts";
 
 // ── Dir resolution ────────────────────────────────────────────────────────────
 
@@ -96,37 +96,33 @@ function loadWorkflowLogConfig(): WorkflowLogConfig | null {
   }
 }
 
-function appendWorkflowEntry(memDir: string, title: string, body: string, ts: Date): void {
-  const filePath = join(memDir, "workflow.md");
+async function appendWorkflowEntry(memDir: string, title: string, body: string, ts: Date, execFn: ExecFn): Promise<void> {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const hh = pad(ts.getHours()); const mm = pad(ts.getMinutes()); const ss = pad(ts.getSeconds());
+  const dateStr    = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}`;  // local "2026-05-12"
+  const timeSlug   = `${hh}-${mm}-${ss}`;                                                    // local "14-23-05"
+  const displayTime = `${hh}:${mm}`;                                                         // local "14:23"
 
-  // Create file if missing
-  if (!existsSync(filePath)) {
-    writeFileSync(filePath, "# Workflow\n", "utf-8");
+  // 1. Ensure workflow.md file exists
+  try {
+    await run(memDir, ["create-file", "workflow", "Workflow"], execFn);
+  } catch (err: any) {
+    if (!err.message?.includes("already exists")) throw err;
   }
 
-  const dateStr = ts.toISOString().slice(0, 10); // "2026-05-09"
-  const timeStr = ts.toTimeString().slice(0, 5);  // "10:42"
-  const dateHeading = `## ${dateStr}`;
-
-  let content = readFileSync(filePath, "utf-8");
-
-  const newEntry = `\n### ${timeStr} \u2014 ${title}\n\n${body}\n`;
-
-  if (content.includes(dateHeading)) {
-    // Find where to insert: right before the next ## heading after the date, or at end
-    const afterDate = content.indexOf(dateHeading) + dateHeading.length;
-    const nextSection = content.indexOf("\n## ", afterDate);
-    if (nextSection === -1) {
-      content = content.trimEnd() + "\n" + newEntry;
-    } else {
-      content = content.slice(0, nextSection) + newEntry + content.slice(nextSection);
-    }
-  } else {
-    // Append new date section
-    content = content.trimEnd() + `\n\n${dateHeading}\n` + newEntry;
+  // 2. Ensure ## YYYY-MM-DD date section exists
+  try {
+    await runWithInput(memDir, ["new", `workflow/${dateStr}`, "--heading", dateStr], "");
+  } catch (err: any) {
+    if (!err.message?.includes("already exists")) throw err;
   }
 
-  writeFileSync(filePath, content, "utf-8");
+  // 3. Create ### HH:MM — title entry
+  await runWithInput(
+    memDir,
+    ["new", `workflow/${dateStr}/${timeSlug}`, "--heading", `${displayTime} \u2014 ${title}`],
+    body,
+  );
 }
 
 async function callModelForSummary(
@@ -452,7 +448,7 @@ Always prefer a canonical file over creating a new one. Create additional files 
         const body = lines.slice(1).join("\n").trim();
         if (!title) return;
 
-        appendWorkflowEntry(memDir, title, body, new Date());
+        await appendWorkflowEntry(memDir, title, body, new Date(), pi.exec.bind(pi));
       } catch (err) {
         // Never crash the agent loop — log silently
         process.stderr.write(`[memory-md] workflow log error: ${(err as any)?.message ?? err}\n`);
