@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.18.0] - 2026-05-12
+
+### Changed
+
+- **memory-md**: `appendWorkflowEntry` now writes through `memory-md` CLI (`create-file` + `new`) instead of raw `fs.readFileSync`/`writeFileSync`. `workflow.md` is structured as `## YYYY-MM-DD` / `### HH:MM — title` sections, consistently indexed by the daemon and searchable like all other memory files.
+- **memory-md**: All timestamps in workflow entries now use local time (via `Date` getters) instead of mixing UTC date (`toISOString`) with local time (`toTimeString`).
+- **memory-md**: `appendWorkflowEntry` is now `async`; `ExecFn` is threaded from `pi.exec.bind(pi)` at the call site. `run` and `runWithInput` exported from `tools.ts`.
+- **subagents**: `buildSubagentInstruction()` and the `MultiSubagent` tool description now clearly distinguish when to use `MultiSubagent` (read-only autonomous agents: Explore, Research, Data-Expert) vs individual `Subagent(run_in_background: true)` calls (worker agents that may need `steer_subagent` or sequential orchestration).
+- **git-stage**: Overlay layout changed from horizontal split (file list left 35%, diff right 65%) to vertical split (file list top ~35%, diff bottom ~65%). Both panels now use full overlay width.
+- **prompts/get-shit-done**: Steps section rewritten — scouting bypass gate added, `MultiAgent` typo fixed to `MultiSubagent`, worker spawning clarified to use individual `Subagent` background calls, dependency handling step separated, hunk-staging step added before git-commit, memory write step added after commit.
+
 ## [1.17.9] - 2026-05-10
 
 ### Fixed
