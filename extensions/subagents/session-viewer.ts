@@ -142,7 +142,7 @@ export class SessionViewer {
         }
       }
 
-      const thinking = turn.thinking?.trim();
+      const thinking = turn.thinking?.replace(/\t/g, "    ").trim();
       if (thinking) {
         const thinkWidth = Math.max(10, width - 6);
         lines.push(truncateToWidth(`    ${t.fg("dim", "\u27e8thinking\u27e9")}`, width));
@@ -157,6 +157,7 @@ export class SessionViewer {
         .replace(/<function_response>[\s\S]*?<\/function_response>/g, "")
         .replace(/<\/?(?:function_calls|function_response|invoke|parameter)[^>]*>/g, "")
         .replace(/\n{3,}/g, "\n\n")
+        .replace(/\t/g, "    ")
         .trim();
       if (text) {
         const textWidth = Math.max(10, width - 4);
