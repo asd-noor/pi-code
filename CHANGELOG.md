@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.19.0] - 2026-05-13
+
+### Fixed
+
+- **code-map**: `gopls` is now activated for Go workspace projects. The LSP detection condition in `lsp/registry.ts` checks for `go.work` in addition to `go.mod`, so multi-module workspace layouts correctly enable diagnostics and impact analysis.
+
 ## [1.18.0] - 2026-05-12
 
 ### Changed
