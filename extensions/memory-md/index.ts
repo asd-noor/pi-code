@@ -110,11 +110,11 @@ async function appendWorkflowEntry(memDir: string, title: string, body: string, 
     if (!err.message?.includes("already exists")) throw err;
   }
 
-  // 2. Ensure ## YYYY-MM-DD date section exists
-  try {
+  // 2. Ensure ## YYYY-MM-DD date section exists — use get to check rather than
+  // catching "already exists" strings, which is fragile and can mask corruption.
+  const dateCheck = await run(memDir, ["get", `workflow/${dateStr}`], execFn);
+  if (!dateCheck.ok) {
     await runWithInput(memDir, ["new", `workflow/${dateStr}`, "--heading", dateStr], "");
-  } catch (err: any) {
-    if (!err.message?.includes("already exists")) throw err;
   }
 
   // 3. Create ### HH:MM — title entry
