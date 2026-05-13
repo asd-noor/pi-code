@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2026-05-13
+
+### Added
+
+- **skills/httpyac**: New skill for sending HTTP, REST, GraphQL, gRPC, WebSocket, and MQTT requests from `.http`/`.rest` files using the `httpyac` CLI and Node.js API. Covers the full `httpyac send` flag reference, `.http` file format (variables, regions, annotations, chained requests), declarative assertions (`??`), inline JavaScript scripting (pre-request, post-response, global hooks), environment configuration via `http-client.env.json`, output formats (`--json`, `--junit`), `.httpyac.js` plugin hooks, and the programmatic `send()` / `getVariables()` / `getEnvironments()` API. Includes a dedicated **"Using parallel and ptc"** section with a decision guide, `parallel` fan-out patterns, uv-backed Python result parsers, multi-file aggregation scripts, and a multi-step bash workflow example.
+
 ## [2.0.1] - 2026-05-13
 
 ### Added
