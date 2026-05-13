@@ -40,7 +40,8 @@ Spawn autonomous sub-agents for parallel and delegated work. Each sub-agent runs
 | Command | Description |
 |---|---|
 | `/subagents` | Open interactive management menu |
-| `/delegate` | Delegate a task directly to a named subagent. Usage: `/delegate <agent> [task]` |
+| `/assign` | Assign a task directly to a named subagent. Usage: `/assign <agent> [task]` |
+| `/assign-multi` | Assign multiple tasks to agents in parallel. Usage: `/assign-multi agent1:task1; agent2:task2` |
 
 ## Management menu
 

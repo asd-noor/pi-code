@@ -7,7 +7,7 @@
  *   - get_subagent_result (check / retrieve background agent results)
  *   - steer_subagent      (inject a message into a running agent)
  *   - /subagents          (list running agents, view sessions)
- *   - /delegate           (quick-delegate to a named agent)
+ *   - /assign            (quick-assign to a named agent)
  *   - Live widget         (● Subagents above editor)
  */
 
@@ -825,11 +825,11 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
   });
 
   // =========================================================================
-  // Command: /delegate
+  // Command: /assign
   // =========================================================================
 
-  pi.registerCommand("delegate", {
-    description: "Delegate a task directly to a named subagent. Usage: /delegate <agent> [task]",
+  pi.registerCommand("assign", {
+    description: "Assign a task directly to a named subagent. Usage: /assign <agent> [task]",
 
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
       if (prefix.includes(" ")) return null;
@@ -844,7 +844,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
 
     handler: async (args, ctx) => {
       const trimmed = (args ?? "").trim();
-      if (!trimmed) { ctx.ui.notify("Usage: /delegate <agent-name> [task]", "error"); return; }
+      if (!trimmed) { ctx.ui.notify("Usage: /assign <agent-name> [task]", "error"); return; }
 
       const spaceIdx  = trimmed.indexOf(" ");
       const agentName = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
@@ -867,7 +867,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       const effectiveTask = task || "Proceed with your configured task.";
 
       // Spawn in background — mark resultConsumed so onComplete does not fire;
-      // delegate sends its own result message with triggerTurn: true.
+      // assign sends its own result message with triggerTurn: true.
       const agentId = manager.spawn({ ...ctx, cwd: currentCwd }, effectiveTask, {
         description,
         agentConfig,
@@ -887,7 +887,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
         const stats    = `${agentName} · ${rec.toolUses} tool use${rec.toolUses !== 1 ? "s" : ""} · ${duration}`;
         pi.sendMessage(
           {
-            customType: "delegate:result",
+            customType: "assign:result",
             content: `[${stats}]\n\n${output}`,
             display: true,
             details: { agentName, agentId, status: rec.status },
@@ -899,11 +899,11 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
   });
 
   // =========================================================================
-  // Command: /delegate-multi
+  // Command: /assign-multi
   // =========================================================================
 
-  pi.registerCommand("delegate-multi", {
-    description: "Delegate multiple tasks to agents in parallel. Usage: /delegate-multi agent1:task1; agent2:task2",
+  pi.registerCommand("assign-multi", {
+    description: "Assign multiple tasks to agents in parallel. Usage: /assign-multi agent1:task1; agent2:task2",
 
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
       const lastSemicolon = prefix.lastIndexOf(";");
@@ -920,7 +920,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
 
     handler: async (args, ctx) => {
       const trimmed = (args ?? "").trim();
-      if (!trimmed) { ctx.ui.notify("Usage: /delegate-multi agent1:task1; agent2:task2", "error"); return; }
+      if (!trimmed) { ctx.ui.notify("Usage: /assign-multi agent1:task1; agent2:task2", "error"); return; }
 
       currentCwd = resolveCwd(ctx, currentCwd);
       rebuildRegistry(currentCwd);
@@ -977,7 +977,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
         const content = results.map((r) => `[${r.label}]\n\n${r.output}`).join("\n\n---\n\n");
         pi.sendMessage(
           {
-            customType: "delegate-multi:result",
+            customType: "assign-multi:result",
             content,
             display: true,
             details: { count: resolved.length },
