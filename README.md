@@ -28,9 +28,13 @@ All extensions are automatically loaded from `./extensions/`:
 | [memory-md](./docs/memory-md.md) | Persistent markdown-backed memory store with hybrid FTS + vector search | Directory |
 | [subagents](./docs/subagents.md) | Spawn autonomous sub-agents for parallel and delegated work | Directory |
 | [git-stage](./docs/git-stage.md) | Interactive TUI for staging and unstaging git files via `/git-stage` | Directory |
-| [parallel](./docs/parallel.md) | Fan out multiple independent operations (read/bash/write/edit/ptc) in one call | Standalone |
+| finder | First-party `ffgrep`/`fffind` tools backed by `@ff-labs/fff-node` — frecency-ranked search, @-mention autocomplete, mode system | Directory |
+| scout | Native `web_search`, `web_extract`, `web_crawl`, `web_map`, `web_research`, `find_library_id`, `query_library_docs` tools via `tvly`/`ctx7` CLIs | Standalone |
+| ask-tool | Interactive clarification tool — structured multi-question UI for preference-sensitive decisions | Standalone |
+| [pi-files-widget](https://github.com/tmustier/pi-extensions/tree/main/files-widget) | In-terminal file browser and viewer via `/readfiles` — requires `bat`, `git-delta`, `glow` | Bundled |
+| [parallel](./docs/parallel.md) | Fan out multiple independent operations (read/bash/write/edit/ptc/code-map/memory/agenda/finder/scout) in one call | Standalone |
 | [pi-code-prompt](./docs/system-prompt.md) | Package-wide runtime policy injection | Standalone |
-| [ptc](./docs/ptc.md) | Programmatic Tool Calling — run Python/bash scripts in a single call with MCP access | Standalone |
+| [ptc](./docs/ptc.md) | Programmatic Tool Calling — run Python/bash scripts in a single call | Standalone |
 
 ## Skills
 
@@ -97,7 +101,8 @@ These are included automatically when you install `pi-code`:
 
 | Package | Purpose |
 |---|---|
-| ask-tool | Interactive clarification tool — native extension replacing `@eko24ive/pi-ask` |
+| `@tmustier/pi-files-widget` | In-terminal file browser (`/readfiles`) — requires `bat`, `git-delta`, `glow` |
+| `@ff-labs/fff-node` | Native Rust file-finder backing `ffgrep`/`fffind` tools |
 
 ### Peer Dependencies
 
@@ -141,17 +146,28 @@ The following binaries must be in your `PATH`:
 |---|---|---|
 | `memory-md` | Memory daemon for persistent storage | memory-md extension |
 | `uv` | Executes Python ptc scripts via `#!/usr/bin/env -S uv run --script` | ptc extension and parallel ptc slots |
+| `tvly` | Tavily CLI for web search, extract, crawl, map, research | scout extension |
+| `ctx7` | Context7 CLI for library ID resolution and docs | scout extension |
+| `bat` | Syntax-highlighted file viewer | pi-files-widget (`/readfiles`) — `brew install bat` |
+| `delta` | Git diff viewer | pi-files-widget (`/readfiles`) — `brew install git-delta` |
+| `glow` | Markdown renderer | pi-files-widget (`/readfiles`) — `brew install glow` |
 | `sq` | Command-line data wrangling for SQL databases and tabular files | data-wrangler skill — install from [sq.io/docs/install](https://sq.io/docs/install/) |
 | `hunk` | Interactive terminal diff viewer for code review sessions | hunk-review skill — install from [hunk.tools](https://hunk.tools) |
 
-### MCP Configuration
+### Scout Configuration
 
-For `doc-library` and `web-scout` skills to work, you need:
+For `doc-library` and `web-scout` skills, add API keys to `~/.pi/agent/pi-code.json`:
 
-1. **Context7 MCP server** configured in your Pi MCP settings (for `doc-library`)
-2. **Tavily MCP server** configured in your Pi MCP settings (for `web-scout`)
+```json
+{
+  "scout": {
+    "tavilyApiKey": "tvly-...",
+    "context7ApiKey": "ctx7sk-..."
+  }
+}
+```
 
-See the [doc-library](./docs/doc-library.md) and [web-scout](./docs/web-scout.md) documentation for setup instructions.
+See the [doc-library](./docs/doc-library.md) and [web-scout](./docs/web-scout.md) documentation for details.
 
 ## Features
 
@@ -272,6 +288,9 @@ pi "Read package.json and tsconfig.json, then analyze both"
 ```
 pi-code/
 ├── extensions/          # All extensions (auto-loaded)
+│   ├── finder/         # ffgrep / fffind (FileFinder + @-mention)
+│   ├── scout.ts        # web_search / web_extract / find_library_id etc.
+│   ├── ask-tool/       # Interactive clarification UI
 │   ├── git-stage/      # Interactive git staging TUI
 │   ├── agenda/         # Task tracking
 │   ├── code-map/       # Code intelligence
@@ -317,4 +336,4 @@ GPL-3.0-only
 
 ---
 
-**Note**: This package requires Pi coding agent and several external binaries (`memory-md`, `bun`). See Requirements section for full setup instructions.
+**Note**: This package requires Pi coding agent and several external binaries. See the Requirements section for the full list.
