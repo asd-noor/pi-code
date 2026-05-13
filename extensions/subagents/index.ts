@@ -577,7 +577,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       });
 
       const firstError = resolved.find((r) => "error" in r);
-      if (firstError && "error" in firstError) return textResult(firstError.error);
+      if (firstError && "error" in firstError) return textResult(firstError.error!);
 
       // ---- Background mode: spawn all, return IDs immediately ----
       if (runInBackground) {
@@ -623,7 +623,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
           const i = next++;
           const r = resolved[i]!;
           if ("error" in r) {
-            results[i] = { index: i, label: `Task ${i + 1} (error)`, output: r.error };
+            results[i] = { index: i, label: `Task ${i + 1} (error)`, output: r.error! };
             continue;
           }
           const { task, agentConfig, model, fellBack } = r;
@@ -861,32 +861,38 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       }
 
       ctx.ui.notify(`Delegating to ${agentName}…`, "info");
-      const description = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
+      const description  = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
       const effectiveTask = task || "Proceed with your configured task.";
-      const record = await manager.spawnAndWait({ ...ctx, cwd: currentCwd }, effectiveTask, {
+
+      // Spawn in background — return immediately so the TUI stays responsive
+      const agentId = manager.spawn({ ...ctx, cwd: currentCwd }, effectiveTask, {
         description,
         agentConfig,
+        isBackground: true,
       });
-      widget.markFinished(record.id);
 
-      if (record.status === "error") {
-        ctx.ui.notify(`${agentName} failed: ${record.error?.slice(0, 200) ?? "unknown error"}`, "error");
-        return;
-      }
-
-      const output   = record.result?.trim() || "(no output)";
-      const duration = record.completedAt ? formatMs(record.completedAt - record.startedAt) : "?";
-      const stats    = `${agentName} · ${duration} · ${record.toolUses} tool use${record.toolUses !== 1 ? "s" : ""}`;
-
-      pi.sendMessage(
-        {
-          customType: "delegate:result",
-          content: `[${stats}]\n\n${output}`,
-          display: true,
-          details: { agentName, agentId: record.id, status: record.status },
-        },
-        { deliverAs: "followUp" },
-      );
+      // Deliver result as a follow-up message when the agent finishes
+      const record = manager.getRecord(agentId)!;
+      record.promise!.then(() => {
+        widget.markFinished(agentId);
+        const rec = manager.getRecord(agentId)!;
+        if (rec.status === "error") {
+          ctx.ui.notify(`${agentName} failed: ${rec.error?.slice(0, 200) ?? "unknown error"}`, "error");
+          return;
+        }
+        const output   = rec.result?.trim() || "(no output)";
+        const duration = rec.completedAt ? formatMs(rec.completedAt - rec.startedAt) : "?";
+        const stats    = `${agentName} · ${duration} · ${rec.toolUses} tool use${rec.toolUses !== 1 ? "s" : ""}`;
+        pi.sendMessage(
+          {
+            customType: "delegate:result",
+            content: `[${stats}]\n\n${output}`,
+            display: true,
+            details: { agentName, agentId, status: rec.status },
+          },
+          { deliverAs: "followUp" },
+        );
+      });
     },
   });
 
@@ -942,39 +948,42 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
 
       ctx.ui.notify(`Delegating to ${resolved.length} agents in parallel…`, "info");
 
-      const results = new Array(resolved.length) as Array<{ agentName: string; label: string; output: string; status: string }> ;
-      await Promise.all(
-        resolved.map(async ({ agentName, task, agentConfig }, i) => {
-          const description = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
-          const record = await manager.spawnAndWait({ ...ctx, cwd: currentCwd }, task, {
-            description,
-            agentConfig,
-          });
-          widget.markFinished(record.id);
-          const duration = record.completedAt ? formatMs(record.completedAt - record.startedAt) : "?";
-          const stats    = `${agentName} · ${duration} · ${record.toolUses} tool use${record.toolUses !== 1 ? "s" : ""}`;
-          results[i] = {
-            agentName,
-            label:  stats,
-            output: record.status === "error" ? `ERROR: ${record.error ?? "unknown"}` : record.result?.trim() || "(no output)",
-            status: record.status,
-          };
-        }),
-      );
+      // Spawn all agents in background — return immediately so the TUI stays responsive
+      const agentIds = resolved.map(({ agentName, task, agentConfig }) => {
+        const description = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
+        return manager.spawn({ ...ctx, cwd: currentCwd }, task, {
+          description,
+          agentConfig,
+          isBackground: true,
+        });
+      });
 
-      const content = results
-        .map((r) => `[${r.label}]\n\n${r.output}`)
-        .join("\n\n---\n\n");
+      // Deliver combined result as a follow-up message when all agents finish
+      Promise.all(agentIds.map((id) => manager.getRecord(id)!.promise!)).then(() => {
+        const results = agentIds.map((id, i) => {
+          const rec = manager.getRecord(id)!;
+          widget.markFinished(id);
+          const agentName = resolved[i]!.agentName;
+          const duration  = rec.completedAt ? formatMs(rec.completedAt - rec.startedAt) : "?";
+          const stats     = `${agentName} · ${duration} · ${rec.toolUses} tool use${rec.toolUses !== 1 ? "s" : ""}`;
+          const output    = rec.status === "error" ? `ERROR: ${rec.error ?? "unknown"}` : rec.result?.trim() || "(no output)";
+          return { label: stats, output };
+        });
 
-      pi.sendMessage(
-        {
-          customType: "delegate-multi:result",
-          content,
-          display: true,
-          details: { count: resolved.length },
-        },
-        { deliverAs: "followUp" },
-      );
+        const content = results
+          .map((r) => `[${r.label}]\n\n${r.output}`)
+          .join("\n\n---\n\n");
+
+        pi.sendMessage(
+          {
+            customType: "delegate-multi:result",
+            content,
+            display: true,
+            details: { count: resolved.length },
+          },
+          { deliverAs: "followUp" },
+        );
+      });
     },
   });
 }

@@ -39,6 +39,7 @@ export class AgentManager {
   private activities = new Map<string, AgentActivity>();
   private queue: QueueItem[] = [];
   private runningBackground = 0;
+  private deferreds = new Map<string, { resolve: () => void }>();
   private maxConcurrent: number;
   private onComplete?: OnComplete;
   private onStart?: OnStart;
@@ -80,6 +81,11 @@ export class AgentManager {
     };
     this.records.set(id, record);
     this.activities.set(id, activity);
+
+    let _resolve!: () => void;
+    const promise = new Promise<void>((res) => { _resolve = res; });
+    record.promise = promise;
+    this.deferreds.set(id, { resolve: _resolve });
 
     if (options.isBackground && this.runningBackground >= this.maxConcurrent) {
       this.queue.push({ id, ctx, prompt, options });
@@ -143,6 +149,8 @@ export class AgentManager {
         this.onComplete?.(record);
         this.drainQueue();
       }
+      this.deferreds.get(id)?.resolve();
+      this.deferreds.delete(id);
     }).catch((err: any) => {
       if (record.status !== "stopped") record.status = "error";
       record.error = err?.message ?? String(err);
@@ -155,9 +163,9 @@ export class AgentManager {
         this.onComplete?.(record);
         this.drainQueue();
       }
+      this.deferreds.get(id)?.resolve();
+      this.deferreds.delete(id);
     });
-
-    record.promise = promise;
   }
 
   private drainQueue(): void {
