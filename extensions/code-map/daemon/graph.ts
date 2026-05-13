@@ -13,8 +13,6 @@ export const EXT_TO_LANG: Record<string, string> = {
   ".cjs": "javascript",
   ".py":  "python",
   ".go":  "go",
-  ".zig": "zig",
-  ".lua": "lua",
 };
 
 /** All language ids supported by tree-sitter */
@@ -24,7 +22,7 @@ export interface GraphNode {
   id: string;       // sha256(file:name:kind)[:16]
   name: string;
   kind: string;     // function | method | class | interface | …
-  language: string; // typescript | javascript | python | go | zig | lua
+  language: string; // typescript | javascript | python | go
   file: string;     // relative to rootPath
   lineStart: number;
   lineEnd: number;

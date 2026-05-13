@@ -30,10 +30,10 @@ const NODE_ADDON_REL = join(
  * Others (tree-sitter-go, -javascript, -python, -typescript) ship platform
  * prebuilts and work without recompilation.
  */
+// Only the core tree-sitter runtime needs compilation from source.
+// Grammar packages (go, ts, js, py) all ship platform prebuilts.
 const PACKAGES_NEED_BUILD = [
   "tree-sitter",
-  "tree-sitter-zig",
-  "tree-sitter-lua",
 ];
 
 export function isTreeSitterInstalled(): boolean {
@@ -53,8 +53,6 @@ export async function installTreeSitter(log: (msg: string) => void): Promise<voi
     "tree-sitter-javascript",
     "tree-sitter-python",
     "tree-sitter-go",
-    "tree-sitter-zig",
-    "tree-sitter-lua",
   ];
 
   runNpm(dir, packages, log);

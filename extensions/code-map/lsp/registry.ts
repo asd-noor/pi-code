@@ -48,16 +48,6 @@ const SERVER_DEFS: Array<{ detect: (root: string) => boolean; server: () => LspS
     }),
   },
   {
-    detect: (r) => existsSync(join(r, "build.zig")),
-    server: () => ({
-      command: resolveCmd("zls"),
-      args: ["--stdio"],
-      languageId: "zig",
-      extensions: [".zig"],
-      installId: "zls",
-    }),
-  },
-  {
     detect: (r) =>
       existsSync(join(r, "pyproject.toml")) ||
       existsSync(join(r, "setup.py")) ||
@@ -74,16 +64,6 @@ const SERVER_DEFS: Array<{ detect: (root: string) => boolean; server: () => LspS
         installId: isPyright ? "pyright-langserver" : "pylsp",
       };
     },
-  },
-  {
-    detect: (r) => existsSync(join(r, ".luarc.json")) || existsSync(join(r, ".luacheckrc")),
-    server: () => ({
-      command: resolveCmd("lua-language-server"),
-      args: [],
-      languageId: "lua",
-      extensions: [".lua"],
-      installId: "lua-language-server",
-    }),
   },
 ];
 

@@ -389,6 +389,11 @@ export class CodeMapDB {
     this.stmtSetMtime.run(relFile, mtimeMs);
   }
 
+  /** Clear all stored file mtimes, forcing every file to be re-indexed on next buildNodes(). */
+  clearMtimes(): void {
+    this.db.exec("DELETE FROM file_meta");
+  }
+
   getTrackedFiles(): Set<string> {
     const rows = this.stmtGetTrackedFiles.all() as Array<{ file: string }>;
     return new Set(rows.map((r) => r.file));

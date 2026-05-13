@@ -109,9 +109,9 @@ Prefer code-map tools over grep / read / bash for structural understanding:
 - Checking for type errors → \`code_map_diagnostics\` with \`severity:1\` — scope to a \`file\` to reduce noise; omit \`file\` for full project diagnostics after cross-file changes or refactoring
 - Before refactoring → \`code_map_impact\` to find all callers first
 
-Natively indexed languages: TypeScript (\`.ts\`, \`.tsx\`), JavaScript (\`.js\`, \`.jsx\`, \`.mjs\`, \`.cjs\`), Python (\`.py\`), Go (\`.go\`), Zig (\`.zig\`), Lua (\`.lua\`).
+Natively indexed languages: TypeScript (\`.ts\`, \`.tsx\`), JavaScript (\`.js\`, \`.jsx\`, \`.mjs\`, \`.cjs\`), Python (\`.py\`), Go (\`.go\`).
 
-All tools require a \`language\` parameter (one of: typescript, javascript, python, go, zig, lua). Passing an unsupported language returns a descriptive error. Fall back in order:
+All tools require a \`language\` parameter (one of: typescript, javascript, python, go). Passing an unsupported language returns a descriptive error. Fall back in order:
 1. \`ptc\` with a Python uv script (PEP 723) — use language-specific AST libraries (e.g. \`tree_sitter\`, \`libcst\`) for structured parsing
 2. \`ptc\` with a bash script using \`find\`, \`grep\`, \`awk\` — pattern-match function/class signatures directly`,
   }));
@@ -133,7 +133,13 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
     if (poller || !projectDir) return;
     poller = setInterval(() => {
       if (!projectDir) return;
-      const status = readStatus(projectDir);
+      // If the status file claims ready but the socket is gone, the daemon
+      // died unexpectedly (e.g. killed by an old session_shutdown racing with
+      // this session's start).  Show "stopped" so the footer is accurate.
+      const raw    = readStatus(projectDir);
+      const sock   = join(projectDir, "codemap-daemon.sock");
+      const status = (raw === "ready" || raw === "indexing" || raw === "starting")
+        && !existsSync(sock) ? "stopped" : raw;
       setFooterStatus(status);
     }, 2000);
   }
@@ -163,6 +169,16 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
     daemonChild = undefined;
   }
 
+  /** Kill any orphaned daemon left by a previous process (reads PID file). */
+  function killOrphan(): void {
+    if (!projectDir) return;
+    const pidPath = join(projectDir, "codemap-daemon.pid");
+    try {
+      const pid = parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
+      if (pid > 0) process.kill(pid, "SIGTERM");
+    } catch (_) { /* no pid file or process already gone */ }
+  }
+
   // ── Events ────────────────────────────────────────────────────────────────
 
   pi.on("session_start", async (event: any, ctx) => {
@@ -172,30 +188,28 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
     projectRoot = await resolveProjectRoot(ctx.cwd, pi.exec.bind(pi));
     projectDir  = getProjectDir(projectRoot);
 
-    // ── Client-only guard ────────────────────────────────────────────────────
-    // Subagent sessions must not touch the daemon — only the primary (UI)
-    // session manages the daemon lifecycle.  Detect via two complementary
-    // signals so either one alone is sufficient:
-    //   1. explicit `subagentMode` flag passed from agent-runner.ts via
-    //      bindExtensions({ subagentMode: true })
-    //   2. fallback: a socket file already exists for this project, meaning
-    //      another session already started (and owns) the daemon.
-    const sockPath = join(projectDir, "codemap-daemon.sock");
-    const existingStatus = readStatus(projectDir);
-    const daemonAlreadyUp =
-      existsSync(sockPath) &&
-      (existingStatus === "ready" || existingStatus === "starting" || existingStatus === "indexing");
-
-    if (event?.subagentMode || daemonAlreadyUp) {
+    // ── Client-only guard (subagents only) ────────────────────────────────────
+    // Subagent sessions connect to the running daemon; they must not spawn or
+    // kill it.  The only reliable signal is the explicit flag passed from
+    // agent-runner.ts via bindExtensions({ subagentMode: true }).
+    //
+    // The old "socket-exists" fallback has been intentionally removed: on pi
+    // restart both the old and new sessions exist briefly.  The fallback caused
+    // the new (primary) session to enter client-only mode just as the old
+    // session's session_shutdown killed the daemon, leaving the primary session
+    // permanently stuck with no daemon and no recovery path.
+    if (event?.subagentMode) {
       ownsDaemon = false;
-      setFooterStatus(existingStatus);
+      setFooterStatus(readStatus(projectDir));
       startPolling();
       return;
     }
 
     // ── Primary session: manage daemon lifecycle ─────────────────────────────
-    // Kill any leftover daemon from previous session
+    // Kill our own child (if any) and any orphaned daemon left by a crashed
+    // previous process (PID file) before spawning a fresh one.
     killDaemon();
+    killOrphan();
     if (poller) { clearInterval(poller); poller = undefined; }
 
     // Load config
@@ -253,16 +267,18 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
       }
 
       if (sub === "status" || sub === "") {
-        const status = readStatus(projectDir);
-        const cfg    = loadConfig();
+        const sockPath = join(projectDir, "codemap-daemon.sock");
+        const alive    = existsSync(sockPath);
+        const status   = alive ? readStatus(projectDir) : "stopped (socket missing)";
+        const cfg      = loadConfig();
         ctx.ui.notify(
           [
             `Status:     ${status}`,
             `Project:    ${projectRoot}`,
-            `Socket:     ${join(projectDir, "codemap-daemon.sock")}`,
+            `Socket:     ${sockPath}${alive ? "" : " (missing)"}`,
             `File limit: ${cfg.fileLimit}`,
           ].join("\n"),
-          "info",
+          alive ? "info" : "warning",
         );
 
       } else if (sub === "restart") {

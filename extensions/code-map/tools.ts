@@ -13,7 +13,7 @@ export function registerTools(pi: ExtensionAPI, getRoot: () => string | undefine
     promptSnippet: "Get structural outline of a file (functions, classes, methods, types)",
     parameters: Type.Object({
       file:     Type.String({ description: "Absolute or relative path to the file." }),
-      language: Type.String({ description: "Language id: typescript | javascript | python | go | zig | lua" }),
+      language: Type.String({ description: "Language id: typescript | javascript | python | go" }),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       const root = getRoot() ?? ctx.cwd;
@@ -38,7 +38,7 @@ export function registerTools(pi: ExtensionAPI, getRoot: () => string | undefine
     parameters: Type.Object({
       name:     Type.String({ description: "Symbol name to find." }),
       source:   Type.Optional(Type.Boolean({ description: "Include source snippet. Default: false." })),
-      language: Type.String({ description: "Language id: typescript | javascript | python | go | zig | lua" }),
+      language: Type.String({ description: "Language id: typescript | javascript | python | go" }),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       const root = getRoot() ?? ctx.cwd;
@@ -63,7 +63,7 @@ export function registerTools(pi: ExtensionAPI, getRoot: () => string | undefine
     parameters: Type.Object({
       file:     Type.Optional(Type.String({ description: "Filter to a specific file. Omit for all files." })),
       severity: Type.Optional(Type.Number({ description: "Minimum severity level (1=error, 2=warning, 3=info, 4=hint, 0=all). Default: 0." })),
-      language: Type.String({ description: "Language id: typescript | javascript | python | go | zig | lua" }),
+      language: Type.String({ description: "Language id: typescript | javascript | python | go" }),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       const root = getRoot() ?? ctx.cwd;
@@ -91,7 +91,7 @@ export function registerTools(pi: ExtensionAPI, getRoot: () => string | undefine
     promptSnippet: "Find callers of a symbol (blast radius analysis for refactoring)",
     parameters: Type.Object({
       name:     Type.String({ description: "Symbol name to find callers for." }),
-      language: Type.String({ description: "Language id: typescript | javascript | python | go | zig | lua" }),
+      language: Type.String({ description: "Language id: typescript | javascript | python | go" }),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       const root = getRoot() ?? ctx.cwd;

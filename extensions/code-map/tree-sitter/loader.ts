@@ -23,8 +23,9 @@ const EXT_TO_PKG: Array<{ exts: string[]; pkg: string; key?: string }> = [
   { exts: [".js", ".jsx", ".mjs", ".cjs"],        pkg: "tree-sitter-javascript" },
   { exts: [".py"],                                 pkg: "tree-sitter-python" },
   { exts: [".go"],                                 pkg: "tree-sitter-go" },
-  { exts: [".zig"],                                pkg: "tree-sitter-zig" },
-  { exts: [".lua"],                                pkg: "tree-sitter-lua" },
+  // zig and lua dropped: their npm packages (tree-sitter-zig@0.2.0,
+  // tree-sitter-lua@2.1.3) use the pre-v0.21 export format and cannot
+  // be loaded under tree-sitter v0.25 ("Invalid language object").
 ];
 
 /**
@@ -53,6 +54,14 @@ export function loadGrammars(tsDir: string, log?: (msg: string) => void): Loaded
       const grammar = req(pkg);
       const lang = key ? grammar[key] : grammar;
       if (!lang) continue;
+      // tree-sitter v0.21+ wraps the native binding in { language, nodeTypeInfo }.
+      // Old-format packages that expose the binding directly won't have .language
+      // and fail with "Invalid language object" when used with Parser.Query.
+      // Treat absence of .language as a package incompatibility and skip.
+      if (lang.language === undefined) {
+        log?.(`skipping ${pkg}: no .language binding — package incompatible with tree-sitter v0.25`);
+        continue;
+      }
       for (const ext of exts) {
         languages.set(ext, lang);
       }

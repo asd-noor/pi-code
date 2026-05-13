@@ -114,12 +114,34 @@ export class Indexer {
       }
     }
 
+    // ── Detect poisoned-DB state ────────────────────────────────────────────
+    // If all files appear fresh (mtimes match) but the node table is empty,
+    // a prior run stored mtimes without extracting any symbols — typically
+    // caused by a silent tree-sitter API failure (e.g. after a package
+    // upgrade that changed the grammar export format).  Force a full re-index
+    // by clearing all stored mtimes so every file is treated as stale.
+    if (staleFiles.length === 0 && freshCount > 0) {
+      const { nodes: storedNodes } = this.db.stats() as { nodes: number };
+      if (storedNodes === 0) {
+        this.log(
+          `DB corruption detected: ${freshCount} files have stored mtimes but 0 symbols exist — ` +
+          `clearing mtimes and forcing full re-index`,
+        );
+        this.db.clearMtimes();
+        for (const absFile of files) {
+          try { staleFiles.push({ abs: absFile, mtimeMs: statSync(absFile).mtimeMs }); } catch (_) {}
+        }
+        freshCount = 0;
+      }
+    }
+
     this.log(
       `building node graph from ${staleFiles.length} stale files ` +
       `(${freshCount} fresh, skipping)...`,
     );
 
     let count = 0;
+    const perLang = new Map<string, number>();
 
     for (const { abs: absFile, mtimeMs } of staleFiles) {
       if (this.aborted) return;
@@ -132,7 +154,11 @@ export class Indexer {
         // file with no declarations); LSP's role is diagnostics + relations.
         try {
           const nodes = parser.parseFile(absFile, relFile);
-          if (nodes.length > 0) this.db.insertNodes(nodes);
+          if (nodes.length > 0) {
+            this.db.insertNodes(nodes);
+            const lang = EXT_TO_LANG[ext];
+            perLang.set(lang, (perLang.get(lang) ?? 0) + nodes.length);
+          }
           this.db.setMtime(relFile, mtimeMs);
           count += nodes.length;
         } catch (err) {
@@ -146,8 +172,11 @@ export class Indexer {
       //  symbol extraction.)
     }
 
+    const langSummary = perLang.size > 0
+      ? ` (${[...perLang.entries()].map(([l, n]) => `${l}: ${n}`).join(", ")})`
+      : "";
     this.log(
-      `node graph ready: ${count} new symbols indexed across ${staleFiles.length} files`,
+      `node graph ready: ${count} new symbols indexed across ${staleFiles.length} files${langSummary}`,
     );
   }
 

@@ -25,8 +25,6 @@ const LANG_TO_EXT: Record<string, string> = {
   javascript: ".js",
   python:     ".py",
   go:         ".go",
-  zig:        ".zig",
-  lua:        ".lua",
 };
 
 export class TreeSitterParser {
@@ -34,10 +32,15 @@ export class TreeSitterParser {
   private queryCache = new Map<string, any>();
   /** Reusable Parser instances keyed by language id */
   private parserCache = new Map<string, any>();
+  /** Languages whose query failed to compile — log once, never retry */
+  private queryFailures = new Set<string>();
 
   private grammars: LoadedGrammars;
-  constructor(grammars: LoadedGrammars) {
+  private log: (msg: string) => void;
+
+  constructor(grammars: LoadedGrammars, log?: (msg: string) => void) {
     this.grammars = grammars;
+    this.log = log ?? (() => {});
   }
 
   /**
@@ -84,7 +87,8 @@ export class TreeSitterParser {
       if (!query) return [];
       const matches = query.matches(tree.rootNode);
       return this.matchesToNodes(matches, relPath, resolvedLanguage);
-    } catch {
+    } catch (err) {
+      this.log(`tree-sitter parse error [${langId}] ${relPath}: ${err instanceof Error ? err.message : String(err)}`);
       return [];
     }
   }
@@ -93,11 +97,21 @@ export class TreeSitterParser {
 
   private getQuery(langId: string, language: any, queryStr: string): any | null {
     if (this.queryCache.has(langId)) return this.queryCache.get(langId)!;
+    if (this.queryFailures.has(langId)) return null; // already failed — don't retry
     try {
-      const q = language.query(queryStr);
+      // tree-sitter v0.21+: Query is a constructor on the Parser export.
+      // Older API (language.query()) no longer exists in v0.25.
+      const QueryCtor = this.grammars.Parser.Query as new (lang: any, src: string) => any;
+      const q = new QueryCtor(language, queryStr);
+      q._init(); // initialises JS-land predicate functions (required in v0.25+)
       this.queryCache.set(langId, q);
       return q;
-    } catch {
+    } catch (err) {
+      this.queryFailures.add(langId);
+      this.log(
+        `tree-sitter query compilation failed [${langId}]: ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+      );
       return null;
     }
   }

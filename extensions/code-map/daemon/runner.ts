@@ -121,7 +121,7 @@ async function main() {
   try {
     const grammars = loadGrammars(getTreeSitterDir(), log);
     if (grammars) {
-      tsParser = new TreeSitterParser(grammars);
+      tsParser = new TreeSitterParser(grammars, log);
       log(`tree-sitter loaded (${grammars.languages.size} grammars)`);
     } else {
       log("tree-sitter grammars unavailable — falling back to LSP symbols");
