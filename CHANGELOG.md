@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.1] - 2026-05-13
+
+### Fixed
+
+- **code-map**: Subagent sessions no longer spawn a competing daemon. Previously, `bindExtensions()` in the subagent runner triggered `session_start` on the code-map extension inside every subagent, which deleted the primary session's socket file, started a second daemon for the same project root, then killed it on `session_shutdown` — leaving the primary session's tools with no socket. Fixed with a dual-signal client-only guard: (1) `bindExtensions({ subagentMode: true })` in `agent-runner.ts` passes an explicit flag; (2) a fallback checks whether a socket file already exists. Client-only sessions set `ownsDaemon = false`, only poll the status for footer updates, and never spawn or kill the daemon.
+- **parallel**: `opCodeMap` now resolves the git root via `git rev-parse --show-toplevel` (cached per cwd) before constructing the `SocketClient`, so `parallel` code-map slots work correctly when `ctx.cwd` is a subdirectory rather than the project root.
+
 ## [2.1.0] - 2026-05-13
 
 ### Added
