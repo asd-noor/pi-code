@@ -9,17 +9,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const SYSTEM_INSTRUCTION = `
-## Runtime Policy
-
-### Skill Routing
-
-Before any non-trivial action, run a deterministic skill-routing pass:
-
-1. Evaluate every available skill against: user intent, requested output type, required tools, keyword overlap.
-2. Auto-select when a skill clearly matches. Combine complementary skills when both apply.
-3. Re-run routing when task scope changes mid-work.
-4. Read the selected \`SKILL.md\` in full before using its tools.
-
 ## Mandatory Pre-Call Check
 
 Before every tool action, run this internal decision check:
@@ -36,14 +25,7 @@ Use \`parallel\` when you have 2+ independent operations to fan out in one call.
 
 Slots must be independent of each other (no slot depends on another's output). Results come back together, and you can combine or process them after the call. Prefer \`parallel\` over sequential calls whenever the independence condition holds.
 
-## pi-processes — Background Process Management
-
-Use the \`process\` tool for any long-running command (dev servers, test watchers, build watchers, log tails).
-Never use shell background tricks (\`cmd &\`, \`nohup\`, \`disown\`) — use the process tool instead.
-Start processes and continue the task immediately; do not block on them.
-Read the \`pi-processes\` skill for the full tool API and \`logWatches\` reference.
-
-### Change safety
+## Change safety
 
 - Prefer minimal, targeted changes aligned with the existing codebase style.
 - Understand context before editing: outline the file, check callers, review diagnostics.
