@@ -7,7 +7,8 @@
  *   - get_subagent_result (check / retrieve background agent results)
  *   - steer_subagent      (inject a message into a running agent)
  *   - /subagents          (list running agents, view sessions)
- *   - /assign            (quick-assign to a named agent)
+ *   - /assign            (quick-assign to a named agent, result triggers AI turn)
+ *   - /delegate          (fire-and-forget assign — UI-only feedback, no AI turn)
  *   - Live widget         (● Subagents above editor)
  */
 
@@ -984,6 +985,71 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
           },
           { deliverAs: "followUp", triggerTurn: true },
         );
+      });
+    },
+  });
+
+  // =========================================================================
+  // Command: /delegate
+  // =========================================================================
+
+  pi.registerCommand("delegate", {
+    description: "Fire-and-forget: run a named subagent in background with UI-only feedback. Usage: /delegate <agent> [task]",
+
+    getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+      if (prefix.includes(" ")) return null;
+      rebuildRegistry(currentCwd);
+      return getAvailableTypes()
+        .filter((name) => name.toLowerCase().startsWith(prefix.toLowerCase()))
+        .map((name) => {
+          const cfg = getConfig(name);
+          return { value: name + " ", label: name, description: cfg?.description };
+        });
+    },
+
+    handler: async (args, ctx) => {
+      const trimmed = (args ?? "").trim();
+      if (!trimmed) { ctx.ui.notify("Usage: /delegate <agent-name> [task]", "error"); return; }
+
+      const spaceIdx   = trimmed.indexOf(" ");
+      const agentName  = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
+      const task       = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1).trim();
+
+      currentCwd = resolveCwd(ctx, currentCwd);
+      rebuildRegistry(currentCwd);
+      const agentConfig = getConfig(agentName);
+
+      if (!agentConfig) {
+        const available = getAvailableTypes().join(", ") || "none";
+        ctx.ui.notify(`Unknown agent: "${agentName}". Available: ${available}`, "error");
+        return;
+      }
+
+      widget.setUICtx(ctx.ui);
+      const description   = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
+      const effectiveTask = task || "Proceed with your configured task.";
+
+      ctx.ui.notify(`▶ ${agentName}: ${description}`, "info");
+
+      const agentId = manager.spawn({ ...ctx, cwd: currentCwd }, effectiveTask, {
+        description,
+        agentConfig,
+        isBackground: true,
+      });
+      // resultConsumed suppresses onComplete — no message injected, no AI turn triggered
+      manager.getRecord(agentId)!.resultConsumed = true;
+
+      manager.getRecord(agentId)!.promise!.then(() => {
+        widget.markFinished(agentId);
+        const rec      = manager.getRecord(agentId)!;
+        const duration = rec.completedAt ? formatMs(rec.completedAt - rec.startedAt) : "?";
+        const tools    = `${rec.toolUses} tool use${rec.toolUses !== 1 ? "s" : ""}`;
+        if (rec.status === "error") {
+          ctx.ui.notify(`✗ ${agentName} failed · ${duration}\n${rec.error?.slice(0, 200) ?? "unknown error"}`, "error");
+          return;
+        }
+        const preview  = rec.result?.trim().split("\n")[0]?.slice(0, 120) ?? "";
+        ctx.ui.notify(`✓ ${agentName} · ${tools} · ${duration}${preview ? "\n" + preview : ""}`, "info");
       });
     },
   });
