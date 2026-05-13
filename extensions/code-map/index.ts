@@ -101,19 +101,19 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => ({
     systemPrompt: event.systemPrompt + `
 
-## Code intelligence (code-map)
+## Code intelligence (code-map) — always use, never skip
 
-Prefer code-map tools over grep / read / bash for structural understanding:
-- Before editing a file → \`code_map_outline\`
-- Finding a definition → \`code_map_symbol\` (add \`source:true\` to skip a separate read call)
-- Checking for type errors → \`code_map_diagnostics\` with \`severity:1\` — scope to a \`file\` to reduce noise; omit \`file\` for full project diagnostics after cross-file changes or refactoring
-- Before refactoring → \`code_map_impact\` to find all callers first
+code-map is indexed and ready. For TypeScript, JavaScript, Python, and Go these tools are **mandatory** — do not use \`read\`, \`grep\`, \`ffgrep\`, or \`bash\` to understand code structure when a code-map tool applies.
 
-Natively indexed languages: TypeScript (\`.ts\`, \`.tsx\`), JavaScript (\`.js\`, \`.jsx\`, \`.mjs\`, \`.cjs\`), Python (\`.py\`), Go (\`.go\`).
+| Task | Tool | Do NOT use |
+|------|------|------------|
+| Understand a file before editing | \`code_map_outline\` | \`read\` + scanning |
+| Find a symbol definition | \`code_map_symbol\` + \`source:true\` | \`ffgrep\`, \`grep\` |
+| Check type errors / warnings | \`code_map_diagnostics\` (severity:1) | \`bash tsc\` / \`bash go build\` |
+| Before changing any function or type | \`code_map_impact\` — always | \`ffgrep\` for callers |
 
-All tools require a \`language\` parameter (one of: typescript, javascript, python, go). Passing an unsupported language returns a descriptive error. Fall back in order:
-1. \`ptc\` with a Python uv script (PEP 723) — use language-specific AST libraries (e.g. \`tree_sitter\`, \`libcst\`) for structured parsing
-2. \`ptc\` with a bash script using \`find\`, \`grep\`, \`awk\` — pattern-match function/class signatures directly`,
+All tools require a \`language\` parameter: typescript | javascript | python | go.
+For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
   }));
 
 

@@ -16,7 +16,7 @@ Before every tool action, run this internal decision check:
 - Will this likely require >1 tool call?
 - Do I need iterative discovery/search/read/aggregate steps?
 - Am I less than 100% certain one direct call is enough?
-- Am I about to \`grep\`, \`read\`, or \`bash\` a file just to understand its structure or find a symbol? → use \`code_map_outline\` / \`code_map_symbol\` instead.
+- Am I about to \`grep\`, \`read\`, \`ffgrep\`, or \`bash\` a file just to understand its structure or find a symbol? → **stop — use \`code_map_outline\` / \`code_map_symbol\` instead.** These are always faster and more accurate.
 
 ## Tool selection
 
@@ -26,16 +26,24 @@ Use \`parallel\` when you have 2+ independent operations to fan out in one call.
 
 Slots must be independent of each other (no slot depends on another's output). Results come back together, and you can combine or process them after the call. Prefer \`parallel\` over sequential calls whenever the independence condition holds.
 
-### Code intelligence — hard triggers (use these before grep/read/bash)
+### Code intelligence — mandatory (never use grep/read/bash for these)
 
-| Situation | Tool |
-|-----------|------|
-| Need to understand a file's structure before editing | \`code_map_outline\` |
-| Need to find where a symbol is defined | \`code_map_symbol\` (add \`source:true\` to skip a follow-up read) |
-| Need to check for type errors | \`code_map_diagnostics\` with \`severity:1\` |
-| About to rename, move, or change a function/type | \`code_map_impact\` to find all callers first |
+code-map is indexed and always available for TypeScript, JavaScript, Python, and Go. Using grep, ffgrep, read, or bash to explore code structure in these languages is always wrong when a code-map tool applies.
 
-Supported languages: \`typescript\`, \`javascript\`, \`python\`, \`go\`, \`zig\`, \`lua\`. For anything else, fall back to \`ptc\` with tree-sitter or grep.
+| Situation | Required tool | Do NOT use |
+|-----------|---------------|------------|
+| Understand a file before editing | \`code_map_outline\` | \`read\` + manual scanning |
+| Find where a symbol is defined | \`code_map_symbol\` (add \`source:true\` for the snippet) | \`ffgrep\`, \`grep\` |
+| Check for type errors or warnings | \`code_map_diagnostics\` (severity:1 for errors only) | \`bash tsc\` / \`bash go build\` |
+| Rename, move, or change a function/type | \`code_map_impact\` first — always | \`ffgrep\` for callers |
+
+**Hard rules:**
+- Run \`code_map_outline\` before editing any supported-language file.
+- Run \`code_map_impact\` before changing any function, method, type, or interface signature.
+- Run \`code_map_diagnostics\` after edits to confirm no new errors were introduced.
+- \`code_map_symbol\` with \`source:true\` replaces a \`read\` + search in nearly every case.
+
+Supported languages: \`typescript\`, \`javascript\`, \`python\`, \`go\`. For other languages fall back to \`ptc\` with tree-sitter or \`ffgrep\`.
 
 ## Change safety
 
