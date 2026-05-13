@@ -1,6 +1,6 @@
 ---
 description: Fast codebase exploration agent (read-only)
-display_name: Explore
+display_name: Explorer
 tools: read, bash, grep, find, ls
 model: github-copilot/claude-haiku-4.5
 prompt_mode: replace
