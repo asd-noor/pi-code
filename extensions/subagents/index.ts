@@ -871,8 +871,10 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
         isBackground: true,
       });
 
-      // Deliver result as a follow-up message when the agent finishes
+      // Mark consumed immediately so the generic onComplete handler does not
+      // also fire a subagents:complete message — delegate delivers its own result.
       const record = manager.getRecord(agentId)!;
+      record.resultConsumed = true;
       record.promise!.then(() => {
         widget.markFinished(agentId);
         const rec = manager.getRecord(agentId)!;
@@ -951,11 +953,14 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       // Spawn all agents in background — return immediately so the TUI stays responsive
       const agentIds = resolved.map(({ agentName, task, agentConfig }) => {
         const description = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
-        return manager.spawn({ ...ctx, cwd: currentCwd }, task, {
+        const id = manager.spawn({ ...ctx, cwd: currentCwd }, task, {
           description,
           agentConfig,
           isBackground: true,
         });
+        // Mark consumed so onComplete does not send a duplicate subagents:complete
+        manager.getRecord(id)!.resultConsumed = true;
+        return id;
       });
 
       // Deliver combined result as a follow-up message when all agents finish
