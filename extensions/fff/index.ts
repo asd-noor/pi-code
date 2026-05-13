@@ -744,4 +744,34 @@ export default function fffExtension(pi: ExtensionAPI) {
       ctx.ui.notify("FFF rescan triggered", "info");
     },
   });
+
+  // ── System prompt instructions ────────────────────────────────────────────
+
+  const FFF_INSTRUCTION = `
+## fff — file search and grep
+
+\`ffgrep\` and \`fffind\` are the primary tools for exploring and searching the codebase.
+
+### When to use each
+
+- **\`fffind\`** — first step whenever you need to locate files. Prefer over \`ls\`, \`find\`, or \`bash\` for any file discovery task. Frecency-ranked (most-accessed files surface first).
+- **\`ffgrep\`** — first step whenever you need to search file contents. Prefer over \`bash\` + ripgrep/grep. Auto-detects regex vs literal; falls back to fuzzy when no exact matches found.
+
+### Usage rules
+
+- After 1–2 greps, \`read\` the top match rather than grepping more.
+- Use \`path\` to scope (\`src/\`, \`*.ts\`) and \`exclude\` to cut noise (\`test/\`, \`*.min.js\`).
+- \`caseSensitive: true\` only when exact case matters — smart-case is the default.
+- Multi-word \`fffind\` queries narrow results (AND, order-independent).
+
+### Editor features
+
+- **@-mention autocomplete**: type \`@\` in the prompt editor to fuzzy-search and insert file paths.
+- **\`/fff-mode [tools-and-ui|tools-only|override]\`**: switch modes at runtime (\`override\` registers tools as \`grep\`/\`find\` — requires restart).
+- **\`/fff-health\`**: check indexing status, version, frecency, and git state.
+`.trim();
+
+  pi.on("before_agent_start", async (event) => ({
+    systemPrompt: `${event.systemPrompt}\n\n${FFF_INSTRUCTION}`,
+  }));
 }

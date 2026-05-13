@@ -380,4 +380,27 @@ export default function (pi: ExtensionAPI) {
       return toResult("query_library_docs", await runCLI("ctx7", args, ctx7Env, 30_000, signal));
     },
   });
+
+  // ── System prompt instructions ────────────────────────────────────────────
+
+  const SCOUT_INSTRUCTION = `
+## Scout — web search and library docs
+
+### Hard triggers (always use these tools directly)
+
+- Task requires library API references, code examples, or tool docs → \`find_library_id\` then \`query_library_docs\`. **Never hallucinate APIs** — look them up.
+- Task requires real-time web data, news, or facts beyond the knowledge cutoff → \`web_search\`.
+- Broad or complex research requiring cross-source synthesis → \`web_research\` (takes several minutes).
+- Fetching specific URLs → \`web_extract\`; mirroring a docs site → \`web_crawl\`; discovering site structure → \`web_map\`.
+
+### Sequencing rules
+
+- Always call \`find_library_id\` first — never pass a library name directly to \`query_library_docs\`.
+- If the project already pins an older library version, flag it and ask before upgrading.
+- Prefer \`web_search\` (fast) over \`web_research\` (deep); only escalate when search results are insufficient.
+`.trim();
+
+  pi.on("before_agent_start", async (event) => ({
+    systemPrompt: `${event.systemPrompt}\n\n${SCOUT_INSTRUCTION}`,
+  }));
 }
