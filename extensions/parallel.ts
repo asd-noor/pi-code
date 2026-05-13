@@ -761,7 +761,7 @@ Python + uv by default and only choose bash when the task is clearly pure shell;
 - Any supported extension tool (including \`ptc\`, \`mcporter\`) — pass \`tool: "<name>"\` plus the tool's normal args as additional fields
 - Python \`ptc\` slots execute the saved script file directly so the shebang triggers \`uv run --script\`
 - Prefer uv-backed Python scripts because uv is robust at dependency management and its cache makes repeated runs very fast
-- `ffgrep` and `fffind` are supported when the fff extension is loaded
+- \`ffgrep\` and \`fffind\` are supported when the fff extension is loaded
 
 Typical pattern: fan out several independent \`read\`, \`ptc\`, or other extension-tool calls, get all
 results back in one shot, then decide what to do. Use a raw \`bash\` slot only for a one-shot shell command; otherwise prefer a bash script via \`ptc\`.
