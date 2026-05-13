@@ -128,8 +128,9 @@ async function appendWorkflowEntry(memDir: string, title: string, body: string, 
     parts.push(`\n## ${dateStr}\n`);
   }
 
-  // ### HH:MM — title
-  parts.push(`\n### ${displayTime} \u2014 ${title}\n`);
+  // ### HH:MM (heading only — title and body go below, not in the heading)
+  parts.push(`\n### ${displayTime}\n`);
+  parts.push(`\n**${title}**\n`);
   if (body.trim()) {
     parts.push(`\n${body.trim()}\n`);
   }
