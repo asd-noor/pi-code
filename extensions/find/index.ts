@@ -1,5 +1,5 @@
 /**
- * extensions/fff/index.ts — First-party fff extension.
+ * extensions/find/index.ts — First-party fff extension.
  *
  * Owns the FileFinder singleton, registers `ffgrep` and `fffind` tools, and
  * bridges the instance to other extensions (e.g. parallel.ts) via pi.events:
