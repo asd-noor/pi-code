@@ -128,6 +128,7 @@ export class Indexer {
           `clearing mtimes and forcing full re-index`,
         );
         this.db.clearMtimes();
+        this.db.clearIndex();
         for (const absFile of files) {
           try { staleFiles.push({ abs: absFile, mtimeMs: statSync(absFile).mtimeMs }); } catch (_) {}
         }

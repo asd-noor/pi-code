@@ -231,9 +231,10 @@ export class DaemonServer {
       throw new Error("LSP still initializing — impact analysis available shortly");
     }
 
-    if (!this.db.isIndexed(target.id)) {
+    if (!this.db.isIndexed(target.id) ||
+        (this.db.getReverseRefs(target.id).length === 0 && lspClient && this.readyLangs.has(langId))) {
       if (!lspClient) {
-        throw new Error(`No LSP running for language '${language}'`);
+        throw new Error(`No LSP running for language '${language}' — impact analysis unavailable`);
       }
       try {
         const refs = await lspClient.references(absFile, target.lineStart - 1, target.colStart, false);

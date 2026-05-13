@@ -394,6 +394,12 @@ export class CodeMapDB {
     this.db.exec("DELETE FROM file_meta");
   }
 
+  /** Clear the reverse-reference index so it is rebuilt on next impact query. */
+  clearIndex(): void {
+    this.db.exec("DELETE FROM reverse_refs");
+    this.db.exec("DELETE FROM indexed_nodes");
+  }
+
   getTrackedFiles(): Set<string> {
     const rows = this.stmtGetTrackedFiles.all() as Array<{ file: string }>;
     return new Set(rows.map((r) => r.file));

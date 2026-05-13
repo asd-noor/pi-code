@@ -302,6 +302,8 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
           if (existsSync(dbPath)) {
             const db = new DatabaseSync(dbPath);
             db.exec("DELETE FROM file_meta");
+            db.exec("DELETE FROM indexed_nodes");
+            db.exec("DELETE FROM reverse_refs");
             db.close();
           }
         } catch (_) { /* non-fatal — daemon will re-index anyway via corruption guard */ }
