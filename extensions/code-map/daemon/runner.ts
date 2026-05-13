@@ -23,7 +23,7 @@
  * LSP failure after step 5 is non-fatal — the tree-sitter index stays available.
  */
 
-import { writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { LspClient } from "../lsp/client.ts";
@@ -92,8 +92,15 @@ async function shutdown(
   await server.close();
   await Promise.all(uniqueClients.map(({ client }) => client.shutdown()));
   db.close();
-  try { unlinkSync(sockFile); } catch (_) {}
-  try { unlinkSync(pidFile); } catch (_) {}
+  // Only remove the socket/pid if we still own them — a newer daemon may have
+  // already taken over (written its own pid) while we were shutting down.
+  try {
+    const storedPid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+    if (storedPid === process.pid) {
+      try { unlinkSync(sockFile); } catch (_) {}
+      try { unlinkSync(pidFile); } catch (_) {}
+    }
+  } catch (_) { /* pid file already gone — another daemon took over */ }
   process.exit(0);
 }
 
@@ -278,7 +285,12 @@ async function main() {
 main().catch((err) => {
   log(`fatal: ${err}`);
   writeFileSync(statusFile, "error", "utf8");
-  try { unlinkSync(sockFile); } catch (_) {}
-  try { unlinkSync(pidFile); } catch (_) {}
+  try {
+    const storedPid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+    if (storedPid === process.pid) {
+      try { unlinkSync(sockFile); } catch (_) {}
+      try { unlinkSync(pidFile); } catch (_) {}
+    }
+  } catch (_) {}
   process.exit(1);
 });

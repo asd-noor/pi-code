@@ -249,9 +249,9 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
   // ── /code-map command ─────────────────────────────────────────────────────
 
   pi.registerCommand("code-map", {
-    description: "code-map daemon management: status | restart | index | logs",
+    description: "code-map daemon management: status | restart | logs",
     getArgumentCompletions: (prefix: string) => {
-      const subs = ["status", "restart", "index", "logs"];
+      const subs = ["status", "restart", "logs"];
       const matches = subs
         .filter((s) => s.startsWith(prefix.toLowerCase()))
         .map((s) => ({ value: s, label: s }));
@@ -290,36 +290,12 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
         daemonChild = spawnDaemon(projectRoot, config);
         startPolling();
 
-      } else if (sub === "index") {
-        ctx.ui.notify("code-map: clearing index and forcing full re-index…", "info");
-        if (poller) { clearInterval(poller); poller = undefined; }
-        killDaemon();
-        killOrphan();
-        // Clear stored mtimes so the daemon re-parses every file on next start
-        try {
-          const { DatabaseSync } = await import("node:sqlite");
-          const dbPath = join(projectDir, "codemap.db");
-          if (existsSync(dbPath)) {
-            const db = new DatabaseSync(dbPath);
-            db.exec("DELETE FROM file_meta");
-            db.exec("DELETE FROM indexed_nodes");
-            db.exec("DELETE FROM reverse_refs");
-            db.close();
-          }
-        } catch (_) { /* non-fatal — daemon will re-index anyway via corruption guard */ }
-        const indexCfg = loadConfig();
-        ownsDaemon = true;
-        setFooterStatus("starting");
-        try { writeFileSync(join(projectDir, "codemap-daemon.status"), "starting", "utf-8"); } catch {}
-        daemonChild = spawnDaemon(projectRoot, indexCfg);
-        startPolling();
-
       } else if (sub === "logs") {
         const tail = readLogTail(projectDir);
         ctx.ui.notify(tail, "info");
 
       } else {
-        ctx.ui.notify(`code-map: unknown sub-command "${sub}". Use: status | restart | index | logs`, "warning");
+        ctx.ui.notify(`code-map: unknown sub-command "${sub}". Use: status | restart | logs`, "warning");
       }
     },
   });
