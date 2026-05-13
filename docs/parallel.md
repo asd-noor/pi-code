@@ -1,6 +1,6 @@
 # parallel
 
-Fan out multiple independent operations (read, bash, write, edit, ptc, code_map_*, memory_*) in one tool call. All run concurrently via `Promise.all`; results are returned together.
+Fan out multiple independent operations in one tool call. All slots run concurrently via `Promise.all`; results are returned together.
 
 ## LLM tool
 
@@ -14,206 +14,173 @@ Fan out multiple independent operations (read, bash, write, edit, ptc, code_map_
 |---|---|---|
 | `calls` | array | List of operations to execute (minimum 2). Each must specify a `tool` and its arguments. |
 
-### Supported operations
+### Supported slots
 
-Each item in the `calls` array is one of:
+#### Native
 
-#### `read`
 ```typescript
-{
-  tool: "read",
-  path: string,        // relative or absolute
-  offset?: number,     // line to start from (1-indexed)
-  limit?: number       // max lines to read
-}
-```
-
-#### `bash`
-```typescript
-{
-  tool: "bash",
-  command: string,     // bash command
-  timeout?: number,    // seconds (default: 120)
-  stdin?: string       // data to pipe to stdin
-}
-```
-
-#### `write`
-```typescript
-{
-  tool: "write",
-  path: string,        // creates parent dirs automatically
-  content: string      // file content
-}
-```
-
-#### `edit`
-```typescript
-{
-  tool: "edit",
-  path: string,
-  edits: Array<{       // exact text replacements
-    oldText: string,   // must be unique in file
-    newText: string
-  }>
-}
+{ tool: "read",  path: string, offset?: number, limit?: number }
+{ tool: "bash",  command: string, timeout?: number, stdin?: string }
+{ tool: "write", path: string, content: string }
+{ tool: "edit",  path: string, edits: Array<{ oldText: string, newText: string }> }
 ```
 
 #### `ptc`
+
 ```typescript
 {
   tool: "ptc",
-  purpose: string,     // one-line description shown in UI
+  purpose: string,          // one-line description shown in UI
   type: "python" | "bash",
-  script: string,      // full script (Python needs PEP 723 block)
-  args?: string[],     // command-line arguments
-  stdin?: string       // pipe to script stdin
+  script: string,           // full script (Python needs PEP 723 block + uv shebang)
+  args?: string[],
+  stdin?: string
 }
 ```
 
-#### `code_map_outline` / `code_map_symbol` / `code_map_diagnostics` / `code_map_impact`
+#### Code intelligence
+
 ```typescript
-// outline
-{ tool: "code_map_outline", file: string }
-
-// symbol
-{ tool: "code_map_symbol", name: string, source?: boolean }
-
-// diagnostics
-{ tool: "code_map_diagnostics", file?: string, severity?: number }
-
-// impact
-{ tool: "code_map_impact", name: string }
+{ tool: "code_map_outline",     file: string, language: string }
+{ tool: "code_map_symbol",      name: string, language: string, source?: boolean }
+{ tool: "code_map_diagnostics", language: string, file?: string, severity?: number }
+{ tool: "code_map_impact",      name: string, language: string }
 ```
 
-#### `memory_list` / `memory_get` / `memory_search` / `memory_validate_file`
+#### Memory (read-only / safe for parallel)
+
 ```typescript
 { tool: "memory_list",          file?: string }
 { tool: "memory_get",           path: string }
 { tool: "memory_search",        query: string, top?: number }
+{ tool: "memory_create_file",   name: string, title: string, description?: string }
+{ tool: "memory_delete_file",   name: string }
 { tool: "memory_validate_file", name: string }
 ```
 
-> ⚠️ Write tools (`memory_new`, `memory_update`, `memory_delete`, `memory_create_file`,
-> `memory_delete_file`) are **not supported** in `parallel` — concurrent writes can corrupt
-> the memory file. Use them sequentially with the native memory tools.
+> ⚠️ `memory_new`, `memory_update`, and `memory_delete` are **not allowed** in `parallel` — concurrent writes corrupt markdown-backed memory files. Call them sequentially via the native tools.
+
+#### Agenda
+
+```typescript
+{ tool: "agenda_create", title: string, description: string, acceptanceGuard: string, tasks?: string[], discoveries?: any[] }
+{ tool: "agenda_discovery_add",    agendaId: number, category: string, title: string, detail?: string, outcome?: string, source?: string }
+{ tool: "agenda_discovery_get",    agendaId: number, discoveryId: number }
+{ tool: "agenda_discovery_list",   agendaId: number, category?: string }
+{ tool: "agenda_discovery_delete", agendaId: number, discoveryId: number }
+```
+
+SQLite WAL mode safely serialises concurrent writes for all agenda slots.
+
+#### File search — `ffgrep` / `fffind` (requires finder extension)
+
+```typescript
+{
+  tool: "ffgrep",
+  pattern: string,
+  path?: string,           // repo-relative path constraint or glob
+  exclude?: string | string[],
+  caseSensitive?: boolean,
+  context?: number,        // lines before+after each match
+  limit?: number,
+  cursor?: string          // pagination
+}
+
+{
+  tool: "fffind",
+  pattern: string,
+  path?: string,
+  exclude?: string | string[],
+  limit?: number,
+  cursor?: string
+}
+```
+
+#### Scout / web (requires scout extension)
+
+```typescript
+{ tool: "web_search",   query: string, max_results?: number, depth?: string, topic?: string, time_range?: string, include_domains?: string[], exclude_domains?: string[], include_answer?: string, include_raw_content?: string }
+{ tool: "web_extract",  urls: string[], query?: string, extract_depth?: string, format?: string, chunks_per_source?: number }
+{ tool: "web_crawl",    url: string, max_depth?: number, max_breadth?: number, limit?: number, instructions?: string, select_paths?: string[], extract_depth?: string, format?: string }
+{ tool: "web_map",      url: string, max_depth?: number, max_breadth?: number, limit?: number, instructions?: string, select_paths?: string[] }
+{ tool: "web_research", topic: string, model?: "mini" | "pro" | "auto" }
+{ tool: "find_library_id",    library_name: string, query: string }
+{ tool: "query_library_docs", library_id: string, query: string }
+```
 
 ## When to use
 
 ✅ **Use `parallel` when:**
 - You have 2+ operations that are **independent** (no operation depends on another's output)
-- Results don't need processing — just returned together
-- Examples:
-  - Read multiple files to gather context
-  - Run several independent ptc analysis scripts
-  - Mix reads + bash commands + ptc calls
+- Reading multiple files, running multiple searches, fanning out analysis scripts
+- Mixing reads + bash + ptc + search calls
 
 ❌ **Don't use `parallel` when:**
 - Operations are sequential/dependent
-- You need to process results before the next operation
-- Multiple edits target the same file (use the native `edit` tool instead)
+- Multiple edits target the **same file** (use the native `edit` tool with multiple `edits[]` entries)
 
-## Important constraints
+## Edit safety
 
-### Independence requirement
-Operations in a `parallel` call must be **completely independent**. You cannot:
-- Use the output of one operation as input to another
-- Have operations that depend on execution order
-
-If operations are dependent, use sequential individual tool calls instead.
-
-### Edit safety
-⚠️ **Critical:** `parallel`'s `edit` operation does **not** use the native mutation queue.
-
-**Do not** include two `edit` calls targeting the same file in one `parallel` invocation. This will cause a race condition.
-
-For multiple edits to the same file, use the native `edit` tool with multiple entries in the `edits[]` array.
+`parallel`'s `edit` slot does **not** use the native mutation queue. Never include two `edit` calls targeting the same file in one `parallel` call — use the native `edit` tool instead.
 
 ## Examples
 
-### Example 1: Read multiple files
+### Read multiple files concurrently
 ```typescript
-parallel({
-  calls: [
-    { tool: "read", path: "src/auth.ts" },
-    { tool: "read", path: "src/api.ts" },
-    { tool: "read", path: "tests/auth.test.ts" }
-  ]
-})
+parallel({ calls: [
+  { tool: "read", path: "src/auth.ts" },
+  { tool: "read", path: "src/api.ts" },
+  { tool: "bash", command: "git log --oneline -5" }
+]})
 ```
 
-### Example 2: Mix ptc + read + bash
+### Fan out search + analysis
 ```typescript
-parallel({
-  calls: [
-    {
-      tool: "ptc",
-      type: "python",
-      script: "# /// script\n# requires-python = \">=3.11\"\n# ///\nprint('Analysis 1')"
-    },
-    { tool: "read", path: "config.json" },
-    { tool: "bash", command: "git log --oneline -5" }
-  ]
-})
+parallel({ calls: [
+  { tool: "ffgrep",  pattern: "FileFinder", path: "extensions/" },
+  { tool: "fffind",  pattern: "finder index" },
+  { tool: "memory_search", query: "fff extension FileFinder" }
+]})
 ```
 
-### Example 3: Multiple independent writes
+### Web research + library docs in one shot
 ```typescript
-parallel({
-  calls: [
-    { tool: "write", path: "out/report1.txt", content: "..." },
-    { tool: "write", path: "out/report2.txt", content: "..." },
-    { tool: "write", path: "out/summary.txt", content: "..." }
-  ]
-})
+parallel({ calls: [
+  { tool: "web_search", query: "vite 6 breaking changes" },
+  { tool: "find_library_id", library_name: "vite", query: "migration guide" }
+]})
+```
+
+### Multiple independent ptc scripts
+```typescript
+parallel({ calls: [
+  { tool: "ptc", purpose: "analyse auth.ts", type: "python", script: "..." },
+  { tool: "ptc", purpose: "analyse db.ts",   type: "python", script: "..." }
+]})
 ```
 
 ## Output format
 
 Results are returned in order, separated by `---`:
-
 ```
 [0] read
 <file content>
-
 ---
-
-[1] bash
-<command output>
-
+[1] bash ❌ ERROR
+<error message>
 ---
-
 [2] ptc
 <script output>
 ```
 
-Errors are marked with `❌ ERROR` and include the error message.
+- All fail → `isError: true`
+- Some fail → `isError: false`, errors visible in output
+- Details: `{ totalCalls, errors, results[] }`
 
-## Tool status
+## Implementation
 
-- If **all** operations fail → `isError: true`
-- If **some** operations fail → `isError: false`, but errors are visible in output
-- Details object includes: `{ totalCalls, errors, results[] }`
-
-## Relationship to ptc
-
-`ptc` remains the **default for all work**. Use `parallel` only when you need to fan out multiple independent operations simultaneously.
-
-Pattern:
-1. **Single operation?** → Use `ptc`
-2. **Multiple independent operations?** → Use `parallel` (can include `ptc` calls as slots)
-3. **Sequential/dependent operations?** → Use `ptc` or individual tools
-
-## Implementation details
-
-- All operations execute via `Promise.all` — truly concurrent
-- Extension tool support is implemented by **inlining** the tool logic directly into `parallel.ts` — no dynamic dispatch or monkey-patching
-- Supported inlined tools: `ptc`, `code_map_outline/symbol/diagnostics/impact`, read-only `memory_*` tools (`memory_list`, `memory_get`, `memory_search`, `memory_validate_file`)
-- Memory write tools (`memory_new`, `memory_update`, `memory_delete`, `memory_create_file`, `memory_delete_file`) are **excluded** — concurrent writes can corrupt the memory file; use them sequentially
-- Agenda tools (`agenda_*`) are intentionally **not** supported — those are sequential by nature
-- Sandbox for ptc scripts: `/tmp/pi-sandbox/`
-- Python scripts run via `uv run`
-- Bash scripts execute in `/bin/bash`
-- File operations resolve relative to `cwd` (current working directory)
-- Timeout default: 120 seconds (configurable per operation)
-- Max buffer: 10 MB per operation
+- All slots run via `Promise.all` — truly concurrent
+- Extension tool logic is **inlined directly** into `parallel.ts` — no dynamic dispatch
+- ptc sandbox: `/tmp/pi-sandbox/`
+- Timeout default: 120 s (ptc), varies per scout tool (web_research: 600 s)
+- Max buffer: 10 MB per slot

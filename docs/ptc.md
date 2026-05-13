@@ -6,6 +6,7 @@ A `ptc` tool that runs a Python or bash script in a single tool call, replacing 
 
 | Parameter | Type | Description |
 |---|---|---|
+| `purpose` | string | **Required.** One-line description shown in the UI when the tool runs. |
 | `type` | `"python"` \| `"bash"` | Script type. Prefer `python` unless the task is pure shell. |
 | `script` | string | Full script content |
 | `args` | string[]? | Command-line arguments passed to the script |
@@ -69,6 +70,8 @@ The tool returns exit code + stderr on failure. Fix the script and call `ptc` ag
 ## System instruction
 
 A PTC instruction is appended to the system prompt on every turn, covering:
+- `ptc` as the default tool over multi-hop sequential calls
 - Script type priority (python → bash)
 - PEP 723 metadata block requirement
+- `parallel` for 2+ independent operations
 - Retry behaviour on failure
