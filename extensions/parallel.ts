@@ -13,7 +13,7 @@
  *            agenda_create
  *            agenda_discovery_add, agenda_discovery_get,
  *            agenda_discovery_list, agenda_discovery_delete
- *            ffgrep, fffind  (via shared FileFinder from extensions/find)
+ *            ffgrep, fffind  (via shared FileFinder from extensions/finder)
  *            web_search, web_extract, web_crawl, web_map, web_research,
  *            find_library_id, query_library_docs  (scout CLI tools)
  *
@@ -48,13 +48,13 @@ import { DISCOVERY_CATEGORIES, DISCOVERY_OUTCOMES } from "./agenda/types.ts";
 import { formatDiscovery, formatDiscoveryList } from "./agenda/format.ts";
 import { AGENDA_DISCOVERY_TOOL_NAMES } from "./agenda/tools.ts";
 import type { FileFinder, GrepCursor } from "@ff-labs/fff-node";
-import { buildQuery } from "./find/query.ts";
+import { buildQuery } from "./finder/query.ts";
 
 const execAsync     = promisify(exec);
 const execFileAsync = promisify(execFile);
 const SANDBOX_DIR   = "/tmp/pi-sandbox";
 
-// ── fff state (shared FileFinder received from extensions/find via pi.events) ──
+// ── fff state (shared FileFinder received from extensions/finder via pi.events) ──
 let sharedFinder: FileFinder | null = null;
 
 const fffGrepCursorCache = new Map<string, GrepCursor>();
@@ -222,7 +222,7 @@ const ExtCall = Type.Object(
         "memory_create_file, memory_delete_file, memory_validate_file. " +
         "agenda_create. " +
         "agenda_discovery_add, agenda_discovery_get, agenda_discovery_list, agenda_discovery_delete. " +
-        "ffgrep, fffind (requires extensions/find to be loaded — shares its FileFinder via pi.events). " +
+        "ffgrep, fffind (requires extensions/finder to be loaded — shares its FileFinder via pi.events). " +
         "web_search, web_extract, web_crawl, web_map, web_research, find_library_id, query_library_docs (scout CLI tools). " +
         "NOT allowed (concurrent writes corrupt memory files): memory_new, memory_update, memory_delete — call these sequentially via the native tools. " +
         "Pass the tool's normal arguments as additional fields alongside `tool`.",
@@ -406,7 +406,7 @@ async function opMemory(toolName: string, params: Record<string, any>, cwd: stri
 
 async function opFfgrep(params: Record<string, any>, cwd: string): Promise<string> {
   if (!sharedFinder || sharedFinder.isDestroyed)
-    throw new Error("fff finder not available — is extensions/find loaded?");
+    throw new Error("fff finder not available — is extensions/finder loaded?");
 
   const effectiveLimit = Math.max(1, params.limit ?? 20);
   const query          = buildQuery(params.path, params.pattern, params.exclude, cwd);
@@ -453,7 +453,7 @@ async function opFfgrep(params: Record<string, any>, cwd: string): Promise<strin
 
 async function opFfffind(params: Record<string, any>, cwd: string): Promise<string> {
   if (!sharedFinder || sharedFinder.isDestroyed)
-    throw new Error("fff finder not available — is extensions/find loaded?");
+    throw new Error("fff finder not available — is extensions/finder loaded?");
 
   const resumed        = params.cursor ? fffFindCursorCache.get(params.cursor) : undefined;
   const effectiveLimit = resumed ? resumed.pageSize : Math.max(1, params.limit ?? 30);
@@ -746,7 +746,7 @@ const SCOUT_TOOLS = new Set([
   "find_library_id", "query_library_docs",
 ]);
 
-/** fff search tools — share the FileFinder singleton from extensions/find via pi.events. */
+/** fff search tools — share the FileFinder singleton from extensions/finder via pi.events. */
 const FFF_TOOLS = new Set(["ffgrep", "fffind"]);
 
 /** Memory tools safe for concurrent execution (read-only or independent file ops). */
@@ -921,7 +921,7 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // Receive the shared FileFinder from extensions/find
+  // Receive the shared FileFinder from extensions/finder
   pi.events.on("fff:finder", (data: any) => {
     sharedFinder = data.finder as FileFinder;
   });
