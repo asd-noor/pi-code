@@ -15,6 +15,8 @@
  *            agenda_discovery_add, agenda_discovery_get,
  *            agenda_discovery_list, agenda_discovery_delete
  *            ffgrep, fffind  (via shared FileFinder from extensions/fff)
+ *            web_search, web_extract, web_crawl, web_map, web_research,
+ *            find_library_id, query_library_docs  (scout CLI tools)
  *
  * Blacklisted (concurrent writes corrupt memory files):
  *            memory_new, memory_update, memory_delete
@@ -27,6 +29,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { exec, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -231,6 +234,7 @@ const ExtCall = Type.Object(
         "agenda_create. " +
         "agenda_discovery_add, agenda_discovery_get, agenda_discovery_list, agenda_discovery_delete. " +
         "ffgrep, fffind (requires extensions/fff to be loaded — shares its FileFinder via pi.events). " +
+        "web_search, web_extract, web_crawl, web_map, web_research, find_library_id, query_library_docs (scout CLI tools). " +
         "NOT allowed (concurrent writes corrupt memory files): memory_new, memory_update, memory_delete — call these sequentially via the native tools. " +
         "Pass the tool's normal arguments as additional fields alongside `tool`.",
     }),
@@ -541,6 +545,109 @@ async function opFfffind(params: Record<string, any>, cwd: string): Promise<stri
   return output;
 }
 
+// ── scout tool implementations ───────────────────────────────────────────────
+
+/** Config loaded once — same source as extensions/scout/index.ts. */
+function loadScoutConfig(): { tavilyEnv: Record<string, string>; ctx7Env: Record<string, string> } {
+  try {
+    const raw = readFileSync(`${homedir()}/.pi/agent/pi-code.json`, "utf8");
+    const json = JSON.parse(raw);
+    return {
+      tavilyEnv: json?.scout?.tavilyApiKey  ? { TAVILY_API_KEY:  json.scout.tavilyApiKey  } : {},
+      ctx7Env:   json?.scout?.context7ApiKey ? { CONTEXT7_API_KEY: json.scout.context7ApiKey } : {},
+    };
+  } catch {
+    return { tavilyEnv: {}, ctx7Env: {} };
+  }
+}
+
+async function opScout(
+  toolName: string,
+  params: Record<string, any>,
+  signal: AbortSignal | undefined,
+): Promise<string> {
+  const { tavilyEnv, ctx7Env } = loadScoutConfig();
+
+  type CLISpec = { cmd: string; args: string[]; env: Record<string, string>; timeoutMs: number };
+
+  function buildSpec(): CLISpec {
+    switch (toolName) {
+      case "web_search": {
+        const args = ["search", params.query, "--json"];
+        if (params.max_results    != null) args.push("--max-results",        String(params.max_results));
+        if (params.depth)                  args.push("--depth",              params.depth);
+        if (params.topic)                  args.push("--topic",              params.topic);
+        if (params.time_range)             args.push("--time-range",         params.time_range);
+        if (params.include_domains?.length)  args.push("--include-domains",  params.include_domains.join(","));
+        if (params.exclude_domains?.length)  args.push("--exclude-domains",  params.exclude_domains.join(","));
+        if (params.include_answer)         args.push("--include-answer",     params.include_answer);
+        if (params.include_raw_content)    args.push("--include-raw-content", params.include_raw_content);
+        return { cmd: "tvly", args, env: tavilyEnv, timeoutMs: 30_000 };
+      }
+      case "web_extract": {
+        const args = ["extract", ...params.urls, "--json"];
+        if (params.query)                     args.push("--query",              params.query);
+        if (params.extract_depth)             args.push("--extract-depth",      params.extract_depth);
+        if (params.format)                    args.push("--format",             params.format);
+        if (params.chunks_per_source != null) args.push("--chunks-per-source",  String(params.chunks_per_source));
+        return { cmd: "tvly", args, env: tavilyEnv, timeoutMs: 60_000 };
+      }
+      case "web_crawl": {
+        const args = ["crawl", params.url, "--json"];
+        if (params.max_depth    != null)   args.push("--max-depth",     String(params.max_depth));
+        if (params.max_breadth  != null)   args.push("--max-breadth",   String(params.max_breadth));
+        if (params.limit        != null)   args.push("--limit",         String(params.limit));
+        if (params.instructions)           args.push("--instructions",  params.instructions);
+        if (params.select_paths?.length)   args.push("--select-paths",  params.select_paths.join(","));
+        if (params.extract_depth)          args.push("--extract-depth", params.extract_depth);
+        if (params.format)                 args.push("--format",        params.format);
+        return { cmd: "tvly", args, env: tavilyEnv, timeoutMs: 120_000 };
+      }
+      case "web_map": {
+        const args = ["map", params.url, "--json"];
+        if (params.max_depth   != null)  args.push("--max-depth",    String(params.max_depth));
+        if (params.max_breadth != null)  args.push("--max-breadth",  String(params.max_breadth));
+        if (params.limit       != null)  args.push("--limit",        String(params.limit));
+        if (params.instructions)         args.push("--instructions", params.instructions);
+        if (params.select_paths?.length) args.push("--select-paths", params.select_paths.join(","));
+        return { cmd: "tvly", args, env: tavilyEnv, timeoutMs: 60_000 };
+      }
+      case "web_research": {
+        const args = ["research", params.topic, "--json"];
+        if (params.model && params.model !== "auto") args.push("--model", params.model);
+        return { cmd: "tvly", args, env: tavilyEnv, timeoutMs: 600_000 };
+      }
+      case "find_library_id": {
+        return { cmd: "ctx7", args: ["library", params.library_name, params.query, "--json"], env: ctx7Env, timeoutMs: 30_000 };
+      }
+      case "query_library_docs": {
+        return { cmd: "ctx7", args: ["docs", params.library_id, params.query, "--json"], env: ctx7Env, timeoutMs: 30_000 };
+      }
+      default:
+        throw new Error(`Unknown scout tool: ${toolName}`);
+    }
+  }
+
+  const { cmd, args, env, timeoutMs } = buildSpec();
+
+  return new Promise((resolve, reject) => {
+    const proc = execFile(cmd, args, {
+      env:       { ...process.env, ...env },
+      timeout:   timeoutMs,
+      maxBuffer: 10 * 1024 * 1024,
+      signal,
+    } as any, (err, stdout, stderr) => {
+      if (err) {
+        const detail = (stderr || "").trim() || (err.message ?? `exit ${(err as any).code}`);
+        resolve(`${toolName} failed: ${detail}`);
+      } else {
+        resolve((stdout || "").trim() || "(no output)");
+      }
+    });
+    void proc;
+  });
+}
+
 // ── agenda_create implementation ────────────────────────────────────────────
 
 async function opAgendaCreate(params: Record<string, any>, cwd: string): Promise<string> {
@@ -690,6 +797,12 @@ const AGENDA_CREATE_TOOLS = new Set(["agenda_create"]);
 /** Agenda discovery tools — safe for parallel (SQLite WAL serialises writes). */
 const AGENDA_DISCOVERY_TOOLS = AGENDA_DISCOVERY_TOOL_NAMES;
 
+/** Scout CLI tools — safe for parallel (independent subprocess calls, no shared state). */
+const SCOUT_TOOLS = new Set([
+  "web_search", "web_extract", "web_crawl", "web_map", "web_research",
+  "find_library_id", "query_library_docs",
+]);
+
 /** fff search tools — share the FileFinder singleton from extensions/fff via pi.events. */
 const FFF_TOOLS = new Set(["ffgrep", "fffind"]);
 
@@ -734,12 +847,16 @@ async function opExtension(
     return opMemory(toolName, params, cwd);
   }
 
+  if (SCOUT_TOOLS.has(toolName)) {
+    return opScout(toolName, params, signal);
+  }
+
   if (FFF_TOOLS.has(toolName)) {
     if (toolName === "ffgrep") return opFfgrep(params, cwd);
     return opFfffind(params, cwd);
   }
 
-  const supported = ["ptc", "mcporter", ...CODE_MAP_TOOLS, ...MEMORY_TOOLS, ...AGENDA_CREATE_TOOLS, ...AGENDA_DISCOVERY_TOOLS, ...FFF_TOOLS].join(", ");
+  const supported = ["ptc", "mcporter", ...CODE_MAP_TOOLS, ...MEMORY_TOOLS, ...AGENDA_CREATE_TOOLS, ...AGENDA_DISCOVERY_TOOLS, ...FFF_TOOLS, ...SCOUT_TOOLS].join(", ");
   throw new Error(`Unsupported tool in parallel: "${toolName}". Supported: ${supported}`);
 }
 
