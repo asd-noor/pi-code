@@ -4,6 +4,8 @@ Inline review notes attached to specific hunks in a live session.
 
 **Rule of thumb:** use `comment apply` (batch via ptc) for agent-generated notes; use `comment add` only for a single one-off note.
 
+---
+
 ## hunk session comment add
 
 ```
@@ -26,6 +28,9 @@ Options:
 
 Required: `--file`, `--summary`, and exactly one of `--old-line` or `--new-line`.
 
+> **`comment add` uses `--new-line` or `--old-line`**, not a hunk number.
+> To get the right line: run `review --json --include-patch` and find a line within the hunk.
+
 ```bash
 hunk session comment add --repo . \
   --file src/auth.ts --new-line 42 \
@@ -33,6 +38,8 @@ hunk session comment add --repo . \
   --rationale "token can be undefined when the session expires mid-request" \
   --author "pi"
 ```
+
+---
 
 ## hunk session comment apply
 
@@ -63,10 +70,11 @@ Stdin JSON shape:
 ```
 
 - `--stdin` is required — the batch payload is always read from stdin
-- Each item requires `filePath`, `hunk` (1-based), and `summary`
+- Each item requires `filePath`, `hunk` (1-based hunk index), and `summary`
 - `rationale` and `author` are optional
 - The full batch is validated before any mutation
 - Use `--focus` to jump to the first note after applying
+- `hunk` here is the **hunk index number** (from `review --json`), not a line number
 
 ### ptc pattern
 
@@ -79,9 +87,9 @@ Stdin JSON shape:
 import json, subprocess
 
 comments = [
-    {"filePath": "src/auth.ts", "hunk": 1, "summary": "Missing null check",        "rationale": "token can be undefined mid-request"},
-    {"filePath": "src/auth.ts", "hunk": 3, "summary": "Unreachable branch",        "rationale": "condition is always false after the guard above"},
-    {"filePath": "src/db.ts",   "hunk": 2, "summary": "N+1 query in loop",         "rationale": "move the query outside and batch-fetch"},
+    {"filePath": "src/auth.ts", "hunk": 1, "summary": "Missing null check",   "rationale": "token can be undefined mid-request"},
+    {"filePath": "src/auth.ts", "hunk": 3, "summary": "Unreachable branch",   "rationale": "condition is always false after the guard above"},
+    {"filePath": "src/db.ts",   "hunk": 2, "summary": "N+1 query in loop",    "rationale": "move the query outside and batch-fetch"},
 ]
 
 subprocess.run(
@@ -89,6 +97,8 @@ subprocess.run(
     input=json.dumps({"comments": comments}), text=True, check=True,
 )
 ```
+
+---
 
 ## hunk session comment list
 
@@ -105,12 +115,14 @@ Options:
 ```
 
 ```bash
-# All comments in the session
+# All comments — always use --json to get commentId values needed for rm
 hunk session comment list --repo . --json
 
 # Comments for one file only
 hunk session comment list --repo . --file src/auth.ts --json
 ```
+
+---
 
 ## hunk session comment rm
 
@@ -125,9 +137,49 @@ Options:
   -h, --help     display help for command
 ```
 
+> **`--repo` does NOT work for `rm`.** The CLI parser treats the comment ID as the optional
+> `[sessionId]` positional and then fails with "missing required argument 'commentId'".
+> Always use the explicit positional `<sessionId> <commentId>` form.
+
+**Correct workflow:**
+
 ```bash
-hunk session comment rm --repo . <comment-id>
+# Step 1 — get the session ID
+SESSION=$(hunk session list --json | jq -r '.sessions[0].sessionId')
+
+# Step 2 — remove by positional: <sessionId> <commentId>
+hunk session comment rm "$SESSION" "<comment-id>"
 ```
+
+### Bulk removal via ptc
+
+```python
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+import json, subprocess
+
+session_id = subprocess.check_output(
+    ["hunk", "session", "list", "--json"], text=True
+)
+session_id = json.loads(session_id)["sessions"][0]["sessionId"]
+
+stale_ids = [
+    "mcp:abc:0",
+    "mcp:abc:1",
+]
+
+for comment_id in stale_ids:
+    subprocess.run(
+        ["hunk", "session", "comment", "rm", session_id, comment_id],
+        check=True, text=True,
+    )
+    print(f"removed {comment_id}")
+```
+
+---
 
 ## hunk session comment clear
 
@@ -144,7 +196,8 @@ Options:
   -h, --help     display help for command
 ```
 
-`--yes` is required (guards against accidental clears).
+`--yes` is required (guards against accidental clears). Use `--repo` — `clear` does not have the
+same positional-ambiguity bug as `rm`.
 
 ```bash
 # Clear all comments in the session
@@ -153,3 +206,9 @@ hunk session comment clear --repo . --yes
 # Clear comments for one file only
 hunk session comment clear --repo . --file src/auth.ts --yes
 ```
+
+---
+
+## Removing comments
+
+To remove a comment, use `comment rm`. To remove all at once, use `comment clear`.

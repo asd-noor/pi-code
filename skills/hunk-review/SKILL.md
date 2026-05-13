@@ -20,6 +20,12 @@ Load the reference for the group you need before constructing any command.
 | **Reload** | `reload` | [references/reload.md](references/reload.md) |
 | **Comment** | `comment add/apply/list/rm/clear` | [references/comment.md](references/comment.md) |
 
+## Critical gotchas
+
+- **`comment rm` requires positional session ID** — `--repo` silently mis-parses. Always use `hunk session comment rm <sessionId> <commentId>`. Get the session ID first with `hunk session list --json`.
+- **`comment add` has no `--hunk` flag** — use `--new-line` or `--old-line` (get line numbers from `review --json --include-patch`).
+- **`comment apply` uses `hunk` (index number)**, not line numbers — the batch JSON field is `"hunk": <n>` matching the 1-based hunk index from `review --json`.
+
 ## Workflow
 
 ```
@@ -27,9 +33,7 @@ Load the reference for the group you need before constructing any command.
 2. Navigate — hunk session navigate ...                 # move to the right file/hunk
 3. Reload   — hunk session reload -- diff/show ...      # swap contents if needed
 4. Comment  — ptc: build batch → comment apply --stdin  # all notes in one shot
-```
-
-**Use `parallel` for independent inspect calls. Use `ptc` for batch comments and multi-step sequences.**
+5. Resolve  — comment rm <sessionId> <commentId>        # always positional, never --repo
 
 ## Session selection
 
@@ -37,6 +41,8 @@ Most commands accept:
 - `--repo <path>` — match by repo root (most common)
 - `<session-id>` — match by exact ID (multiple sessions sharing a repo)
 - No selector needed when only one session exists
+
+**Exception: `comment rm`** — must use positional `<sessionId> <commentId>`. The `--repo` option does not work reliably here.
 
 `reload` additionally supports `--session-path <path>` and `--source <path>` — see [references/reload.md](references/reload.md).
 
@@ -76,6 +82,29 @@ subprocess.run(
     ["hunk", "session", "comment", "apply", "--repo", ".", "--stdin", "--focus"],
     input=json.dumps({"comments": comments}), text=True, check=True,
 )
+```
+
+### Bulk comment removal via ptc
+
+`comment rm` needs the explicit session ID — always look it up first:
+
+```python
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+import json, subprocess
+
+session_id = json.loads(
+    subprocess.check_output(["hunk", "session", "list", "--json"], text=True)
+)["sessions"][0]["sessionId"]
+
+for comment_id in ["mcp:abc:0", "mcp:abc:1"]:
+    subprocess.run(
+        ["hunk", "session", "comment", "rm", session_id, comment_id],
+        check=True, text=True,
+    )
 ```
 
 ### Multi-file navigation via ptc bash script
@@ -118,6 +147,7 @@ Guidelines:
 
 | Error | Fix |
 |---|---|
+| `missing required argument 'commentId'` when using `--repo` | `comment rm` does not work with `--repo`. Use positional form: `hunk session comment rm <sessionId> <commentId>` |
 | `No visible diff file matches ...` | File not in loaded review. Check `context`, then `reload` |
 | `No active Hunk sessions` | Ask the user to open Hunk in their terminal |
 | `Multiple active sessions match` | Pass `<session-id>` explicitly |
