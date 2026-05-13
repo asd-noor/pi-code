@@ -26,30 +26,40 @@ Load the relevant reference before working with that feature area.
 
 ## CLI — `httpyac send`
 
+```
+httpyac send <fileName...> [options]
+```
+
+`fileName` is a path or glob pattern (quote globs to prevent shell expansion).
+
 ### Flags
 
 | Flag | Purpose |
 |---|---|
 | `-a, --all` | Execute every region in the file |
 | `-e, --env <env...>` | Active environment(s) |
-| `--var <k=v...>` | Inject variables at runtime |
+| `--var <variables...>` | Inject variables at runtime — e.g. `foo="bar"` |
 | `-n, --name <name>` | Run only the named region |
-| `-l, --line <n>` | Run the region at line `n` |
-| `-t, --tag <tag...>` | Filter by tag |
-| `-o, --output <fmt>` | `short` `body` `headers` `response` `exchange` `none` |
-| `--output-failed <fmt>` | Format for failed responses only |
+| `-l, --line <line>` | Run the region at line `n` |
+| `-t, --tag <tag...>` | Filter regions by tag |
+| `-o, --output <output>` | Response format: `short` `body` `headers` `response` `exchange` `none` |
+| `--output-failed <output>` | Response format for failed requests only (same values) |
+| `--raw` | Prevent formatting of response body |
 | `--json` | Structured JSON output (CI-friendly) |
 | `--junit` | JUnit XML output |
 | `--bail` | Stop on first test failure |
-| `--filter only-failed` | Print only failed requests |
-| `--repeat <n>` | Repeat a request N times |
-| `--repeat-mode <mode>` | `sequential` or `parallel` (default) |
-| `--parallel <n>` | Run N file requests in parallel |
-| `--insecure` | Allow self-signed SSL certificates |
-| `--timeout <ms>` | Connection timeout |
-| `--interactive` | Menu-driven interactive mode |
-| `-s, --silent` | Log only request lines |
-| `-v, --verbose` | Verbose output |
+| `--filter <filter>` | Filter output — currently accepts `only-failed` |
+| `--repeat <count>` | Repeat a request N times |
+| `--repeat-mode <mode>` | `sequential` or `parallel` (**default: parallel**) |
+| `--parallel <count>` | Send N file-level requests in parallel |
+| `--insecure` | Allow insecure SSL/TLS connections |
+| `--timeout <timeout>` | Maximum time allowed for connections (ms) |
+| `-i, --interactive` | After request completes, return to selection menu instead of exiting |
+| `-s, --silent` | Log only request line (suppress response output) |
+| `-v, --verbose` | Make output more talkative |
+| `--no-color` | Disable color support |
+| `--quiet` | Suppress all output |
+| `-h, --help` | Display help |
 
 ### Examples
 
@@ -69,6 +79,9 @@ httpyac send requests.http --all --output exchange
 
 # CI: JSON, bail on first failure, show only failures
 httpyac send tests.http --all --json --bail --filter only-failed
+
+# Suppress response body formatting
+httpyac send api.http --all --raw
 
 # Glob + native parallelism
 httpyac send "tests/**/*.http" --all --parallel 4 --env ci --json
@@ -118,6 +131,42 @@ for r in failed:
         if t["status"] != "SUCCESS":
             print(f"       ✗ {t['message']}")
 sys.exit(1 if failed else 0)
+```
+
+## CLI — `httpyac oauth2`
+
+```
+httpyac oauth2 [options]
+```
+
+Generates an OAuth2 token using variables from the environment file and prints it to stdout.
+
+### Flags
+
+| Flag | Purpose |
+|---|---|
+| `-f, --flow <flow>` | OAuth2 flow to use (default: `client_credentials`) |
+| `--prefix <prefix>` | Variable prefix used to look up credentials in env vars |
+| `-e, --env <env...>` | Active environment(s) |
+| `--var <variables...>` | Inject variables at runtime |
+| `-o, --output <output>` | What to print: `access_token` (default), `refresh_token`, `response` |
+| `-h, --help` | Display help |
+
+### Examples
+
+```bash
+# Fetch an access token using client_credentials flow
+httpyac oauth2 --env production
+
+# Use a named variable prefix (looks for <prefix>_clientId, <prefix>_clientSecret, etc.)
+httpyac oauth2 --prefix myapp --env staging
+
+# Print the full token response
+httpyac oauth2 --env production --output response
+
+# Capture token for use in a shell script
+TOKEN=$(httpyac oauth2 --env ci --var clientId=abc --var clientSecret=xyz)
+curl -H "Authorization: Bearer $TOKEN" https://api.example.com/data
 ```
 
 ## Workflow patterns
