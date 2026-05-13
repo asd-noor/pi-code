@@ -860,19 +860,19 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
         return;
       }
 
+      widget.setUICtx(ctx.ui);
+
       ctx.ui.notify(`Delegating to ${agentName}…`, "info");
       const description  = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
       const effectiveTask = task || "Proceed with your configured task.";
 
-      // Spawn in background — return immediately so the TUI stays responsive
+      // Spawn in background — mark resultConsumed so onComplete does not fire;
+      // delegate sends its own result message with triggerTurn: true.
       const agentId = manager.spawn({ ...ctx, cwd: currentCwd }, effectiveTask, {
         description,
         agentConfig,
         isBackground: true,
       });
-
-      // Mark consumed immediately so the generic onComplete handler does not
-      // also fire a subagents:complete message — delegate delivers its own result.
       const record = manager.getRecord(agentId)!;
       record.resultConsumed = true;
       record.promise!.then(() => {
@@ -884,7 +884,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
         }
         const output   = rec.result?.trim() || "(no output)";
         const duration = rec.completedAt ? formatMs(rec.completedAt - rec.startedAt) : "?";
-        const stats    = `${agentName} · ${duration} · ${rec.toolUses} tool use${rec.toolUses !== 1 ? "s" : ""}`;
+        const stats    = `${agentName} · ${rec.toolUses} tool use${rec.toolUses !== 1 ? "s" : ""} · ${duration}`;
         pi.sendMessage(
           {
             customType: "delegate:result",
@@ -892,7 +892,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
             display: true,
             details: { agentName, agentId, status: rec.status },
           },
-          { deliverAs: "followUp" },
+          { deliverAs: "followUp", triggerTurn: true },
         );
       });
     },
@@ -924,7 +924,6 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
 
       currentCwd = resolveCwd(ctx, currentCwd);
       rebuildRegistry(currentCwd);
-      widget.setUICtx(ctx.ui);
 
       // Parse semicolon-separated "agent:task" pairs
       const pairs = trimmed.split(";").map((s) => s.trim()).filter(Boolean);
@@ -948,9 +947,11 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
         resolved.push({ agentName, task, agentConfig });
       }
 
+      widget.setUICtx(ctx.ui);
       ctx.ui.notify(`Delegating to ${resolved.length} agents in parallel…`, "info");
 
-      // Spawn all agents in background — return immediately so the TUI stays responsive
+      // Spawn all agents — mark each resultConsumed so onComplete does not fire
+      // per-agent; the combined result is delivered once all finish.
       const agentIds = resolved.map(({ agentName, task, agentConfig }) => {
         const description = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
         const id = manager.spawn({ ...ctx, cwd: currentCwd }, task, {
@@ -958,27 +959,22 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
           agentConfig,
           isBackground: true,
         });
-        // Mark consumed so onComplete does not send a duplicate subagents:complete
         manager.getRecord(id)!.resultConsumed = true;
         return id;
       });
 
-      // Deliver combined result as a follow-up message when all agents finish
+      // Deliver one combined result when all agents finish
       Promise.all(agentIds.map((id) => manager.getRecord(id)!.promise!)).then(() => {
         const results = agentIds.map((id, i) => {
           const rec = manager.getRecord(id)!;
           widget.markFinished(id);
           const agentName = resolved[i]!.agentName;
           const duration  = rec.completedAt ? formatMs(rec.completedAt - rec.startedAt) : "?";
-          const stats     = `${agentName} · ${duration} · ${rec.toolUses} tool use${rec.toolUses !== 1 ? "s" : ""}`;
+          const stats     = `${agentName} · ${rec.toolUses} tool use${rec.toolUses !== 1 ? "s" : ""} · ${duration}`;
           const output    = rec.status === "error" ? `ERROR: ${rec.error ?? "unknown"}` : rec.result?.trim() || "(no output)";
           return { label: stats, output };
         });
-
-        const content = results
-          .map((r) => `[${r.label}]\n\n${r.output}`)
-          .join("\n\n---\n\n");
-
+        const content = results.map((r) => `[${r.label}]\n\n${r.output}`).join("\n\n---\n\n");
         pi.sendMessage(
           {
             customType: "delegate-multi:result",
@@ -986,7 +982,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
             display: true,
             details: { count: resolved.length },
           },
-          { deliverAs: "followUp" },
+          { deliverAs: "followUp", triggerTurn: true },
         );
       });
     },
