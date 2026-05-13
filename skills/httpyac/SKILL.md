@@ -13,6 +13,23 @@ description: Send HTTP, REST, GraphQL, gRPC, WebSocket, and MQTT requests from .
 npm install -g httpyac
 ```
 
+## Reference
+
+Load the relevant reference before working with that feature area.
+
+| Topic | Reference |
+|-------|-----------|
+| Request format | [references/request.md](references/request.md) |
+| Metadata / annotations | [references/metadata.md](references/metadata.md) |
+| Variables | [references/variables.md](references/variables.md) |
+| Environments | [references/environments.md](references/environments.md) |
+| Scripting | [references/scripting.md](references/scripting.md) |
+| Assertions | [references/assert.md](references/assert.md) |
+| Comments | [references/comment.md](references/comment.md) |
+| Hooks | [references/hooks.md](references/hooks.md) |
+| Response handling | [references/response.md](references/response.md) |
+| Injected languages | [references/injected-languages.md](references/injected-languages.md) |
+
 ## CLI — `httpyac send`
 
 ### Common flags
