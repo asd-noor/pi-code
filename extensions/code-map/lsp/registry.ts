@@ -1,7 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { getInstalledBinary } from "./installer.ts";
+
+function readdirSyncSafe(dir: string): string[] {
+  try { return readdirSync(dir); } catch { return []; }
+}
 
 export interface LspServerDef {
   command: string;
@@ -64,6 +68,20 @@ const SERVER_DEFS: Array<{ detect: (root: string) => boolean; server: () => LspS
         installId: isPyright ? "pyright-langserver" : "pylsp",
       };
     },
+  },
+  {
+    detect: (r) =>
+      existsSync(join(r, "compile_commands.json")) ||
+      existsSync(join(r, "CMakeLists.txt")) ||
+      existsSync(join(r, "build.zig")) ||
+      readdirSyncSafe(r).some((f) => f.endsWith(".c") || f.endsWith(".h")),
+    server: () => ({
+      command: resolveCmd("clangd"),
+      args: [],
+      languageId: "c",
+      extensions: [".c", ".h"],
+      installId: "clangd",
+    }),
   },
 ];
 

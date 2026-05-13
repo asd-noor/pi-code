@@ -23,6 +23,7 @@ const EXT_TO_PKG: Array<{ exts: string[]; pkg: string; key?: string }> = [
   { exts: [".js", ".jsx", ".mjs", ".cjs"],        pkg: "tree-sitter-javascript" },
   { exts: [".py"],                                 pkg: "tree-sitter-python" },
   { exts: [".go"],                                 pkg: "tree-sitter-go" },
+  { exts: [".c", ".h"],                             pkg: "tree-sitter-c" },
   // zig and lua dropped: their npm packages (tree-sitter-zig@0.2.0,
   // tree-sitter-lua@2.1.3) use the pre-v0.21 export format and cannot
   // be loaded under tree-sitter v0.25 ("Invalid language object").

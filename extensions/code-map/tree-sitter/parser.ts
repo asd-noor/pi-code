@@ -25,6 +25,7 @@ const LANG_TO_EXT: Record<string, string> = {
   javascript: ".js",
   python:     ".py",
   go:         ".go",
+  c:          ".c",
 };
 
 export class TreeSitterParser {

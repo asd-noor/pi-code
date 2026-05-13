@@ -53,6 +53,7 @@ export async function installTreeSitter(log: (msg: string) => void): Promise<voi
     "tree-sitter-javascript",
     "tree-sitter-python",
     "tree-sitter-go",
+    "tree-sitter-c",
   ];
 
   runNpm(dir, packages, log);

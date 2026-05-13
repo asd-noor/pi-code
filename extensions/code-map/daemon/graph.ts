@@ -13,6 +13,8 @@ export const EXT_TO_LANG: Record<string, string> = {
   ".cjs": "javascript",
   ".py":  "python",
   ".go":  "go",
+  ".c":   "c",
+  ".h":   "c",
 };
 
 /** All language ids supported by tree-sitter */

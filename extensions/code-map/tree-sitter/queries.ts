@@ -127,4 +127,35 @@ export const QUERIES: Record<string, LangQuery> = {
 `,
   },
 
+  // ── C ───────────────────────────────────────────────────────────────────────
+  c: {
+    kindMap: {},
+    query: `
+; Function definitions (e.g. int foo(int x) { ... })
+(function_definition
+  declarator: (function_declarator
+    declarator: (identifier) @name)) @def_function
+
+; Named struct definitions with body — skips forward declarations (e.g. struct Foo { ... })
+(struct_specifier
+  name: (type_identifier) @name
+  body: (field_declaration_list)) @def_struct
+
+; Typedef struct with body (e.g. typedef struct { ... } Foo;)
+(type_definition
+  type: (struct_specifier body: (field_declaration_list))
+  declarator: (type_identifier) @name) @def_struct
+
+; Named enum definitions with body — skips forward declarations (e.g. enum Color { RED, GREEN })
+(enum_specifier
+  name: (type_identifier) @name
+  body: (enumerator_list)) @def_enum
+
+; Typedef enum with body (e.g. typedef enum { RED, GREEN } Color;)
+(type_definition
+  type: (enum_specifier body: (enumerator_list))
+  declarator: (type_identifier) @name) @def_enum
+`,
+  },
+
 };
