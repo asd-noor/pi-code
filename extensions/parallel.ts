@@ -810,18 +810,37 @@ const BASE_INSTRUCTION = `
 Prefer creating scripts and executing them with \`ptc\` — including bash scripts for shell-heavy work — whenever the task would otherwise take multiple tool calls. Use a raw \`bash\` slot only when that command is genuinely one-shot.
 
 Reach for \`parallel\` when you have 2+ independent operations to fan out in one call. Results come
-back together, and you can combine or process them after the call. For Python \`ptc\` slots, prefer
-Python + uv by default and only choose bash when the task is clearly pure shell; require
-\`#!/usr/bin/env -S uv run --script\` at the top of Python scripts. Supported ops:
+back together, and you can combine or process them after the call. Supported slots:
 
-- Common native ops: \`read\` / \`bash\` / \`write\` / \`edit\` (use raw \`bash\` only for one-shot commands)
-- Any supported extension tool (including \`ptc\`) — pass \`tool: "<name>"\` plus the tool's normal args as additional fields
-- Python \`ptc\` slots execute the saved script file directly so the shebang triggers \`uv run --script\`
-- Prefer uv-backed Python scripts because uv is robust at dependency management and its cache makes repeated runs very fast
-- \`ffgrep\` and \`fffind\` are supported when the fff extension is loaded
+**Native:**
+- \`read\` — raw file content
+- \`bash\` — one-shot shell commands only; prefer a \`ptc\` bash script for multi-step shell work
+- \`write\` — create or overwrite a file
+- \`edit\` — targeted text replacements (see edit safety below)
 
-Typical pattern: fan out several independent \`read\`, \`ptc\`, or other extension-tool calls, get all
-results back in one shot, then decide what to do. Use a raw \`bash\` slot only for a one-shot shell command; otherwise prefer a bash script via \`ptc\`.
+**Scripts:**
+- \`ptc\` — run a Python (uv-backed) or bash script; prefer Python + uv by default
+
+**Code intelligence:**
+- \`code_map_outline\`, \`code_map_symbol\`, \`code_map_diagnostics\`, \`code_map_impact\`
+
+**Memory (read-only / independent ops):**
+- \`memory_list\`, \`memory_get\`, \`memory_search\`
+- \`memory_create_file\`, \`memory_delete_file\`, \`memory_validate_file\`
+
+**Agenda:**
+- \`agenda_create\` — safe (SQLite WAL serialises writes)
+- \`agenda_discovery_add\`, \`agenda_discovery_get\`, \`agenda_discovery_list\`, \`agenda_discovery_delete\` — all safe
+
+**File search (requires fff extension):**
+- \`ffgrep\` — frecency-ranked content search
+- \`fffind\` — frecency-ranked path/glob search
+
+**Scout / web (requires scout extension):**
+- \`web_search\`, \`web_extract\`, \`web_crawl\`, \`web_map\`, \`web_research\`
+- \`find_library_id\`, \`query_library_docs\`
+
+Typical pattern: fan out several independent \`read\`, \`ptc\`, or other slots, get all results back in one shot, then decide what to do.
 
 ### edit safety
 \`parallel\`'s \`edit\` op does **not** use the native mutation queue. Do not include two \`edit\`
@@ -831,13 +850,6 @@ calls targeting the same file in one \`parallel\` invocation — use the native 
 \`memory_new\`, \`memory_update\`, and \`memory_delete\` are **not allowed** inside \`parallel\`.
 Concurrent writes corrupt the markdown-backed memory files (duplicate sections, interleaved content).
 Call them sequentially via the native memory tools instead.
-
-### agenda_create
-\`agenda_create\` is supported inside \`parallel\`. SQLite WAL mode safely serialises concurrent writes.
-
-### agenda discovery tools
-\`agenda_discovery_add\`, \`agenda_discovery_get\`, \`agenda_discovery_list\`, and \`agenda_discovery_delete\` are supported inside \`parallel\`.
-SQLite WAL mode safely serialises concurrent writes, so all four tools can be fanned out freely.
 `.trim();
 
 // ── Extension ────────────────────────────────────────────────────────────────
@@ -847,9 +859,18 @@ export default function (pi: ExtensionAPI) {
     name:  "parallel",
     label: "Parallel Calls",
     description:
-      "Fan out multiple independent operations in one tool call. Common slots are read, bash, write, edit, and ptc; any supported extension tool can also be inlined. Prefer ptc scripts by default — including bash scripts for shell-heavy work — and use a raw bash slot only when the command is genuinely one-shot. Prefer Python + uv for ptc scripts by default: uv-backed Python scripts are executed directly by file path, must start with `#!/usr/bin/env -S uv run --script`, and benefit from robust dependency management plus fast cached reruns. All calls run concurrently and results are returned together.",
+      "Fan out multiple independent operations in one tool call. Runs all slots concurrently and returns results together. "
+      + "Native slots: read, bash, write, edit. "
+      + "Script slot: ptc (Python uv-backed or bash). "
+      + "Code intelligence: code_map_outline, code_map_symbol, code_map_diagnostics, code_map_impact. "
+      + "Memory (read-only): memory_list, memory_get, memory_search, memory_create_file, memory_delete_file, memory_validate_file. "
+      + "Agenda: agenda_create, agenda_discovery_add/get/list/delete. "
+      + "File search (fff): ffgrep, fffind. "
+      + "Scout/web: web_search, web_extract, web_crawl, web_map, web_research, find_library_id, query_library_docs. "
+      + "NOT allowed: memory_new, memory_update, memory_delete (concurrent writes corrupt memory files). "
+      + "Prefer ptc scripts (Python + uv by default). All slots must be independent of each other.",
     promptSnippet:
-      "Run multiple independent operations concurrently in a single call, including ptc slots and other supported extension tools. Prefer ptc scripts by default — including bash scripts for shell-heavy work — and use a raw bash slot only when the command is genuinely one-shot. Prefer Python + uv for ptc scripts by default. Uv-backed Python ptc scripts execute directly by file path and must start with `#!/usr/bin/env -S uv run --script`.",
+      "Fan out 2+ independent operations in one call: read, bash, write, edit, ptc, code_map_*, memory_*, agenda_*, ffgrep, fffind, web_search, web_extract, web_crawl, web_map, web_research, find_library_id, query_library_docs. Slots run concurrently; results return together. NOT allowed: memory_new, memory_update, memory_delete.",
     parameters: Type.Object({
       calls: Type.Array(CallSpec, {
         description:
