@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.2] - 2026-05-13
+
+### Fixed
+
+- **code-map**: Primary session no longer gets trapped in client-only mode on pi restart. The `daemonAlreadyUp` socket-exists fallback has been removed — on restart, both the old and new sessions exist briefly; the fallback caused the new session to skip spawning a daemon just as the old session's `session_shutdown` killed it, leaving the primary session permanently stuck. Only the explicit `subagentMode` flag (set by subagents) now triggers client-only mode.
+- **code-map**: Added `killOrphan()` — reads the PID file and sends SIGTERM to any stale daemon left by a crashed previous process before spawning a fresh one.
+- **code-map**: `/code-map status` now checks socket existence and shows a warning with `(missing)` when the daemon has died but the status file still says ready.
+- **code-map**: Status poller now shows `stopped` in the footer when the status file claims ready/indexing/starting but the socket is absent.
+- **code-map**: Dropped zig and lua support — `tree-sitter-zig@0.2.0` and `tree-sitter-lua@2.1.3` use the pre-v0.21 grammar export format and fail with "Invalid language object" under tree-sitter v0.25. Removed from tree-sitter installer, loader, parser, LSP registry, LSP installer, queries, and all tool descriptions. Supported languages are now: TypeScript, JavaScript, Python, Go.
+- **code-map**: Fixed tree-sitter v0.25 API breakage — grammar packages no longer expose `language.query()`; queries are now compiled with `new Parser.Query(grammar, src)` + `q._init()`. The old API silently returned `[]` for every file, stored mtimes, and permanently prevented re-indexing.
+- **code-map**: Added poisoned-DB recovery in `indexer.buildNodes()` — if all files have stored mtimes but the node table is empty (silent failure on first run), mtimes are cleared and a full re-index is forced automatically.
+- **code-map**: `TreeSitterParser` now accepts a `log` callback; query compilation failures and parse errors are surfaced in the daemon log instead of being silently swallowed. Per-language symbol counts added to the indexing completion log.
+- **code-map**: Added `db.clearMtimes()` method.
+
+### Added
+
+- **code-map**: `/code-map index` command — kills the running daemon, clears all stored file mtimes from the SQLite DB, and spawns a fresh daemon that re-parses every file from scratch. Tab-completion included.
+
 ## [2.1.1] - 2026-05-13
 
 ### Fixed
