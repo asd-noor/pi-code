@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.0] - 2026-05-14
+
+### Added
+
+- **subagents**: `/assign <agent> [task]` command — quick-assigns a task to a named subagent in the background; result is delivered as a follow-up message that triggers a new AI turn.
+- **subagents**: `/assign-multi agent1:task1; agent2:task2` command — parallel assignment; all agents run concurrently and a combined result is delivered as a single follow-up turn when all finish.
+- **subagents**: `/delegate <agent> [task]` command — fire-and-forget variant of `/assign`; runs entirely in background with UI-only feedback (start toast + completion toast with duration, tool count, and output preview). No message is injected into the conversation, no AI turn is triggered.
+- **code-map**: `/code-map-clean` command — cleans code-map artifacts with per-operation confirmation dialogs. Subcommands: `lsp-binaries` (removes `~/.pi/cache/lsp`, restarts daemon in tree-sitter-only mode), `tree-sitter-binaries` (removes `~/.pi/cache/tree-sitter`, restarts daemon in LSP-only mode), `projects` (removes all project index dirs, restarts daemon), no argument (removes current project cache, restarts daemon). All delete operations use try/catch/finally so daemon restart is guaranteed even on partial failure.
+- **code-map**: Pinned tree-sitter package versions in `installer.ts` and `~/.pi/cache/tree-sitter/package.json`: `tree-sitter@0.25.0`, `tree-sitter-typescript@0.23.2` (latest published), `tree-sitter-javascript@0.25.0`, `tree-sitter-python@0.25.0`, `tree-sitter-go@0.25.0`, `tree-sitter-c@0.24.1`.
+- **skills/hunk-review**: Improved CLI reference — documented `comment rm` positional-form requirement (`<sessionId> <commentId>`; `--repo` is unreliable for `rm`), added bulk removal ptc pattern, clarified `comment add` uses `--old-line`/`--new-line` not `--hunk`, updated error table.
+- **skills/httpyac**: Expanded `httpyac send` flag reference (added `--raw`, `--no-color`, `--quiet`; corrected `--repeat-mode` default to `parallel`; fixed `--filter` as a valued flag); added full `httpyac oauth2` command section with flags and shell examples.
+
+### Fixed
+
+- **subagents**: `/delegate` and `/assign` no longer produce duplicate completion messages. Previously both `onComplete` (sending `subagents:complete`) and the command-level `.then()` handler fired on agent completion, resulting in two messages to the primary agent.
+- **subagents**: `widget.setUICtx` in `/assign` and `/delegate` is now set after the `!agentConfig` guard so the widget context is only refreshed for valid invocations.
+- **subagents**: Pluralisation fixed in stats strings — `1 tool uses` → `1 tool use`.
+
 ## [2.1.2] - 2026-05-13
 
 ### Fixed
