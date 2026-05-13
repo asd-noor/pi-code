@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.1] - 2026-05-13
+
+### Added
+
+- **subagents/Reviewer**: New expert code-review agent that reads a live Hunk diff session and leaves precise inline annotations. Runs `hunk session list` first — if no session is active it stops immediately with a prompt to open one. Otherwise fans out parallel inspect calls, fetches patches per file, analyses hunks across eight dimensions (correctness, safety, security, performance, contracts, architecture, tests, hygiene), and applies all annotations in one `comment apply --stdin` batch. Delivers a structured Critical / Important / Minor / Approved summary when done.
+- **prompts/diff-action**: New `diff-action` prompt.
+- **subagents/Explorer**: Fixed `display_name` (`Explore` → `Explorer`).
+- **subagents/Researcher**: Fixed `display_name` and heading (`Research` → `Researcher`).
+
 ## [2.0.0] - 2026-05-13
 
 ### Added
