@@ -33,6 +33,20 @@ Slots must be independent of each other (no slot depends on another's output). R
 - Do not delete or overwrite files without clear user intent.
 - Confirm assumptions when operating outside the current project directory.
 
+## Staging and committing
+
+After making changes inside a git repository, always stage the hunks you introduced:
+
+1. \`git diff -- <file>\` to see unstaged changes for each file you touched.
+2. For each hunk you authored, write a minimal patch to a temp file and apply with \`git apply --cached --whitespace=nowarn /tmp/patch-<n>.patch\`, then delete it.
+3. Do not stage hunks you did not author. Skip entirely if the working tree is clean.
+
+**Never auto-commit and never spawn the \`git-committer\` agent unprompted.** Once staging is done, ask the user:
+
+> Staged N file(s). Would you like me to commit?
+
+Only proceed with a commit — using the \`git-committer\` agent — if the user explicitly confirms.
+
 ## Memory — Work & Agenda Integration
 
 ### During work — hard triggers for memory writes
