@@ -1,9 +1,9 @@
 /**
- * Tree-sitter installer — installs tree-sitter + 6 grammar packages to
+ * Tree-sitter installer — installs tree-sitter + 5 grammar packages to
  * ~/.pi/cache/tree-sitter/ on demand.
  * Mirrors lsp/installer.ts — no bundled deps, pure runtime install.
  *
- * Supported languages: TypeScript, JavaScript, Python, Go, Lua, Zig
+ * Supported languages: TypeScript, JavaScript, Python, Go, C
  */
 
 import { spawnSync } from "node:child_process";
@@ -48,12 +48,12 @@ export async function installTreeSitter(log: (msg: string) => void): Promise<voi
   const dir = ensureDir(getTreeSitterDir());
 
   const packages = [
-    "tree-sitter",
-    "tree-sitter-typescript",
-    "tree-sitter-javascript",
-    "tree-sitter-python",
-    "tree-sitter-go",
-    "tree-sitter-c",
+    "tree-sitter@0.25.0",
+    "tree-sitter-typescript@0.23.2", // latest published; upstream hasn't cut a 0.24.x/0.25.x release yet
+    "tree-sitter-javascript@0.25.0",
+    "tree-sitter-python@0.25.0",
+    "tree-sitter-go@0.25.0",
+    "tree-sitter-c@0.24.1",
   ];
 
   runNpm(dir, packages, log);

@@ -8,13 +8,13 @@
  * Cache:  ~/.pi/cache/<encoded-project>/
  */
 
-import { existsSync, readFileSync, writeFileSync, openSync, closeSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, openSync, closeSync, rmSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getProjectDir, ensureDir } from "./paths.ts";
+import { getProjectDir, ensureDir, getCacheDir, getLspDir, getTreeSitterDir } from "./paths.ts";
 import { registerTools } from "./tools.ts";
 
 const EXTENSION_DIR  = dirname(fileURLToPath(import.meta.url));
@@ -296,6 +296,201 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
 
       } else {
         ctx.ui.notify(`code-map: unknown sub-command "${sub}". Use: status | restart | logs`, "warning");
+      }
+    },
+  });
+
+  // ── /code-map-clean command ───────────────────────────────────────────────
+
+  pi.registerCommand("code-map-clean", {
+    description: "Clean code-map artifacts: lsp-binaries | tree-sitter-binaries | projects | (no arg = current project)",
+    getArgumentCompletions: (prefix: string) => {
+      const subs = ["lsp-binaries", "tree-sitter-binaries", "projects"];
+      const matches = subs
+        .filter((s) => s.startsWith(prefix.toLowerCase()))
+        .map((s) => ({ value: s, label: s }));
+      return matches.length > 0 ? matches : null;
+    },
+    handler: async (args, ctx) => {
+      uiCtx = ctx.ui;
+      const sub = (args ?? "").trim().toLowerCase();
+      const cacheDir = getCacheDir();
+
+      if (sub === "") {
+        // ── Current project cache ─────────────────────────────────────────
+        if (!projectDir || !projectRoot) {
+          ctx.ui.notify("code-map: no active project", "warning");
+          return;
+        }
+        if (!existsSync(projectDir)) {
+          ctx.ui.notify("code-map: project cache is already empty", "info");
+          return;
+        }
+        const ok = await ctx.ui.confirm(
+          "Clean project cache?",
+          `Delete ${projectDir}\n\nRemoves the index and daemon state for this project. The index will be rebuilt on next session start.`,
+        );
+        if (!ok) return;
+        if (poller) { clearInterval(poller); poller = undefined; }
+        killDaemon();
+        clearFooterStatus();
+        let deleteError: unknown;
+        try {
+          rmSync(projectDir, { recursive: true, force: true });
+        } catch (err) {
+          deleteError = err;
+          ctx.ui.notify(`code-map: cache deletion failed — ${err}`, "error");
+        } finally {
+          try {
+            const config = loadConfig();
+            setFooterStatus("starting");
+            daemonChild = spawnDaemon(projectRoot, config);
+            ownsDaemon = true;
+            startPolling();
+            if (!deleteError) {
+              ctx.ui.notify("Project cache cleared — daemon restarting…", "info");
+            }
+          } catch (err) {
+            ctx.ui.notify(`code-map: daemon restart failed — ${err}`, "error");
+          }
+        }
+
+      } else if (sub === "lsp-binaries") {
+        // ── LSP binaries ─────────────────────────────────────────────────
+        const lspDir = getLspDir();
+        if (!existsSync(lspDir)) {
+          ctx.ui.notify("code-map: LSP binaries directory does not exist", "info");
+          return;
+        }
+        const ok = await ctx.ui.confirm(
+          "Remove LSP binaries?",
+          `Delete ${lspDir}\n\nLanguage servers will be re-downloaded on next use.`,
+        );
+        if (!ok) return;
+        if (poller) { clearInterval(poller); poller = undefined; }
+        killDaemon();
+        clearFooterStatus();
+        try {
+          rmSync(lspDir, { recursive: true, force: true });
+        } catch (err) {
+          ctx.ui.notify(`code-map: LSP binary deletion failed — ${err}`, "error");
+        } finally {
+          // Restart in tree-sitter-only mode; LSP servers will be re-downloaded on next install
+          if (projectRoot) {
+            try {
+              const config = loadConfig();
+              setFooterStatus("starting");
+              daemonChild = spawnDaemon(projectRoot, config);
+              ownsDaemon = true;
+              startPolling();
+              ctx.ui.notify("LSP binaries removed — daemon restarting in tree-sitter-only mode.", "info");
+            } catch (err) {
+              ctx.ui.notify(`code-map: daemon restart failed — ${err}`, "error");
+            }
+          } else {
+            ctx.ui.notify("LSP binaries removed.", "info");
+          }
+        }
+
+      } else if (sub === "tree-sitter-binaries") {
+        // ── tree-sitter binaries ─────────────────────────────────────────
+        const tsDir = getTreeSitterDir();
+        if (!existsSync(tsDir)) {
+          ctx.ui.notify("code-map: tree-sitter directory does not exist", "info");
+          return;
+        }
+        const ok = await ctx.ui.confirm(
+          "Remove tree-sitter binaries?",
+          `Delete ${tsDir}\n\nGrammar packages will be re-installed on next use.`,
+        );
+        if (!ok) return;
+        if (poller) { clearInterval(poller); poller = undefined; }
+        killDaemon();
+        clearFooterStatus();
+        try {
+          rmSync(tsDir, { recursive: true, force: true });
+        } catch (err) {
+          ctx.ui.notify(`code-map: tree-sitter deletion failed — ${err}`, "error");
+        } finally {
+          // Restart in LSP-only mode; grammars will be re-installed on next use
+          if (projectRoot) {
+            try {
+              const config = loadConfig();
+              setFooterStatus("starting");
+              daemonChild = spawnDaemon(projectRoot, config);
+              ownsDaemon = true;
+              startPolling();
+              ctx.ui.notify("tree-sitter binaries removed — daemon restarting in LSP-only mode.", "info");
+            } catch (err) {
+              ctx.ui.notify(`code-map: daemon restart failed — ${err}`, "error");
+            }
+          } else {
+            ctx.ui.notify("tree-sitter binaries removed.", "info");
+          }
+        }
+
+      } else if (sub === "projects") {
+        // ── All project caches ───────────────────────────────────────────
+        if (!existsSync(cacheDir)) {
+          ctx.ui.notify("code-map: cache directory does not exist", "info");
+          return;
+        }
+        const reserved = new Set([basename(getLspDir()), basename(getTreeSitterDir())]);
+        let projectDirs: string[];
+        try {
+          projectDirs = readdirSync(cacheDir, { withFileTypes: true })
+            .filter((d) => d.isDirectory() && !reserved.has(d.name))
+            .map((d) => join(cacheDir, d.name));
+        } catch {
+          ctx.ui.notify("code-map: could not read cache directory", "error");
+          return;
+        }
+        if (projectDirs.length === 0) {
+          ctx.ui.notify("code-map: no project caches found", "info");
+          return;
+        }
+        const ok = await ctx.ui.confirm(
+          `Remove ${projectDirs.length} project cache(s)?`,
+          `Delete all project indexes under ${cacheDir}\n\nIndexes will be rebuilt on next session start.`,
+        );
+        if (!ok) return;
+        // Kill daemon before wiping (daemon owns the current project dir)
+        if (poller) { clearInterval(poller); poller = undefined; }
+        killDaemon();
+        clearFooterStatus();
+        let deleteError: unknown;
+        try {
+          for (const dir of projectDirs) {
+            rmSync(dir, { recursive: true, force: true });
+          }
+        } catch (err) {
+          deleteError = err;
+          ctx.ui.notify(`code-map: partial deletion failed — ${err}`, "error");
+        } finally {
+          // Always restart daemon, even on partial failure
+          if (projectRoot) {
+            try {
+              const config = loadConfig();
+              setFooterStatus("starting");
+              daemonChild = spawnDaemon(projectRoot, config);
+              ownsDaemon = true;
+              startPolling();
+              if (!deleteError) {
+                ctx.ui.notify(`Removed ${projectDirs.length} project cache(s) — daemon restarting…`, "info");
+              }
+            } catch (err) {
+              ctx.ui.notify(`code-map: daemon restart failed — ${err}`, "error");
+            }
+          } else if (!deleteError) {
+            ctx.ui.notify(`Removed ${projectDirs.length} project cache(s).`, "info");
+          }
+        }
+
+      } else {
+        ctx.ui.notify(
+          `code-map-clean: unknown argument "${sub}". Use: lsp-binaries | tree-sitter-binaries | projects | (empty for current project)`,
+          "warning",
+        );
       }
     },
   });
