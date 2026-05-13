@@ -284,7 +284,12 @@ export async function spawnAndRun(
   // interactive/print/rpc modes. Without this call, extension event handlers like
   // session_start never fire, so extensions that initialise state there (e.g.
   // memory-md sets memDir inside session_start) remain uninitialised and broken.
-  await (session as any).bindExtensions({});
+  //
+  // Pass { subagentMode: true } so daemon-managing extensions (e.g. code-map)
+  // enter client-only mode: they resolve the project root and connect to the
+  // running daemon started by the parent session, without spawning a competing
+  // daemon or tearing it down on session_shutdown.
+  await (session as any).bindExtensions({ subagentMode: true });
 
   // Apply tool restrictions:
   // - Always exclude delegation tools (Subagent, get_subagent_result, steer_subagent)

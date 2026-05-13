@@ -90,6 +90,7 @@ export default function (pi: ExtensionAPI) {
   let daemonChild:  ChildProcess | undefined;
   let poller:       ReturnType<typeof setInterval> | undefined;
   let uiCtx:        any;
+  let ownsDaemon    = false; // true only if this session spawned the daemon
 
   // ── Tools (rootPath closure) ──────────────────────────────────────────────
 
@@ -164,19 +165,43 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
 
   // ── Events ────────────────────────────────────────────────────────────────
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event: any, ctx) => {
     uiCtx = ctx.ui;
 
     // Resolve project root
     projectRoot = await resolveProjectRoot(ctx.cwd, pi.exec.bind(pi));
     projectDir  = getProjectDir(projectRoot);
 
+    // ── Client-only guard ────────────────────────────────────────────────────
+    // Subagent sessions must not touch the daemon — only the primary (UI)
+    // session manages the daemon lifecycle.  Detect via two complementary
+    // signals so either one alone is sufficient:
+    //   1. explicit `subagentMode` flag passed from agent-runner.ts via
+    //      bindExtensions({ subagentMode: true })
+    //   2. fallback: a socket file already exists for this project, meaning
+    //      another session already started (and owns) the daemon.
+    const sockPath = join(projectDir, "codemap-daemon.sock");
+    const existingStatus = readStatus(projectDir);
+    const daemonAlreadyUp =
+      existsSync(sockPath) &&
+      (existingStatus === "ready" || existingStatus === "starting" || existingStatus === "indexing");
+
+    if (event?.subagentMode || daemonAlreadyUp) {
+      ownsDaemon = false;
+      setFooterStatus(existingStatus);
+      startPolling();
+      return;
+    }
+
+    // ── Primary session: manage daemon lifecycle ─────────────────────────────
     // Kill any leftover daemon from previous session
     killDaemon();
     if (poller) { clearInterval(poller); poller = undefined; }
 
     // Load config
     const config = loadConfig();
+
+    ownsDaemon = true;
 
     // Set initial footer status — always "starting"; never trust stale status file
     setFooterStatus("starting");
@@ -199,7 +224,8 @@ All tools require a \`language\` parameter (one of: typescript, javascript, pyth
 
   pi.on("session_shutdown", async () => {
     if (poller) { clearInterval(poller); poller = undefined; }
-    killDaemon();
+    if (ownsDaemon) killDaemon(); // only the owning session tears down the daemon
+    ownsDaemon = false;
     clearFooterStatus();
     projectRoot = undefined;
     projectDir  = undefined;

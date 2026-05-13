@@ -311,8 +311,24 @@ async function opPtc(
 
 // ── code_map implementations ──────────────────────────────────────────────────
 
+/** Cache git root per cwd so repeated parallel code-map calls don't re-fork. */
+const gitRootCache = new Map<string, string>();
+async function resolveGitRoot(cwd: string): Promise<string> {
+  const cached = gitRootCache.get(cwd);
+  if (cached !== undefined) return cached;
+  const result = await new Promise<string>((res) => {
+    execFile("git", ["rev-parse", "--show-toplevel"], { cwd, timeout: 3000 }, (_err, stdout) => {
+      res(stdout?.trim() || cwd);
+    });
+  });
+  const root = result || cwd;
+  gitRootCache.set(cwd, root);
+  return root;
+}
+
 async function opCodeMap(toolName: string, params: Record<string, any>, cwd: string): Promise<string> {
-  const client = new SocketClient(cwd);
+  const root   = await resolveGitRoot(cwd);
+  const client = new SocketClient(root);
   const lang   = params.language ?? "";
   switch (toolName) {
     case "code_map_outline": {
