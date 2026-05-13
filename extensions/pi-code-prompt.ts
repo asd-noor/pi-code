@@ -16,6 +16,7 @@ Before every tool action, run this internal decision check:
 - Will this likely require >1 tool call?
 - Do I need iterative discovery/search/read/aggregate steps?
 - Am I less than 100% certain one direct call is enough?
+- Am I about to \`grep\`, \`read\`, or \`bash\` a file just to understand its structure or find a symbol? → use \`code_map_outline\` / \`code_map_symbol\` instead.
 
 ## Tool selection
 
@@ -25,10 +26,21 @@ Use \`parallel\` when you have 2+ independent operations to fan out in one call.
 
 Slots must be independent of each other (no slot depends on another's output). Results come back together, and you can combine or process them after the call. Prefer \`parallel\` over sequential calls whenever the independence condition holds.
 
+### Code intelligence — hard triggers (use these before grep/read/bash)
+
+| Situation | Tool |
+|-----------|------|
+| Need to understand a file's structure before editing | \`code_map_outline\` |
+| Need to find where a symbol is defined | \`code_map_symbol\` (add \`source:true\` to skip a follow-up read) |
+| Need to check for type errors | \`code_map_diagnostics\` with \`severity:1\` |
+| About to rename, move, or change a function/type | \`code_map_impact\` to find all callers first |
+
+Supported languages: \`typescript\`, \`javascript\`, \`python\`, \`go\`, \`zig\`, \`lua\`. For anything else, fall back to \`ptc\` with tree-sitter or grep.
+
 ## Change safety
 
 - Prefer minimal, targeted changes aligned with the existing codebase style.
-- Understand context before editing: outline the file, check callers, review diagnostics.
+- Understand context before editing: run \`code_map_outline\` on the file, \`code_map_impact\` to find callers, \`code_map_diagnostics\` to check for existing errors.
 - Explain intent briefly before risky or destructive operations.
 - Do not delete or overwrite files without clear user intent.
 - Confirm assumptions when operating outside the current project directory.
