@@ -4,9 +4,6 @@
  * Registers a single `ptc` tool that runs a Python (uv) or bash script
  * in one tool call. PTC is the default — individual tools are the exception.
  *
- * MCP access from within scripts: use the `mcporter` binary directly.
- *   mcporter call server.tool key=value --output json
- *   mcporter list --schema
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -70,31 +67,6 @@ Python \`ptc\` execution runs the saved script file directly so the kernel honor
 # ///
 \`\`\`
 
-### MCP access from scripts
-
-Use the \`mcporter\` binary directly — no bridge needed:
-
-\`\`\`python
-import subprocess, json
-
-def mcp(selector: str, **kwargs) -> dict:
-    args = ["mcporter", "call", selector, "--output", "json"]
-    for k, v in kwargs.items():
-        args.append(f"{k}={v}")
-    r = subprocess.run(args, capture_output=True, text=True, check=True)
-    return json.loads(r.stdout)
-
-# Discover available servers and tools: mcporter list --schema
-issues = mcp("linear.list_issues", team="ENG", limit=10)
-repos  = mcp("github.list_repos", owner="acme")
-\`\`\`
-
-\`\`\`bash
-# Bash
-mcporter call linear.list_issues team=ENG limit=10 --output json
-mcporter call server.tool --args '{"key": "value", "nested": {"a": 1}}'
-\`\`\`
-
 ### code-map access from scripts
 
 The code-map daemon speaks a simple JSON protocol over a Unix socket. Connect directly:
@@ -155,13 +127,8 @@ Execution:
 - Bash scripts are executed with bash
 - Prefer a bash script through ptc over raw bash when the shell work would otherwise require multiple calls
 
-MCP access: use the mcporter binary directly from within the script.
-  Python: subprocess.run(["mcporter", "call", "server.tool", "key=value", "--output", "json"])
-  Bash:   mcporter call server.tool key=value --output json
-  Discover: mcporter list --schema
-
 On failure: fix the script and call ptc again — do not fall back to individual tool calls.`,
-    promptSnippet: "Default tool — runs Python or bash scripts. Prefer Python + uv by default, and even for shell-heavy work prefer a bash script through ptc. Use raw bash only when the command is genuinely one-shot. Uv-backed Python scripts execute directly by file path, require `#!/usr/bin/env -S uv run --script`, and benefit from robust dependency management plus fast cached reruns. Use `parallel` for 2+ independent operations, including `ptc` slots. MCP via mcporter binary.",
+    promptSnippet: "Default tool — runs Python or bash scripts. Prefer Python + uv by default, and even for shell-heavy work prefer a bash script through ptc. Use raw bash only when the command is genuinely one-shot. Uv-backed Python scripts execute directly by file path, require `#!/usr/bin/env -S uv run --script`, and benefit from robust dependency management plus fast cached reruns. Use `parallel` for 2+ independent operations, including `ptc` slots.",
     parameters: Type.Object({
       purpose: Type.String({
         description: "One-line description of what this script does. Shown in the UI when the tool runs.",

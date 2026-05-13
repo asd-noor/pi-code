@@ -1,6 +1,6 @@
 # ptc (Programmatic Tool Calling)
 
-A `ptc` tool that runs a Python or bash script in a single tool call, replacing multiple sequential tool calls. MCP access is handled via the `mcporter` binary directly from within scripts.
+A `ptc` tool that runs a Python or bash script in a single tool call, replacing multiple sequential tool calls.
 
 ## Tool: `ptc`
 
@@ -62,40 +62,6 @@ diagnostics = _code_map("diagnostics", {"severity": 1},          "/abs/project/r
 callers     = _code_map("impact",      {"name": "MyClass"},      "/abs/project/root")
 ```
 
-## MCP access via mcporter
-
-Call any MCP tool directly from within a `ptc` script using the `mcporter` binary:
-
-### Python
-
-```python
-import subprocess, json
-
-def mcp(selector: str, **kwargs) -> dict:
-    args = ["mcporter", "call", selector, "--output", "json"]
-    for k, v in kwargs.items():
-        args.append(f"{k}={v}")
-    r = subprocess.run(args, capture_output=True, text=True, check=True)
-    return json.loads(r.stdout)
-
-issues = mcp("linear.list_issues", team="ENG", limit=10)
-repos  = mcp("github.list_repos", owner="acme")
-```
-
-### Bash
-
-```bash
-mcporter call linear.list_issues team=ENG limit=10 --output json
-mcporter call server.tool --args '{"key": "value", "nested": {"a": 1}}'
-```
-
-### Discovery
-
-```bash
-mcporter list           # list configured servers
-mcporter list linear --schema   # see tool schemas and parameters
-```
-
 ## On failure
 
 The tool returns exit code + stderr on failure. Fix the script and call `ptc` again — do not fall back to individual tool calls.
@@ -105,5 +71,4 @@ The tool returns exit code + stderr on failure. Fix the script and call `ptc` ag
 A PTC instruction is appended to the system prompt on every turn, covering:
 - Script type priority (python → bash)
 - PEP 723 metadata block requirement
-- MCP access patterns via `mcporter`
 - Retry behaviour on failure

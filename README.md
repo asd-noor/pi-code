@@ -42,7 +42,6 @@ Skills provide specialized capabilities for specific task types:
 | [web-scout](./docs/web-scout.md) | Real-time web research, content extraction, and site mapping via Tavily (MCP) | `./skills/web-scout/` |
 | data-wrangler | Query SQL databases and tabular files with the `sq` CLI (SLQ/SQL, CSV/Excel/JSON/DB, cross-source joins, diff, inspect) | `./skills/data-wrangler/` |
 | hunk-review | Interact with live Hunk diff review sessions via CLI — inspect, navigate, reload, and comment on diffs | `./skills/hunk-review/` |
-| mcporter | Use MCP tools through the `mcporter` proxy — search, describe, and call tools from external MCP servers | `./skills/mcporter/` |
 
 ### Hard Triggers
 
@@ -53,7 +52,6 @@ These skills activate automatically when their condition is met:
 | Task requires library API references, code examples, or tool docs | `doc-library` |
 | Task requires real-time web data, news, or research | `web-scout` |
 | Task involves a live Hunk diff session, code review, or diff navigation | `hunk-review` |
-| Task requires MCP tool discovery, schema inspection, or MCP tool invocation | `mcporter` |
 | Parallel or autonomous work | `subagents` |
 
 ## Prompts
@@ -99,7 +97,6 @@ These are included automatically when you install `pi-code`:
 
 | Package | Purpose |
 |---|---|
-| [pi-mcporter](https://github.com/mavam/pi-mcporter) | MCP bridge — enables `doc-library` and `web-scout` skills via `mcporter` binary |
 | ask-tool | Interactive clarification tool — native extension replacing `@eko24ive/pi-ask` |
 
 ### Peer Dependencies
@@ -143,7 +140,6 @@ The following binaries must be in your `PATH`:
 | Binary | Purpose | Required For |
 |---|---|---|
 | `memory-md` | Memory daemon for persistent storage | memory-md extension |
-| `mcporter` | MCP bridge for tool access | doc-library and web-scout skills |
 | `uv` | Executes Python ptc scripts via `#!/usr/bin/env -S uv run --script` | ptc extension and parallel ptc slots |
 | `sq` | Command-line data wrangling for SQL databases and tabular files | data-wrangler skill — install from [sq.io/docs/install](https://sq.io/docs/install/) |
 | `hunk` | Interactive terminal diff viewer for code review sessions | hunk-review skill — install from [hunk.tools](https://hunk.tools) |
@@ -207,7 +203,6 @@ See the [doc-library](./docs/doc-library.md) and [web-scout](./docs/web-scout.md
 - Uv-backed Python scripts execute directly by file path via `#!/usr/bin/env -S uv run --script`
 - uv is preferred because it provides robust dependency management and cached reruns are extremely fast
 - PEP 723 inline dependency management for Python
-- Direct MCP access via `mcporter` binary from within scripts
 - Direct code-map daemon access via Unix socket
 - Replace multi-hop tool calls with consolidated scripts
 
@@ -289,7 +284,6 @@ pi-code/
 │   ├── doc-library/    # Library documentation lookup
 │   ├── web-scout/      # Web research
 │   ├── hunk-review/    # Hunk diff review session control
-│   ├── mcporter/       # MCP tool proxy
 │   └── data-wrangler/  # SQL and tabular data wrangling
 ├── prompts/            # Prompt templates
 │   ├── memory-init.md  # Memory initialization
@@ -323,4 +317,4 @@ GPL-3.0-only
 
 ---
 
-**Note**: This package requires Pi coding agent and several external binaries (`memory-md`, `mcporter`, `bun`). See Requirements section for full setup instructions.
+**Note**: This package requires Pi coding agent and several external binaries (`memory-md`, `bun`). See Requirements section for full setup instructions.

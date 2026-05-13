@@ -1,6 +1,6 @@
 # doc-library skill
 
-Retrieves up-to-date library documentation and API references via the Context7 MCP server, accessed through `pi-mcporter`.
+Retrieves up-to-date library documentation and API references via the built-in scout tools (`find_library_id`, `query_library_docs`).
 
 ## When to use
 
@@ -11,18 +11,18 @@ Retrieves up-to-date library documentation and API references via the Context7 M
 
 The system prompt enforces this as a **hard trigger**: any task involving third-party library APIs must activate this skill before writing code.
 
-## Tools (via mcporter)
+## Tools
 
 | Tool | Purpose |
 |---|---|
-| `context7.resolve-library-id` | Resolve a library name to a Context7 ID — always call first |
-| `context7.query-docs` | Fetch docs and code examples for a specific library ID |
+| `find_library_id` | Resolve a library name to a Context7 ID — always call first |
+| `query_library_docs` | Fetch docs and code examples for a specific library ID |
 
 ## Workflow
 
 ```
-1. resolve-library-id  query:"How to use JWT auth in Express" libraryName:"express"
-2. query-docs          libraryId:"/expressjs/express"  query:"JWT authentication middleware"
+1. find_library_id   library_name:"express"  query:"How to use JWT auth in Express"
+2. query_library_docs  library_id:"/expressjs/express"  query:"JWT authentication middleware"
 ```
 
 Skip step 1 if the user provides a library ID directly (format: `/org/project`).
@@ -35,5 +35,5 @@ Skip step 1 if the user provides a library ID directly (format: `/org/project`).
 
 ## Requirements
 
-- `pi-mcporter` package installed (bundled with pi-code)
-- Context7 MCP server configured in mcporter
+- Scout extension loaded (`extensions/scout/index.ts`)
+- API key configured in `~/.pi/agent/pi-code.json` under `scout.context7ApiKey`
