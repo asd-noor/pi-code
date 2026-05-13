@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-05-13
+
+### Added
+
+- **finder**: First-party `extensions/finder/` extension replacing the bundled `@ff-labs/pi-fff` package. Owns the `FileFinder` singleton directly via `@ff-labs/fff-node`, registers `ffgrep` and `fffind` tools, and exposes the instance to other extensions via `pi.events` (`fff:finder` / `fff:request` channels).
+- **finder**: Full parity with upstream pi-fff v0.6.0 — mode system (`tools-and-ui` / `tools-only` / `override`), `FffEditor` @-mention autocomplete, `renderCall`/`renderResult` on both tools, `--fff-mode` / `--fff-frecency-db` / `--fff-history-db` CLI flags, updated `/fff-health` showing version + mode + query tracker.
+- **parallel**: `ffgrep` and `fffind` whitelisted as parallel slots — delegates to the shared `FileFinder` instance from the finder extension via the event bridge.
+- **parallel**: All seven scout tools whitelisted as parallel slots (`web_search`, `web_extract`, `web_crawl`, `web_map`, `web_research`, `find_library_id`, `query_library_docs`) — spawns `tvly`/`ctx7` CLI subprocesses directly, reads API keys from `~/.pi/agent/pi-code.json`.
+- **finder**, **scout**: Both extensions now inject domain-specific usage instructions via `before_agent_start` — instructions travel with the extension rather than living only in `pi-code-prompt.ts`.
+
+### Changed
+
+- **parallel**: `BASE_INSTRUCTION`, `description`, and `promptSnippet` rewritten to enumerate every supported slot by category (Native, Scripts, Code intelligence, Memory, Agenda, File search, Scout/web) instead of vaguely referencing "any supported extension tool".
+- **pi-code-prompt**: Removed scout hard triggers and library-version guidance (now owned by `extensions/scout/index.ts`). Removed tool-selection prose that duplicated `ptc.ts` instruction. Package-level prompt now covers only cross-cutting policy.
+
+### Removed
+
+- **mcporter**: Removed `mcporter` as a parallel slot — `McporterCall` type, `opMcporter()` function, and all dispatch logic deleted from `extensions/parallel.ts`. Scout tools cover the primary use cases via direct CLI.
+- **mcporter**: All references removed from `extensions/ptc.ts`, `docs/ptc.md`, `docs/web-scout.md`, `docs/doc-library.md`, and `README.md`. Docs updated to describe direct scout tools.
+- **@aliou/pi-processes**: Removed from `dependencies`, `bundleDependencies`, `pi.extensions`, and `pi.skills` — no references existed anywhere in the codebase.
+- **@ff-labs/pi-fff**: Replaced by the first-party `extensions/finder/` extension.
+
+### Fixed
+
+- **parallel / finder**: Doubled-backslash regex bug in `opFfgrep` — `hasRegex` character class and wildcard-guard regex had every backslash doubled by a bash heredoc during code generation, causing `]` to be excluded from the metacharacter set and bare `*`/`+` patterns to bypass the wildcard guard.
+- **parallel, pi-code-prompt**: Bare backticks inside template literals caused `ParseError: Missing semicolon` at runtime. Fixed in `BASE_INSTRUCTION` (parallel.ts) and the Tool selection section (pi-code-prompt.ts).
+
 ## [1.19.0] - 2026-05-13
 
 ### Fixed
