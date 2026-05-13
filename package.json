@@ -9,18 +9,15 @@
     "type": "module",
     "dependencies": {
         "@tmustier/pi-files-widget": "*",
-        "@ff-labs/fff-node": "*",
-        "@aliou/pi-processes": "*"
+        "@ff-labs/fff-node": "*"
     },
     "pi": {
         "extensions": [
             "./extensions",
-            "node_modules/@aliou/pi-processes/src/index.ts",
             "node_modules/@tmustier/pi-files-widget/index.ts"
         ],
         "skills": [
-            "./skills",
-            "node_modules/@aliou/pi-processes/skills/pi-processes"
+            "./skills"
         ],
         "prompts": [
             "./prompts"
@@ -28,8 +25,7 @@
     },
     "bundleDependencies": [
         "@tmustier/pi-files-widget",
-        "@ff-labs/fff-node",
-        "@aliou/pi-processes"
+        "@ff-labs/fff-node"
     ],
     "overrides": {
         "basic-ftp": "6.0.1",
