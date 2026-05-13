@@ -50,6 +50,7 @@ export class LspClient extends EventEmitter {
     });
     this.proc.stdout.on("data", (chunk: Buffer) => this.onData(chunk));
     this.proc.stderr.on("data", () => {}); // swallow LSP server logs
+    this.proc.stdin.on("error", () => {}); // suppress EPIPE when process exits before shutdown completes
     this.proc.on("error", (err) => this.emit("error", err));
     this.proc.on("exit", (code) => {
       // fix 4: reject all pending requests immediately on process exit
@@ -107,12 +108,17 @@ export class LspClient extends EventEmitter {
   }
 
   private send(method: string, params: unknown): void {
+    if (!this.proc.stdin.writable) return; // process already gone — skip to avoid EPIPE
     const body = JSON.stringify({ jsonrpc: "2.0", method, params });
     this.proc.stdin.write(`Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n${body}`);
   }
 
   private request<T>(method: string, params: unknown, timeout?: number): Promise<T> {
     return new Promise((resolve, reject) => {
+      if (!this.proc.stdin.writable) {
+        reject(new Error("LSP process stdin is closed"));
+        return;
+      }
       const id = this.msgId++;
       const ms = timeout ?? this.opts.requestTimeout ?? 10000;
       const timer = setTimeout(() => {
