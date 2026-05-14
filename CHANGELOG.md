@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.0] - 2026-05-15
+
+### Changed
+
+- **code-map**: LSP processes now release all open documents after Phase 2 completes (diagnostics snapshotted + reverse refs built). The LSP process stays alive for fast re-use; only the virtual document state is freed, dropping tsserver from ~858 MB to near-idle. Files are re-opened transiently on demand (watcher-triggered reindex or explicit query).
+- **code-map**: Watcher-triggered reindex now follows an open→snapshot→close cycle: LSP opens only the changed file, snapshots fresh diagnostics, recomputes reverse refs for affected symbols, then immediately closes the file. The existing 500 ms debounce means SQLite is up to date before most `code_map_diagnostics` calls.
+- **code-map**: `_updateReverseRefsForFile` now opens `nodeAbsFile` on-demand for the `affectedNodeIds` loop (external symbols whose caller sets are invalidated by a file change) and closes it in a `finally` block. Previously these files were assumed to be open from startup.
+- **code-map**: All `closeFile` calls in `indexer.ts` are now guarded with `try/finally` — a rejection in `_updateReverseRefsForFile` or an error in the `affectedNodeIds` loop no longer leaks open LSP document handles or aborts the reverse-ref iteration for remaining nodes.
+- **code-map**: `buildReverseRefs()` in `runner.ts` is now `await`-ed (was fire-and-forgot `void`) so the post-Phase-2 file-close step runs only after all reverse refs are in SQLite.
+
+### Fixed
+
+- **docs/code-map**: Language support table corrected — removed Zig and Lua (never implemented), added C (`clangd`; no tree-sitter grammar, LSP-only). Tool parameter docs updated: `language` values are now `typescript | javascript | python | go | c`.
+
 ## [2.2.0] - 2026-05-14
 
 ### Added
