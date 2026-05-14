@@ -269,7 +269,13 @@ async function main() {
       );
 
       // Phase 2: reverse refs (background within background)
-      void indexer.buildReverseRefs();
+      await indexer.buildReverseRefs();
+      // Close all open files after reverse refs — keeps LSP process alive but frees memory
+      for (const { client, def } of uniqueClients) {
+        const clientFiles = files.filter((f) => def.extensions.some((ext) => f.endsWith(ext)));
+        for (const f of clientFiles) client.closeFile(f);
+        log(`LSP files released [${def.languageId}] — process kept alive, memory freed`);
+      }
     } catch (err) {
       log(`LSP background init error (tree-sitter index still available): ${err}`);
     }

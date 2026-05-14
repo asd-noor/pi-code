@@ -286,7 +286,11 @@ export class Indexer {
     client.updateFile(absFile);
     await client.waitForQuietDiagnostics(600, 6000);
     this.snapshotDiagnostics(client.getDiagnostics() as Map<string, Diagnostic[]>);
-    void this._updateReverseRefsForFile(absFile, relFile, affectedNodeIds);
+    try {
+      await this._updateReverseRefsForFile(absFile, relFile, affectedNodeIds);
+    } finally {
+      client.closeFile(absFile);
+    }
   }
 
   /** Fire-and-forget LSP diagnostic + reverse-ref update after a tree-sitter re-index. */
@@ -300,7 +304,11 @@ export class Indexer {
         client.getDiagnostics() as Map<string, Diagnostic[]>,
       );
     } catch (_) {}
-    void this._updateReverseRefsForFile(absFile, relFile, affectedNodeIds);
+    try {
+      await this._updateReverseRefsForFile(absFile, relFile, affectedNodeIds);
+    } finally {
+      client.closeFile(absFile);
+    }
   }
 
   private async _updateReverseRefsForFile(
@@ -340,6 +348,7 @@ export class Indexer {
       const nodeClient  = this.clientFor(nodeAbsFile);
       if (!nodeClient) { this.db.markIndexed(nodeId); continue; }
       try {
+        nodeClient.openFile(nodeAbsFile);
         const refs = await nodeClient.references(nodeAbsFile, node.lineStart - 1, node.colStart, false);
         this.db.setReverseRefs(nodeId, refs
           .map((r) => ({
@@ -351,6 +360,8 @@ export class Indexer {
         );
       } catch (_) {
         this.db.markIndexed(nodeId);
+      } finally {
+        nodeClient.closeFile(nodeAbsFile);
       }
     }
   }
