@@ -168,7 +168,7 @@ export interface MemoryConfig {
  */
 export interface CodeMapConfig {
   /** Enable the code-map daemon. Default: true. Set to false to skip daemon spawn, footer widget, and system prompt injection. */
-  enable?: boolean;
+  enabled?: boolean;
   /** Max files for initial indexing. Watcher covers all dirs regardless. Default: 200. */
   fileLimit?: number;
 }

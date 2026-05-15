@@ -79,7 +79,7 @@ export default function (pi: ExtensionAPI) {
   // ── System instruction ───────────────────────────────────────────────────────────
 
   pi.on("before_agent_start", async (event) => {
-    if (getConfig().codeMap?.enable === false) return {};
+    if (getConfig().codeMap?.enabled === false) return {};
     return {
     systemPrompt: event.systemPrompt + `
 
@@ -171,7 +171,7 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
     projectRoot = await resolveProjectRoot(ctx.cwd, pi.exec.bind(pi));
     projectDir  = getProjectDir(projectRoot);
 
-    if (getConfig().codeMap?.enable === false) return;
+    if (getConfig().codeMap?.enabled === false) return;
 
     // ── Client-only guard (subagents only) ────────────────────────────────────
     // Subagent sessions connect to the running daemon; they must not spawn or

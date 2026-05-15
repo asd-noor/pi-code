@@ -111,7 +111,7 @@ Immediately after \`agenda_complete\` succeeds:
 
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
-    const codeMapEnabled = getConfig().codeMap?.enable !== false;
+    const codeMapEnabled = getConfig().codeMap?.enabled !== false;
     return {
       systemPrompt: event.systemPrompt + "\n\n" + buildInstruction(codeMapEnabled),
     };
