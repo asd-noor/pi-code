@@ -103,6 +103,7 @@ export class AgentManager {
       if (warmRecord?.session) {
         options.existingSession = warmRecord.session;
         warmRecord.completedAt = Date.now(); // reset warm timer
+        record.warmReuse = true;
       }
     }
 

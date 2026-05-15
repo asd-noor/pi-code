@@ -95,6 +95,15 @@ export function getDetachedCacheDir(memDir: string): string {
  *
  * Defaults to `getProjectRoot(cwd)` when no `projectRoot` is supplied.
  */
+/**
+ * Return a short stable hash of the project root — used for namespacing
+ * per-project temp files (e.g. {tmpdir}/pi-subagents/{hash}/Explorer).
+ */
+export function getProjectHash(cwd?: string): string {
+  const root = getProjectRoot(cwd);
+  return createHash("sha256").update(root).digest("hex").slice(0, 12);
+}
+
 export function getProjectCacheDir(projectRoot?: string): string {
   const root = projectRoot ?? getProjectRoot();
   const hash = createHash("sha256").update(root).digest("hex").slice(0, 16);

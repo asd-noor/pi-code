@@ -48,6 +48,7 @@ export interface AgentRecord {
   promise?: Promise<void>;
   pendingSteers?: string[];
   resultConsumed?: boolean;
+  warmReuse?: boolean;
 }
 
 /** Single tool call captured in a turn log. */

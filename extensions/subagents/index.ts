@@ -13,7 +13,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
@@ -25,7 +25,7 @@ import { resolveModel, modelLabel } from "./model-resolver.ts";
 import { getDefaultMaxTurns, setDefaultMaxTurns, getGraceTurns, setGraceTurns, ALL_BUILTIN_TOOL_NAMES, sessionManagerToAgentId } from "./agent-runner.ts";
 import { AgentWidget, formatMs } from "./widget.ts";
 import type { AgentConfig, AgentRecord, AgentActivity } from "./types.ts";
-import { getConfig as getPiCodeConfig, updateGlobalConfig, setSubagentsSharedManager, getSubagentsSharedManager, getSubagentsPendingAskPrimary, setSubagentsSendToPrimary, getSubagentsSendToPrimary } from "../_config/index.ts";
+import { getConfig as getPiCodeConfig, updateGlobalConfig, setSubagentsSharedManager, getSubagentsSharedManager, getSubagentsPendingAskPrimary, setSubagentsSendToPrimary, getSubagentsSendToPrimary, getProjectHash } from "../_config/index.ts";
 
 // ---- Seed bundled agents --------------------------------------------------
 
@@ -228,11 +228,18 @@ export default function (pi: ExtensionAPI) {
   // (imported as `getSubagentsPendingAskPrimary()` from "./shared.ts")
 
   function startSessionFile(record: AgentRecord): void {
-    const dir = join(tmpdir(), "pi-subagents");
+    const dir = `/tmp/pi-subagents/${getProjectHash(currentCwd)}`;
     mkdirSync(dir, { recursive: true });
-    const filePath = join(dir, record.id);
-    writeFileSync(filePath, serializeHeader(record, manager.getActivity(record.id)), "utf-8");
+    const filePath = join(dir, record.type);
     tempFiles.add(filePath);
+
+    if (record.warmReuse) {
+      // Warm reuse — append a divider marking the new run
+      appendFileSync(filePath,
+        `\n${GY}\u2500\u2500 ${R}${CY}resumed${R}  ${GY}${record.description}  \u00b7  ID: ${record.id}${R}\n\n`);
+    } else {
+      writeFileSync(filePath, serializeHeader(record, manager.getActivity(record.id)), "utf-8");
+    }
     let lastTurnCount = 0;
     const interval = setInterval(() => {
       const rec = manager.getRecord(record.id);
@@ -332,7 +339,7 @@ export default function (pi: ExtensionAPI) {
         {
           customType: "subagents:complete",
           content: [
-            `Background subagent finished - ID: ${record.id}`,
+            `Background subagent finished - ID: ${record.id}${record.warmReuse ? "  (warm)" : ""}`,
             `Type: ${record.type}  ·  ${record.description}`,
             `Status: ${statusLabel}  ·  ${record.toolUses} tool uses  ·  ${duration}`,
             "",
@@ -965,7 +972,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
 
     const isActive = record.status === "running" || record.status === "queued";
     const viewerCmd = getPiCodeConfig().subagents?.viewer || undefined;
-    const sessionNote = viewerCmd ? undefined : `less -R +F /tmp/pi-subagents/${record.id}`;
+    const sessionNote = viewerCmd ? undefined : `less -R +F /tmp/pi-subagents/${getProjectHash(currentCwd)}/${record.type}`;
     const title = sessionNote
       ? `${record.type}  \u00b7  ${record.description}\n${sessionNote}`
       : `${record.type}  \u00b7  ${record.description}`;
@@ -978,8 +985,8 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     if (!action || action === "Back") return;
 
     if (action === "View session" && viewerCmd) {
-      const filePath = join(tmpdir(), "pi-subagents", record.id);
-      const cmd = viewerCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, record.id);
+      const filePath = `/tmp/pi-subagents/${getProjectHash(currentCwd)}/${record.type}`;
+      const cmd = viewerCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, record.type);
       try {
         const { spawn } = await import("node:child_process");
         const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });
@@ -1018,7 +1025,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     const vCmd = getPiCodeConfig().subagents?.viewer || undefined;
     const sessionLines = running
       .filter(() => !vCmd)
-      .map((r) => `Session (${r.status}):  less -R +F /tmp/pi-subagents/${r.id}`);
+      .map((r) => `Session (${r.status}):  less -R +F /tmp/pi-subagents/${getProjectHash(currentCwd)}/${r.type}`);
     const infoLines = [
       `Name:        ${name}`,
       `Source:      ${cfg.source ?? "unknown"}`,
@@ -1041,8 +1048,8 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     }
     const sessionIdx = menuOpts.indexOf(pick) - 1;
     if (sessionIdx >= 0 && running[sessionIdx] && vCmd) {
-      const filePath = join(tmpdir(), "pi-subagents", running[sessionIdx]!.id);
-      const cmd = vCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, running[sessionIdx]!.id);
+      const filePath = `/tmp/pi-subagents/${getProjectHash(currentCwd)}/${running[sessionIdx]!.type}`;
+      const cmd = vCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, running[sessionIdx]!.type);
       try {
         const { spawn } = await import("node:child_process");
         const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });
