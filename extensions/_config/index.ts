@@ -125,6 +125,11 @@ export interface MemoryConfig {
   activityLog?: MemoryActivityLogConfig;
   /** Per-subcommand model overrides. `default` applies unless a subcommand key is set. */
   subcommandModel?: MemorySubcommandModelConfig;
+  /**
+   * Shell command used by `/memory browser` to open a file.
+   * Use `$FILE` as the placeholder for the file path, e.g. `"code $FILE"`.
+   */
+  editorCommand?: string;
 }
 
 /**

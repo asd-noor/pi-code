@@ -1,8 +1,7 @@
 import { Type } from "typebox";
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { join } from "node:path";
+import { getProjectCacheDir, getProjectRoot } from "../_config/index.ts";
 import type { AgendaRow, DiscoveryCategory, DiscoveryRow, EvaluationRow, TaskRow } from "./types.ts";
 
 export const DEFAULT_PROJECT = ".";
@@ -17,22 +16,23 @@ export function ensureState(value: string, allowed: readonly string[], label: st
   if (!allowed.includes(value)) throw new Error(`${label} must be one of: ${allowed.join(", ")}`);
 }
 
-function encodeProject(projectDir: string): string {
-  return projectDir.replace(/[:\\/]+/g, "=");
-}
-
-function resolveProjectDir(project: string | undefined, cwd: string): string {
-  return resolve(cwd, project?.trim() || DEFAULT_PROJECT);
-}
+// Cache db paths — getProjectRoot(spawnSync git) + getProjectCacheDir(file I/O)
+// must not run on every poller tick as they block the event loop and break TUI rendering.
+const _dbPathCache = new Map<string, string>();
 
 function getDbPath(project: string | undefined, cwd: string): string {
-  const projectDir = resolveProjectDir(project, cwd);
-  return join(homedir(), ".pi", "cache", encodeProject(projectDir), "agenda.sqlite");
+  const key = (project?.trim() ?? "") + "\0" + cwd;
+  let cached = _dbPathCache.get(key);
+  if (!cached) {
+    const projectRoot = getProjectRoot(project?.trim() ? project.trim() : cwd);
+    cached = join(getProjectCacheDir(projectRoot), "agenda.db");
+    _dbPathCache.set(key, cached);
+  }
+  return cached;
 }
 
 export function openDb(project: string | undefined, cwd: string): DbHandle {
   const dbPath = getDbPath(project, cwd);
-  mkdirSync(dirname(dbPath), { recursive: true });
 
   const db = new DatabaseSync(dbPath);
   db.exec(`

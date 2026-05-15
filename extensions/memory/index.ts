@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, appendFil
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   createAgentSession,
@@ -25,6 +25,7 @@ import {
 import { registerTools } from "./tools.ts";
 import { getLogPath, getStatusPath, getSocketPath } from "./paths.ts";
 import { getProjectRoot, getConfig, getProjectCacheDir } from "../_config/index.ts";
+import { openMemoryBrowserInteractive } from "./browser.ts";
 
 // ── Activity log helpers ──────────────────────────────────────────────────────
 
@@ -453,7 +454,7 @@ Some description.
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
       if (parts.length <= 1) {
-        const subs = ["status", "restart", "snapshot", "logs", "init", "curate", "compact"];
+        const subs = ["status", "restart", "snapshot", "logs", "init", "curate", "compact", "browser"];
         const p = parts[0].toLowerCase();
         const matches = subs.filter((s) => s.startsWith(p)).map((s) => ({ value: s, label: s }));
         return matches.length > 0 ? matches : null;
@@ -607,6 +608,18 @@ File-specific rules:
 `.trim(), ctx, ctx.cwd).then((result) => {
           if (result) ctx.ui.notify(result.slice(0, 800), "info");
         }).catch((err) => ctx.ui.notify(`memory compact failed: ${(err as Error).message}`, "error"));
+
+      } else if (sub === "browser") {
+        const editorCmd = getConfig().memory?.editorCommand;
+        const selectedFile = await openMemoryBrowserInteractive(ctx, memDir, editorCmd);
+        if (selectedFile && editorCmd) {
+          const cmd = editorCmd.replace(/\$FILE/g, `"${selectedFile.replace(/"/g, '\\"')}"`);
+          try {
+            spawnSync(cmd, [], { shell: true, stdio: "inherit" });
+          } catch (err) {
+            ctx.ui.notify(`editor: ${(err as Error).message}`, "error");
+          }
+        }
 
       } else {
         ctx.ui.notify(`memory: unknown sub-command: ${sub}`, "warning");
