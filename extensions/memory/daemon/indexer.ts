@@ -81,6 +81,7 @@ export class Indexer {
       flat.map((s, i) => ({
         path: s.path,
         heading: s.heading,
+        updatedAt: s.updatedAt,
         level: s.level,
         content: s.content,
         position: i,

@@ -19,7 +19,8 @@ function scanHeadings(content: string): HeadingEntry[] {
     const level = m[1].length;
     if (level === 1) continue; // skip # title
     const text = lines[i].slice(m[0].length).trim();
-    const slug = text.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const label = text.indexOf(" | ") !== -1 ? text.slice(0, text.indexOf(" | ")).trim() : text;
+    const slug = label.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
     entries.push({ line: i, level, slug });
   }
   return entries;

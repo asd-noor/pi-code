@@ -26,18 +26,18 @@ import { registerTools } from "./tools.ts";
 import { getLogPath, getStatusPath, getSocketPath } from "./paths.ts";
 import { getProjectRoot, getConfig, getProjectCacheDir } from "../_config/index.ts";
 
-// ── Workflow log helpers ──────────────────────────────────────────────────────
+// ── Activity log helpers ──────────────────────────────────────────────────────
 
 interface WorkflowConfig { enabled: boolean; model: string; }
 
 function loadWorkflowConfig(): WorkflowConfig | null {
-  const wl = getConfig().memory?.workflow;
+  const wl = getConfig().memory?.activityLog;
   if (!wl?.enabled || !wl?.model) return null;
   return { enabled: true, model: wl.model };
 }
 
 /**
- * Append a timestamped entry to workflow.md, writing directly to the file
+ * Append a timestamped entry to activity_log.md, writing directly to the file
  * (bypassing the daemon) so the watcher picks up one atomic change.
  */
 async function appendWorkflowEntry(
@@ -49,19 +49,18 @@ async function appendWorkflowEntry(
   const pad = (n: number) => String(n).padStart(2, "0");
   const dateStr     = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}`;
   const displayTime = `${pad(ts.getHours())}:${pad(ts.getMinutes())}`;
-  const filePath    = join(memDir, "workflow.md");
+  const filePath    = join(memDir, "activity_log.md");
 
   if (!existsSync(filePath)) {
     mkdirSync(memDir, { recursive: true });
-    writeFileSync(filePath, "# Workflow\n\nAuto-generated activity log — do not edit manually.\n");
+    writeFileSync(filePath, "# Activity Log\n\nAuto-generated activity log — do not edit manually.\n");
   }
 
   const content = readFileSync(filePath, "utf-8");
   const parts: string[] = [];
 
   if (!content.includes(`## ${dateStr}`)) parts.push(`\n## ${dateStr}\n`);
-  parts.push(`\n### ${displayTime}\n`);
-  parts.push(`\n**${title}**\n`);
+  parts.push(`\n### ${title} | ${dateStr} ${displayTime}\n`);
   if (body.trim()) parts.push(`\n${body.trim()}\n`);
 
   appendFileSync(filePath, parts.join(""));
@@ -120,6 +119,67 @@ async function callModelForSummary(
   return "";
 }
 
+/**
+ * Run a memory management agent (init / curate / compact) with extensions
+ * enabled so memory tools are available. The daemon is NOT re-spawned because
+ * session_start guards on ctx.hasUI, which is false for sub-sessions.
+ */
+async function runMemoryAgent(
+  modelStr: string,
+  prompt: string,
+  ctx: any,
+  cwd: string,
+): Promise<string> {
+  const [provider, ...rest] = modelStr.split("/");
+  const modelId = rest.join("/");
+  const model = ctx.modelRegistry?.find(provider, modelId) ?? ctx.model;
+  if (!model) return "";
+
+  const agentDirPath = getAgentDir();
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir: agentDirPath,
+    settingsManager: SettingsManager.create(cwd, agentDirPath),
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+  });
+  await loader.reload();
+
+  const { session } = await createAgentSession({
+    cwd,
+    agentDir: agentDirPath,
+    sessionManager: SessionManager.inMemory(cwd),
+    settingsManager: SettingsManager.create(cwd, agentDirPath),
+    modelRegistry: ctx.modelRegistry,
+    model,
+    resourceLoader: loader,
+  });
+
+  await (session as any).bindExtensions({});
+  await session.prompt(prompt);
+
+  const messages: any[] = (session as any).messages ?? [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== "assistant") continue;
+    const blocks = Array.isArray(msg.content) ? msg.content : [];
+    const text = blocks
+      .filter((b: any) => b.type === "text" && b.text)
+      .map((b: any) => b.text as string)
+      .join("\n")
+      .trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function resolveSubcommandModel(sub: "init" | "curate" | "compact"): string | null {
+  const cfg = getConfig().memory?.subcommandModel;
+  return cfg?.[sub] ?? cfg?.default ?? null;
+}
+
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const RUNNER_SCRIPT = join(EXTENSION_DIR, "daemon", "runner.ts");
 
@@ -147,75 +207,63 @@ export default function (pi: ExtensionAPI) {
   // ── System prompt injection ───────────────────────────────────────────────
 
   const MEMORY_INSTRUCTION = `
-## Memory discipline
+## Reading Memory
 
-> **RUN BEFORE EVERY REPLY — mandatory checklist:**
-> 1. Did I discover, decide, or correct anything this turn? **YES → \`memory_search\` then write now.** NO → skip.
-> 2. Did I write to memory? **YES → ensure validation happened now.** If you used \`memory_new\` / \`memory_update\`, read their validation output. Otherwise run \`memory_validate_file\`. NO → skip.
-> 3. Run \`memory_search\` one more time to confirm nothing was missed.
->
-> Skipping this = failing your job.
+Always start with \`memory_search\` — it returns the most relevant sections ranked by relevance and recency.
 
-memory-md is a persistent, markdown-backed memory store. The markdown files are the source of
-truth; the daemon indexes them for fast lookup and search. Treat memory files as the authoritative
-shared context for this project.
+If you need to browse the exact contents of a file, use \`memory_list\` to get all section paths, then \`memory_get\` on the paths you want.
 
-Memory writes mutate the markdown files first. The daemon watcher updates the index afterward, so
-very recent writes may take a brief moment to appear in search results.
+- \`memory_search(query)\` — find sections by content; use this first
+- \`memory_list()\` — list all memory files
+- \`memory_list(file)\` — list all section paths within a file, in document order
+- \`memory_get(path)\` — retrieve the full content of a single section by exact path
 
-**Never recall from training data.** Always query memory tools. If a search returns nothing,
-state that explicitly and proceed fresh.
+## Writing Memory
 
-### Recall (before any work)
+Before writing, always \`memory_search\` first to check if a section already exists.
 
-1. \`memory_search\` with terms relevant to the task
-2. \`memory_get\` the exact path for any result worth reading in full
-3. Apply what you find immediately — recalled decisions and constraints are binding
+**Create a file** (required before adding any sections to it):
+\`memory_create_file(name, title, description?)\`
 
-### Store — hard triggers
+**Create a new section** (file must exist; fails if path already exists):
+\`memory_new(path, body, heading?)\`
+\`heading\` is the human-readable label. Defaults to the last path segment if omitted. The timestamp is appended automatically — do not include it.
 
-You **MUST** call a memory write tool if **ANY** of these are true this turn:
+**Update an existing section** (replaces body only; child sections are preserved):
+\`memory_update(path, body)\`
 
-- [ ] You chose one approach over another
-- [ ] You discovered how something works in this codebase
-- [ ] You corrected a wrong assumption
-- [ ] You completed a task that changed the project state
+**Delete a section and all its children**:
+\`memory_delete(path)\`
 
-**How to store:**
-1. \`memory_search\` — check if a matching section already exists
-2. Exists → \`memory_update\` (replaces only the immediate body; child sections are preserved)
-3. Missing → \`memory_create_file\` if the file is new, then \`memory_new\`
-4. \`memory_new\` / \`memory_update\` already validate after writing — read the validation output
-5. If validation fails: \`read\` the .md file, fix with \`edit\` tool, then \`memory_validate_file\`
+**Delete an entire file**:
+\`memory_delete_file(name)\`
 
-**Store:** decisions, constraints, architectural choices, discovered patterns, corrected assumptions.
-**Do not store:** transient thoughts, step-by-step logs, anything irrelevant across sessions.
+\`memory_new\` and \`memory_update\` validate automatically — if the file has structural issues after the write, they return an error. Use \`memory_validate_file(name)\` only for explicit checks on files you haven't just written.
 
-### File structure
+## Memory File Format
 
-#### Canonical files (use these by default)
+\`\`\`
+# Base file name or descriptive short title
+Some description.
 
-| File | Purpose |
-|------|--------|
-| \`architecture.md\` | Project architecture, tech stack, codebase reference, constraints. |
-| \`project.md\` | Categorised natural language description of the project, its goals, and scope. |
-| \`setup.md\` | Development setup, dependencies, configuration. |
-| \`decisions.md\` | Decisions made during the project — rationale and alternatives considered. |
-| \`notes.md\` | Arbitrary notes — challenges faced, lessons learned, future considerations. |
-| \`workflow.md\` | **Read-only.** Auto-generated activity log. Do not write to this file manually. |
+## Section Title | YYYY-MM-DD HH:MM
 
-#### File format rules
+### Subsection Title | YYYY-MM-DD HH:MM
+- Note 1
+- Note 2
 
-- Filename (without \`.md\`) is always the first path segment
-- \`#\` is a decorative title only — ignored for path derivation
-- Only ATX headings are recognized; \`##\` and deeper become path segments (slugified)
-- Example: \`architecture.md\` + \`## Tech Stack\` → path \`architecture/tech-stack\`
-- Body: concise and factual — reference material, not narrative
+### Subsection Title | YYYY-MM-DD HH:MM
+- Note 1
 
----
+#### Subsubsection Title | YYYY-MM-DD HH:MM
+- Note 1
 
-> ⚠️ **Before writing your reply:** Have you stored everything discovered or decided this turn?
-> If not — do it now, then reply.
+## Section Title | YYYY-MM-DD HH:MM
+- Note 1
+
+### Subsection Title | YYYY-MM-DD HH:MM
+- Note 1
+\`\`\`
 `.trim();
 
   pi.on("before_agent_start", async (event) => ({
@@ -248,7 +296,7 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
 
   function spawnDaemon(dir: string, root: string): ChildProcess {
     // getLogPath calls getProjectCacheDir which creates the directory
-    const logFd = openSync(getLogPath(root), "a");
+    const logFd = openSync(getLogPath(root), "w");
     const child = spawn(
       process.execPath,
       ["--import", "jiti/register", RUNNER_SCRIPT, dir, root],
@@ -295,7 +343,7 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
     if (ctx.hasUI) uiCtx = ctx.ui as typeof uiCtx;
   });
 
-  // ── agent_end: workflow log ─────────────────────────────────────────
+  // ── agent_end: activity log ─────────────────────────────────────────
 
   pi.on("agent_end", (event, ctx) => {
     if (!memDir || !projectRoot) return;
@@ -346,7 +394,7 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
         .join("\n");
 
       const summaryPrompt = [
-        "Write a workflow log entry for this agent session.",
+        "Write an activity log entry for this agent session.",
         "",
         "Tool calls made:",
         toolSummary,
@@ -374,12 +422,12 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
         try {
           appendFileSync(
             getLogPath(projectRoot!),
-            `[workflow] error: ${(err as any)?.message ?? err}\n`,
+            `[activity-log] error: ${(err as any)?.message ?? err}\n`,
           );
         } catch { /* ignore */ }
         void pi.exec(
           "osascript",
-          ["-e", `display notification "workflow log error — run /memory logs" with title "pi — memory"`],
+          ["-e", `display notification "activity log error — run /memory logs" with title "pi — memory"`],
           { timeout: 3000 },
         ).catch(() => {});
       }
@@ -401,17 +449,15 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
   // ── /memory command ───────────────────────────────────────────────────────
 
   pi.registerCommand("memory", {
-    description: "memory management: status | restart | snapshot [--move] | logs",
+    description: "memory management: status | restart | snapshot [--move] | logs | init | curate [file] | compact",
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
-      // First token — complete sub-command
       if (parts.length <= 1) {
-        const subs = ["status", "restart", "snapshot", "logs"];
+        const subs = ["status", "restart", "snapshot", "logs", "init", "curate", "compact"];
         const p = parts[0].toLowerCase();
         const matches = subs.filter((s) => s.startsWith(p)).map((s) => ({ value: s, label: s }));
         return matches.length > 0 ? matches : null;
       }
-      // Second token after "snapshot" — offer --move
       if (parts[0].toLowerCase() === "snapshot" && parts.length === 2) {
         const p = parts[1].toLowerCase();
         if ("--move".startsWith(p)) return [{ value: "--move", label: "--move" }];
@@ -480,6 +526,87 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
           const lines = readFileSync(logPath, "utf8").trimEnd().split("\n");
           ctx.ui.notify(lines.slice(-50).join("\n"), "info");
         } catch { ctx.ui.notify("(could not read log)", "warning"); }
+
+      } else if (sub === "init") {
+        const model = resolveSubcommandModel("init");
+        if (!model) { ctx.ui.notify("memory init: no model configured (memory.subcommandModel)", "warning"); return; }
+        ctx.ui.notify("memory: initialising…", "info");
+        void runMemoryAgent(model, `
+Check memory status with memory_list.
+If files already exist, report what is there and stop.
+Otherwise analyse this project and populate the memory store.
+
+Analyse: README, package files, directory structure, main entry points, key modules, tech stack, dependencies, build/run/test workflow.
+
+Create and populate these files (only those that have content):
+- architecture.md — tech stack, modules, entry points, constraints
+- project.md — goals, scope, description in natural language
+- setup.md — install steps, env vars, build/run/test commands
+- decisions.md — any notable decisions already evident in the codebase
+- notes.md — gotchas, caveats, anything worth remembering
+
+Do NOT create activity_log.md — it is auto-generated.
+
+Use memory_create_file then memory_new for each section. Use nesting (### under ##) for sub-topics. Keep bodies concise and factual.
+
+After writing each file confirm it is valid. Report files created and sections stored.
+`.trim(), ctx, ctx.cwd).then((result) => {
+          if (result) ctx.ui.notify(result.slice(0, 800), "info");
+        }).catch((err) => ctx.ui.notify(`memory init failed: ${(err as Error).message}`, "error"));
+
+      } else if (sub === "curate") {
+        const model = resolveSubcommandModel("curate");
+        if (!model) { ctx.ui.notify("memory curate: no model configured (memory.subcommandModel)", "warning"); return; }
+        const parts = (args ?? "").trim().split(/\s+/);
+        const target = parts[1] ?? "";
+        ctx.ui.notify(`memory: curating${target ? ` ${target}` : ""}…`, "info");
+        const scope = target ? `the file \`${target}\`` : "all files (skip activity_log.md — it is read-only)";
+        void runMemoryAgent(model, `
+Curate ${scope} in the memory store. Goal: improve structure and retrieval quality without inventing facts.
+
+1. Use memory_list to discover sections.
+2. Read each section with memory_get.
+3. Fix these problems:
+   - Flat overload: ## body covering multiple sub-topics → split into ### children
+   - Duplicate sections → merge into the better-named one
+   - Stale or wrong facts → update with memory_update
+   - Skipped heading levels → restructure
+   - Over-compressed sections that lost their meaning → expand
+4. Use memory_update to replace bodies (children are preserved automatically).
+   Use memory_new to add child sections. Use memory_delete to remove redundant ones.
+5. Prefer targeted changes — skip sections that are already clean.
+6. Report sections split, merged, updated, or deleted, and any issues for human review.
+`.trim(), ctx, ctx.cwd).then((result) => {
+          if (result) ctx.ui.notify(result.slice(0, 800), "info");
+        }).catch((err) => ctx.ui.notify(`memory curate failed: ${(err as Error).message}`, "error"));
+
+      } else if (sub === "compact") {
+        const model = resolveSubcommandModel("compact");
+        if (!model) { ctx.ui.notify("memory compact: no model configured (memory.subcommandModel)", "warning"); return; }
+        ctx.ui.notify("memory: compacting…", "info");
+        void runMemoryAgent(model, `
+Compact the memory store:
+
+1. Run /memory snapshot --move to snapshot and clear the active files.
+   Capture the snapshot directory path from the output.
+2. List the .md files in the snapshot directory.
+3. For each file, read every section and rewrite it as concise factual bullets.
+   Remove: repeated wording, status chatter, stale reasoning, excessive narrative.
+   Keep: decisions and rationale, architecture facts, constraints, commands, file paths, setup steps.
+   Target 3-7 bullets per section body. Remove a section entirely if it has no durable content.
+4. Recreate each file in the active memory directory using memory_create_file and memory_new.
+5. Report files compacted, sections removed, and any validation issues.
+
+File-specific rules:
+- activity_log.md: keep only durable summaries of meaningful work; drop routine logs
+- decisions.md: preserve decision, rationale, and key rejected alternatives
+- architecture.md: preserve structure, invariants, component relationships, constraints
+- setup.md: preserve install steps, env vars, version constraints
+- project.md: preserve scope, goals, capabilities
+- notes.md: keep only notes with future reuse value
+`.trim(), ctx, ctx.cwd).then((result) => {
+          if (result) ctx.ui.notify(result.slice(0, 800), "info");
+        }).catch((err) => ctx.ui.notify(`memory compact failed: ${(err as Error).message}`, "error"));
 
       } else {
         ctx.ui.notify(`memory: unknown sub-command: ${sub}`, "warning");

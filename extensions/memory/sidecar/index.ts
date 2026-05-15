@@ -1,104 +1,7 @@
-import { writeFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { connect } from "node:net";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { arch } from "node:os";
-
-export const EMBED_PY = `# /// script
-# dependencies = ["mlx-embeddings"]
-# ///
-"""
-Embedding sidecar for memory-md.
-
-Listens on a Unix socket (path from MEMORY_MD_SIDECAR_SOCK env var),
-accepts newline-delimited JSON requests, returns embeddings.
-
-Protocol:
-  Request:  {"Texts": ["text1", "text2", ...]}\n
-  Response: {"Embeddings": [[0.1, ...], ...]}\n
-  Error:    {"Error": "message"}\n
-"""
-
-import json
-import os
-import signal
-import socket
-import sys
-
-SOCK_PATH  = os.environ.get("MEMORY_MD_SIDECAR_SOCK", "sidecar.sock")
-MODEL_NAME = os.environ.get("MEMORY_MD_EMBED_MODEL", "mlx-community/bge-small-en-v1.5-8bit")
-
-
-def load_model():
-    from mlx_embeddings.utils import load
-    return load(MODEL_NAME)
-
-
-def embed(model, tokenizer, texts):
-    inputs = tokenizer.batch_encode_plus(
-        texts, return_tensors="mlx", padding=True, truncation=True, max_length=512,
-    )
-    outputs = model(inputs["input_ids"], attention_mask=inputs["attention_mask"])
-    return outputs.text_embeds.tolist()
-
-
-def handle(conn, model, tokenizer):
-    with conn.makefile("r") as f:
-        line = f.readline()
-    if not line:
-        return
-    try:
-        req  = json.loads(line)
-        embs = embed(model, tokenizer, req.get("Texts", []))
-        resp = json.dumps({"Embeddings": embs})
-    except Exception as exc:
-        resp = json.dumps({"Error": str(exc)})
-    try:
-        conn.sendall((resp + "\\n").encode())
-    except (BrokenPipeError, OSError):
-        pass
-
-
-def main():
-    try:
-        os.unlink(SOCK_PATH)
-    except FileNotFoundError:
-        pass
-
-    print(f"Loading model {MODEL_NAME}...", file=sys.stderr, flush=True)
-    model, tokenizer = load_model()
-    print("Model loaded. Listening on", SOCK_PATH, file=sys.stderr, flush=True)
-
-    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server.bind(SOCK_PATH)
-    server.listen(8)
-
-    def shutdown(signum, frame):
-        server.close()
-
-    signal.signal(signal.SIGTERM, shutdown)
-    signal.signal(signal.SIGINT, shutdown)
-
-    try:
-        while True:
-            try:
-                conn, _ = server.accept()
-            except OSError:
-                break
-            try:
-                handle(conn, model, tokenizer)
-            finally:
-                conn.close()
-    finally:
-        server.close()
-        try:
-            os.unlink(SOCK_PATH)
-        except FileNotFoundError:
-            pass
-
-
-if __name__ == "__main__":
-    main()
-`;
 
 /** Returns true when running on Apple Silicon — required for mlx-embeddings. */
 export function isAppleSilicon(): boolean {
@@ -116,7 +19,7 @@ export function isUvAvailable(): boolean {
 }
 
 /**
- * Write embed.py to the extension dir and spawn the sidecar.
+ * Spawn the embedding sidecar.
  * Only call when isAppleSilicon() && isUvAvailable().
  */
 export function spawnSidecar(
@@ -124,9 +27,7 @@ export function spawnSidecar(
   sidecarSockPath: string,
   logFd: number,
 ): ChildProcess {
-  writeFileSync(embedScriptPath, EMBED_PY, "utf8");
-
-  return spawn("uv", ["run", embedScriptPath], {
+  return spawn("uv", ["run", "--script", embedScriptPath], {
     env: {
       ...process.env,
       MEMORY_MD_SIDECAR_SOCK: sidecarSockPath,

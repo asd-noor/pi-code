@@ -4,6 +4,11 @@ import { join } from "node:path";
 import type { MemoryDB } from "../daemon/db.ts";
 import { rescanLineNumbers } from "./scanner.ts";
 
+function formatTimestamp(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function atomicWrite(filePath: string, lines: string[]): void {
   const tmp = `${filePath}.${randomBytes(6).toString("hex")}.tmp`;
   writeFileSync(tmp, lines.join("\n"), "utf8");
@@ -12,6 +17,21 @@ function atomicWrite(filePath: string, lines: string[]): void {
 
 function readLines(filePath: string): string[] {
   return readFileSync(filePath, "utf8").split("\n");
+}
+
+/**
+ * Assert that the heading at the DB-recorded line still matches the expected
+ * label. Throws if the file has shifted under us (stale index), preventing a
+ * silent splice at the wrong location.
+ */
+function assertHeadingLine(lines: string[], headingLine: number, expectedLabel: string, sectionPath: string): void {
+  const raw = lines[headingLine];
+  const actual = raw?.replace(/^#+\s*/, "").split(" | ")[0].trim();
+  if (actual !== expectedLabel) {
+    throw new Error(
+      `stale index for "${sectionPath}": expected "${expectedLabel}" at line ${headingLine + 1}, found "${actual ?? "(missing)"}"`,
+    );
+  }
 }
 
 /**
@@ -30,8 +50,17 @@ export function updateSection(
   if (!row) throw new Error(`section not found: ${sectionPath}`);
 
   const lines = readLines(filePath);
-  const newBodyLines = newBody.split("\n");
+  assertHeadingLine(lines, row.headingLine, row.heading, sectionPath);
+  const ts = formatTimestamp(new Date());
 
+  // Rewrite heading line to refresh timestamp
+  const rawHeading = lines[row.headingLine];
+  const headingMarker = "#".repeat(row.level);
+  const headingText = rawHeading.replace(/^#+\s*/, "");
+  const label = headingText.indexOf(" | ") !== -1 ? headingText.slice(0, headingText.indexOf(" | ")).trim() : headingText.trim();
+  lines[row.headingLine] = `${headingMarker} ${label} | ${ts}`;
+
+  const newBodyLines = newBody.split("\n");
   lines.splice(
     row.bodyStartLine,
     row.bodyEndLine - row.bodyStartLine,
@@ -58,6 +87,7 @@ export function deleteSection(
   if (!row) throw new Error(`section not found: ${sectionPath}`);
 
   const lines = readLines(filePath);
+  assertHeadingLine(lines, row.headingLine, row.heading, sectionPath);
   lines.splice(row.headingLine, row.sectionEndLine - row.headingLine);
 
   atomicWrite(filePath, lines);
@@ -84,8 +114,9 @@ export function newSection(
   const level = segments.length; // fileName + path segments
   const headingMarker = "#".repeat(level);
 
+  const ts = formatTimestamp(new Date());
   const newLines = [
-    `${headingMarker} ${heading || segments[segments.length - 1]}`,
+    `${headingMarker} ${heading || segments[segments.length - 1]} | ${ts}`,
     "",
     ...body.split("\n"),
     "",
@@ -95,6 +126,7 @@ export function newSection(
 
   const parentPath = segments.slice(0, -1).join("/");
   const parentRow = segments.length > 2 ? db.getSection(parentPath) : undefined;
+  if (parentRow) assertHeadingLine(lines, parentRow.headingLine, parentRow.heading, parentPath);
   const insertAt = parentRow ? parentRow.bodyEndLine : lines.length;
 
   lines.splice(insertAt, 0, ...newLines);

@@ -1,17 +1,13 @@
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { getProjectCacheDir } from "../_config/index.ts";
 
-// Extension-level shared dir — embed.py lives here, shared across all projects.
-const EXTENSION_DIR = join(homedir(), ".pi", "cache", "memory");
+const _dir = dirname(fileURLToPath(import.meta.url));
 
-export function getExtensionDir(): string { return EXTENSION_DIR; }
-export function getEmbedScriptPath(): string { return join(EXTENSION_DIR, "embed.py"); }
-
-export function ensureExtensionDir(): string {
-  mkdirSync(EXTENSION_DIR, { recursive: true });
-  return EXTENSION_DIR;
+export function getEmbedScriptPath(): string {
+  return join(_dir, "sidecar", "embed.py");
 }
 
 // All per-project files live under _config.getProjectCacheDir(projectRoot).

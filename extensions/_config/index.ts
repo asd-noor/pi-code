@@ -104,18 +104,27 @@ export interface ScoutConfig {
   context7ApiKey?: string;
 }
 
-export interface MemoryWorkflowConfig {
-  /** Whether to write a timestamped entry to workflow.md after each agent turn. */
+export interface MemoryActivityLogConfig {
+  /** Whether to write a timestamped entry to activity_log.md after each agent turn. */
   enabled?: boolean;
   /** Model used for auto-summarisation, e.g. "github-copilot/claude-haiku-4.5". */
   model?: string;
 }
 
+export interface MemorySubcommandModelConfig {
+  default?: string;
+  init?: string;
+  curate?: string;
+  compact?: string;
+}
+
 export interface MemoryConfig {
   /** Subdirectory name under `<projectRoot>/.pi/` for markdown files. Defaults to "memory". */
   dirname?: string;
-  /** Workflow auto-logging config. */
-  workflow?: MemoryWorkflowConfig;
+  /** Activity log auto-logging config. */
+  activityLog?: MemoryActivityLogConfig;
+  /** Per-subcommand model overrides. `default` applies unless a subcommand key is set. */
+  subcommandModel?: MemorySubcommandModelConfig;
 }
 
 /**

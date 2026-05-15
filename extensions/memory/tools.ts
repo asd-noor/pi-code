@@ -72,14 +72,8 @@ export function registerTools(pi: ExtensionAPI, getProjectRoot: () => string | u
       heading: Type.Optional(Type.String({ description: "Human-readable heading. Defaults to last path segment." })),
     }),
     async execute(_id, params, _signal, _update, ctx) {
-      const r = await client(ctx).send<{ Ok: boolean; Validation?: string[] }>({
-        Cmd: "new", Path: params.path, Heading: params.heading ?? "", Content: params.body,
-      });
-      const text = [
-        `Section created: ${params.path}`,
-        r.Validation?.length ? `\nValidation:\n${r.Validation.join("\n")}` : "",
-      ].join("");
-      return { content: [{ type: "text" as const, text }], details: null };
+      await client(ctx).send({ Cmd: "new", Path: params.path, Heading: params.heading ?? "", Content: params.body });
+      return { content: [{ type: "text" as const, text: `Section created: ${params.path}` }], details: null };
     },
   });
 
@@ -93,14 +87,8 @@ export function registerTools(pi: ExtensionAPI, getProjectRoot: () => string | u
       body: Type.String({ description: "New body text." }),
     }),
     async execute(_id, params, _signal, _update, ctx) {
-      const r = await client(ctx).send<{ Ok: boolean; Validation?: string[] }>({
-        Cmd: "update", Path: params.path, Content: params.body,
-      });
-      const text = [
-        `Section updated: ${params.path}`,
-        r.Validation?.length ? `\nValidation:\n${r.Validation.join("\n")}` : "",
-      ].join("");
-      return { content: [{ type: "text" as const, text }], details: null };
+      await client(ctx).send({ Cmd: "update", Path: params.path, Content: params.body });
+      return { content: [{ type: "text" as const, text: `Section updated: ${params.path}` }], details: null };
     },
   });
 

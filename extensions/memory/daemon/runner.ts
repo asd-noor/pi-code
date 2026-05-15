@@ -19,7 +19,7 @@ import type { ChildProcess } from "node:child_process";
 import {
   getSocketPath, getSidecarSocketPath,
   getDbPath, getLogPath, getPidPath, getStatusPath,
-  getEmbedScriptPath, ensureExtensionDir,
+  getEmbedScriptPath,
 } from "../paths.ts";
 import { getProjectCacheDir } from "../../_config/index.ts";
 import { MemoryDB } from "./db.ts";
@@ -46,7 +46,6 @@ const logPath     = getLogPath(projectRoot);
 const pidPath     = getPidPath(projectRoot);
 const statusPath  = getStatusPath(projectRoot);
 
-ensureExtensionDir();
 const embedScript = getEmbedScriptPath();
 
 function log(msg: string): void {

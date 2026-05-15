@@ -13,6 +13,8 @@ export class DaemonServer {
   private server: Server;
   private activeSockets = new Set<Socket>();
   private indexing = false;
+  /** Per-file promise chains — serialises concurrent writes to the same file. */
+  private writeLocks = new Map<string, Promise<void>>();
 
   constructor(
     private sockPath: string,
@@ -101,7 +103,8 @@ export class DaemonServer {
       case "get": {
         const row = this.db.getSection(req.Path as string);
         if (!row) throw new Error(`section not found: ${req.Path}`);
-        return { Ok: true, Heading: row.heading, Content: row.content };
+        const fullHeading = row.updatedAt ? `${row.heading} | ${row.updatedAt}` : row.heading;
+        return { Ok: true, Heading: fullHeading, Content: row.content };
       }
 
       case "search": {
@@ -119,7 +122,7 @@ export class DaemonServer {
           Ok: true,
           Results: rows.map((r) => ({
             Path:    r.path,
-            Heading: r.heading,
+            Heading: r.updatedAt ? `${r.heading} | ${r.updatedAt}` : r.heading,
             Content: r.content,
           })),
         };
@@ -130,44 +133,56 @@ export class DaemonServer {
         const fileName = sectionPath.split("/")[0];
         const filePath = join(this.memDir, `${fileName}.md`);
         if (!existsSync(filePath)) throw new Error(`file not found: ${fileName}`);
-        newSection(filePath, fileName, sectionPath, req.Heading as string, req.Content as string, this.db);
-        await this.reindexFile(filePath);
-        const validation = this.runValidation(filePath, fileName);
-        return { Ok: true, Validation: validation };
+        return this.withFileLock(filePath, async () => {
+          newSection(filePath, fileName, sectionPath, req.Heading as string, req.Content as string, this.db);
+          await this.reindexFile(filePath);
+          const issues = this.runValidation(filePath, fileName);
+          if (issues.length > 0) throw new Error(`validation failed:\n${issues.join("\n")}`);
+          return { Ok: true };
+        });
       }
 
       case "update": {
         const sectionPath = req.Path as string;
         const fileName = sectionPath.split("/")[0];
         const filePath = join(this.memDir, `${fileName}.md`);
-        updateSection(filePath, fileName, sectionPath, req.Content as string, this.db);
-        await this.reindexFile(filePath);
-        const validation = this.runValidation(filePath, fileName);
-        return { Ok: true, Validation: validation };
+        return this.withFileLock(filePath, async () => {
+          updateSection(filePath, fileName, sectionPath, req.Content as string, this.db);
+          await this.reindexFile(filePath);
+          const issues = this.runValidation(filePath, fileName);
+          if (issues.length > 0) throw new Error(`validation failed:\n${issues.join("\n")}`);
+          return { Ok: true };
+        });
       }
 
       case "delete": {
         const sectionPath = req.Path as string;
         const fileName = sectionPath.split("/")[0];
         const filePath = join(this.memDir, `${fileName}.md`);
-        deleteSection(filePath, fileName, sectionPath, this.db);
-        await this.reindexFile(filePath);
-        return { Ok: true };
+        return this.withFileLock(filePath, async () => {
+          deleteSection(filePath, fileName, sectionPath, this.db);
+          await this.reindexFile(filePath);
+          return { Ok: true };
+        });
       }
 
       case "create-file": {
         mkdirSync(this.memDir, { recursive: true });
         const filePath = join(this.memDir, `${req.Name}.md`);
-        createFile(this.memDir, req.Name as string, req.Title as string, (req.Description as string) || "");
-        await this.reindexFile(filePath);
-        return { Ok: true };
+        return this.withFileLock(filePath, async () => {
+          createFile(this.memDir, req.Name as string, req.Title as string, (req.Description as string) || "");
+          await this.reindexFile(filePath);
+          return { Ok: true };
+        });
       }
 
       case "delete-file": {
         const filePath = join(this.memDir, `${req.Name}.md`);
-        if (existsSync(filePath)) unlinkSync(filePath);
-        this.db.deleteFile(req.Name as string);
-        return { Ok: true };
+        return this.withFileLock(filePath, async () => {
+          if (existsSync(filePath)) unlinkSync(filePath);
+          this.db.deleteFile(req.Name as string);
+          return { Ok: true };
+        });
       }
 
       case "validate-file": {
@@ -183,6 +198,25 @@ export class DaemonServer {
       default:
         throw new Error(`unknown command: ${req.Cmd}`);
     }
+  }
+
+  /**
+   * Serialises all writes to a given file path.
+   * Concurrent callers queue behind the running operation and execute in turn.
+   */
+  private withFileLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.writeLocks.get(filePath) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    this.writeLocks.set(filePath, gate);
+    return prev.then(async () => {
+      try {
+        return await fn();
+      } finally {
+        release();
+        if (this.writeLocks.get(filePath) === gate) this.writeLocks.delete(filePath);
+      }
+    });
   }
 
   /** Re-index a single file after a mutation. Forces re-index by clearing mtime. */

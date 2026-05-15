@@ -10,7 +10,8 @@ export interface ParsedFile {
 
 export interface ParsedSection {
   path: string;         // e.g. "architecture/tech-stack/frontend"
-  heading: string;      // raw heading text
+  heading: string;      // label only (the part before " | timestamp")
+  updatedAt: string | undefined; // timestamp extracted from heading, e.g. "2026-05-15 14:32"
   level: number;        // 2–6
   content: string;      // immediate body (markdown string, no child headings)
   children: ParsedSection[];
@@ -21,9 +22,17 @@ export interface ParsedSection {
   sectionEndLine: number;
 }
 
-/** Slugify a heading string to a path segment. */
+/** Split a heading string into its label and optional " | timestamp" suffix. */
+export function parseHeadingParts(text: string): { label: string; updatedAt: string | undefined } {
+  const idx = text.indexOf(" | ");
+  if (idx === -1) return { label: text.trim(), updatedAt: undefined };
+  return { label: text.slice(0, idx).trim(), updatedAt: text.slice(idx + 3).trim() };
+}
+
+/** Slugify a heading string to a path segment. Ignores any " | timestamp" suffix. */
 export function slugify(text: string): string {
-  return text
+  const { label } = parseHeadingParts(text);
+  return label
     .toLowerCase()
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, "");
@@ -106,12 +115,14 @@ export function parseFile(content: string, fileName: string): ParsedFile {
       }
 
       const parent = sectionStack[sectionStack.length - 1];
+      const { label: headingLabel, updatedAt: headingUpdatedAt } = parseHeadingParts(text);
       const slug = slugify(text);
       const pathSegments = parent ? [...parent.pathSegments, slug] : [fileName, slug];
 
       const section: ParsedSection & { pathSegments: string[]; _hline: number } = {
         path: pathSegments.join("/"),
-        heading: text,
+        heading: headingLabel,
+        updatedAt: headingUpdatedAt,
         level,
         content: "",
         children: [],

@@ -13,6 +13,7 @@ export interface SectionRow {
   fileName: string;
   path: string;
   heading: string;
+  updatedAt: string | undefined;
   level: number;
   content: string;
   position: number;
@@ -52,7 +53,8 @@ CREATE TABLE IF NOT EXISTS sections (
   heading_line      INTEGER NOT NULL DEFAULT 0,
   body_start_line   INTEGER NOT NULL DEFAULT 0,
   body_end_line     INTEGER NOT NULL DEFAULT 0,
-  section_end_line  INTEGER NOT NULL DEFAULT 0
+  section_end_line  INTEGER NOT NULL DEFAULT 0,
+  updated_at        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sections_file ON sections(file_name);
 CREATE INDEX IF NOT EXISTS idx_sections_path ON sections(path);
@@ -151,10 +153,10 @@ export class MemoryDB {
     const insert = this.db.prepare(`
       INSERT INTO sections
         (file_name, path, heading, level, content, position,
-         heading_line, body_start_line, body_end_line, section_end_line)
+         heading_line, body_start_line, body_end_line, section_end_line, updated_at)
       VALUES
         (@fileName, @path, @heading, @level, @content, @position,
-         @headingLine, @bodyStartLine, @bodyEndLine, @sectionEndLine)
+         @headingLine, @bodyStartLine, @bodyEndLine, @sectionEndLine, @updatedAt)
     `);
     const insertVec = this.db.prepare(
       "INSERT OR REPLACE INTO sections_vec (rowid, embedding) VALUES (?, ?)",
@@ -203,7 +205,7 @@ export class MemoryDB {
   getSection(path: string): SectionRow | undefined {
     return this.db
       .prepare(`
-        SELECT id, file_name AS fileName, path, heading, level, content, position,
+        SELECT id, file_name AS fileName, path, heading, updated_at AS updatedAt, level, content, position,
                heading_line AS headingLine, body_start_line AS bodyStartLine,
                body_end_line AS bodyEndLine, section_end_line AS sectionEndLine
         FROM sections WHERE path = ?
@@ -214,7 +216,7 @@ export class MemoryDB {
   getSectionsByFile(fileName: string): SectionRow[] {
     return this.db
       .prepare(`
-        SELECT id, file_name AS fileName, path, heading, level, content, position,
+        SELECT id, file_name AS fileName, path, heading, updated_at AS updatedAt, level, content, position,
                heading_line AS headingLine, body_start_line AS bodyStartLine,
                body_end_line AS bodyEndLine, section_end_line AS sectionEndLine
         FROM sections WHERE file_name = ? ORDER BY position
@@ -225,12 +227,20 @@ export class MemoryDB {
   // ── Search ────────────────────────────────────────────────────────────
 
   /**
-   * Hybrid search: FTS5 BM25 + vec0 KNN, fused with RRF (k=60).
-   * Falls back to FTS5-only when queryVec is undefined (no sidecar).
+   * Hybrid search: FTS5 BM25 + vec0 KNN, fused with RRF (k=60),
+   * then re-ranked with an exponential recency decay on `updated_at`.
+   *
+   * Decay: score *= exp(-λ · age_days)  where λ = ln(2) / HALF_LIFE_DAYS.
+   * A section updated today keeps its full RRF score; one updated
+   * HALF_LIFE_DAYS ago scores at 50 %; one updated 2× HALF_LIFE_DAYS ago
+   * scores at 25 %, and so on.
    */
   search(query: string, queryVec: Float32Array | undefined, top: number): SectionRow[] {
     const K = 60;
     const candidate = top * 5;
+    /** Tune here — number of days at which a section's score is halved. */
+    const RECENCY_HALF_LIFE_DAYS = 90;
+    const RECENCY_LAMBDA = Math.LN2 / RECENCY_HALF_LIFE_DAYS;
 
     const ftsRows = this.db.prepare(`
       SELECT s.id, rank
@@ -260,6 +270,33 @@ export class MemoryDB {
       });
     }
 
+    // ── Recency decay ────────────────────────────────────────────────────
+    // Bulk-fetch updated_at for all RRF candidates, then multiply each
+    // score by exp(-λ · age_days).  Sections without a timestamp are
+    // left at their raw RRF score (no penalty, no boost).
+    if (scores.size > 0) {
+      const idList = [...scores.keys()];
+      const ph = idList.map(() => "?").join(", ");
+      const tsRows = this.db
+        .prepare(`SELECT id, updated_at AS updatedAt FROM sections WHERE id IN (${ph})`)
+        .all(...idList) as Array<{ id: number; updatedAt: string | null }>;
+
+      const nowMs = Date.now();
+      for (const { id, updatedAt } of tsRows) {
+        if (!updatedAt) continue;
+        // Parse "YYYY-MM-DD HH:MM" as local time
+        const [datePart, timePart] = updatedAt.split(" ");
+        const [year, month, day]   = datePart.split("-").map(Number);
+        const [hours, minutes]     = (timePart ?? "00:00").split(":").map(Number);
+        const tsMs = new Date(year, month - 1, day, hours, minutes).getTime();
+        if (isNaN(tsMs)) continue;
+        const ageDays = (nowMs - tsMs) / 86_400_000;
+        const decay   = Math.exp(-RECENCY_LAMBDA * ageDays);
+        scores.set(id, (scores.get(id) as number) * decay);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     const topIds = [...scores.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, top)
@@ -269,7 +306,7 @@ export class MemoryDB {
 
     const placeholders = topIds.map(() => "?").join(", ");
     const rows = this.db.prepare(`
-      SELECT id, file_name AS fileName, path, heading, level, content, position,
+      SELECT id, file_name AS fileName, path, heading, updated_at AS updatedAt, level, content, position,
              heading_line AS headingLine, body_start_line AS bodyStartLine,
              body_end_line AS bodyEndLine, section_end_line AS sectionEndLine
       FROM sections WHERE id IN (${placeholders})
