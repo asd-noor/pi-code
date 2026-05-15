@@ -193,18 +193,21 @@ function resolveMemDir(cwd: string): string {
 
 // ── Extension ─────────────────────────────────────────────────────────────────
 
+interface Session {
+  memDir:      string;
+  projectRoot: string;
+  cacheDir:    string;
+}
+
 export default function (pi: ExtensionAPI) {
-  let memDir:      string | undefined;
-  let projectRoot: string | undefined;
-  let cacheDir:    string | undefined;
-  let isDetached   = false;
+  let sess:        Session | undefined;
   let daemonChild: ChildProcess | undefined;
   let poller:      ReturnType<typeof setInterval> | undefined;
   let uiCtx:       { setStatus: (key: string, label: string | undefined) => void; notify: (msg: string, level: string) => void } | undefined;
   let isInteractive = false;
 
   // Pass projectRoot to all tools (per the naming-fix note in the spec)
-  registerTools(pi, () => projectRoot);
+  registerTools(pi, () => sess?.projectRoot);
 
   // ── System prompt injection ───────────────────────────────────────────────
 
@@ -275,15 +278,15 @@ Some description.
   // ── Status helpers ────────────────────────────────────────────────────────
 
   function readStatus(): string {
-    if (!cacheDir) return "stopped";
-    try { return readFileSync(getStatusPath(cacheDir), "utf8").trim(); }
+    if (!sess) return "stopped";
+    try { return readFileSync(getStatusPath(sess.cacheDir), "utf8").trim(); }
     catch { return "stopped"; }
   }
 
   function updateFooter(): void {
-    if (!uiCtx || !memDir) return;
+    if (!uiCtx || !sess) return;
     const status = readStatus();
-    const short  = memDir.replace(homedir(), "~");
+    const short  = sess.memDir.replace(homedir(), "~");
     const labels: Record<string, string> = {
       starting: `☰ memory: starting… (${short})   `,
       indexing: `☰ memory: indexing… (${short})   `,
@@ -302,7 +305,7 @@ Some description.
       process.execPath,
       ["--import", "jiti/register", RUNNER_SCRIPT, dir, cd],
       {
-        env:   { ...process.env, PI_MEMORY_SRC: dir },
+        env:   process.env,
         stdio: ["ignore", logFd, logFd],
         detached: false,
       },
@@ -322,14 +325,13 @@ Some description.
   // ── Lifecycle events ──────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
-    isDetached  = !!process.env.PI_MEMORY_SRC?.trim();
-    projectRoot = getProjectRoot(ctx.cwd);
-    memDir      = resolveMemDir(ctx.cwd);
+    const projectRoot = getProjectRoot(ctx.cwd);
+    const memDir      = resolveMemDir(ctx.cwd);
     mkdirSync(memDir, { recursive: true });
-    process.env.PI_MEMORY_SRC = memDir;
-    cacheDir    = isDetached
+    const cacheDir    = process.env.PI_MEMORY_SRC?.trim()
       ? getDetachedCacheDir(memDir)
       : getProjectCacheDir(projectRoot);
+    sess = { memDir, projectRoot, cacheDir };
 
     if (!ctx.hasUI) return;
     isInteractive = true;
@@ -340,7 +342,7 @@ Some description.
 
     const short = memDir.replace(homedir(), "~");
     uiCtx!.setStatus("memory-md", `☰ memory: starting… (${short})   `);
-    daemonChild = spawnDaemon(memDir, cacheDir!);
+    daemonChild = spawnDaemon(memDir, cacheDir);
     poller = setInterval(updateFooter, 2000);
   });
 
@@ -351,7 +353,8 @@ Some description.
   // ── agent_end: activity log ─────────────────────────────────────────
 
   pi.on("agent_end", (event, ctx) => {
-    if (!memDir || !projectRoot) return;
+    if (!sess) return;
+    const { memDir, projectRoot, cacheDir } = sess;
 
     const config = loadWorkflowConfig();
     if (!config) return;
@@ -422,11 +425,11 @@ Some description.
         const title = lines[0].trim();
         const body  = lines.slice(1).join("\n").trim();
         if (!title) return;
-        await appendWorkflowEntry(memDir!, title, body, new Date());
+        await appendWorkflowEntry(memDir, title, body, new Date());
       } catch (err) {
         try {
           appendFileSync(
-            getLogPath(cacheDir ?? ""),
+            getLogPath(cacheDir),
             `[activity-log] error: ${(err as any)?.message ?? err}\n`,
           );
         } catch { /* ignore */ }
@@ -445,12 +448,8 @@ Some description.
     if (poller) { clearInterval(poller); poller = undefined; }
     killDaemon();
     uiCtx?.setStatus("memory-md", undefined);
-    memDir      = undefined;
-    projectRoot = undefined;
-    cacheDir    = undefined;
-    isDetached  = false;
+    sess        = undefined;
     uiCtx       = undefined;
-    delete process.env.PI_MEMORY_SRC;
   });
 
   // ── /memory command ───────────────────────────────────────────────────────
@@ -475,19 +474,20 @@ Some description.
       uiCtx = ctx.ui as typeof uiCtx;
       const sub = ((args ?? "").trim().split(/\s+/)[0] ?? "").toLowerCase();
 
-      if (!memDir || !projectRoot) {
+      if (!sess) {
         ctx.ui.notify("memory: not initialised", "warning");
         return;
       }
+      const { memDir, projectRoot, cacheDir } = sess;
 
       if (sub === "status" || sub === "") {
         const status = readStatus();
-        const sockPath = getSocketPath(cacheDir ?? "");
+        const sockPath = getSocketPath(cacheDir);
         ctx.ui.notify(
           [
             `Status:  ${status}`,
             `Dir:     ${memDir}`,
-            `Cache:   ${cacheDir ?? "(unknown)"}`,
+            `Cache:   ${cacheDir}`,
             `Socket:  ${sockPath}${existsSync(sockPath) ? "" : " (missing)"}`,
           ].join("\n"),
           "info",
@@ -497,14 +497,15 @@ Some description.
         ctx.ui.notify("memory: restarting…", "info");
         if (poller) { clearInterval(poller); poller = undefined; }
         killDaemon();
-        memDir = resolveMemDir(ctx.cwd);
-        projectRoot = getProjectRoot(ctx.cwd);
+        const memDir      = resolveMemDir(ctx.cwd);
+        const projectRoot = getProjectRoot(ctx.cwd);
         mkdirSync(memDir, { recursive: true });
-        cacheDir = isDetached
+        const cacheDir    = process.env.PI_MEMORY_SRC?.trim()
           ? getDetachedCacheDir(memDir)
           : getProjectCacheDir(projectRoot);
+        sess = { memDir, projectRoot, cacheDir };
         uiCtx!.setStatus("memory-md", `☰ memory: starting…   `);
-        daemonChild = spawnDaemon(memDir, cacheDir!);
+        daemonChild = spawnDaemon(memDir, cacheDir);
         poller = setInterval(updateFooter, 2000);
 
       } else if (sub === "snapshot") {
@@ -530,7 +531,7 @@ Some description.
         }
 
       } else if (sub === "logs") {
-        const logPath = getLogPath(cacheDir ?? "");
+        const logPath = getLogPath(cacheDir);
         if (!existsSync(logPath)) { ctx.ui.notify("(no log file yet)", "info"); return; }
         try {
           const lines = readFileSync(logPath, "utf8").trimEnd().split("\n");
