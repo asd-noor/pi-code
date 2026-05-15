@@ -85,18 +85,6 @@ const SERVER_DEFS: Array<{ detect: (root: string) => boolean; server: () => LspS
   },
 ];
 
-export function detectServer(rootPath: string): LspServerDef {
-  for (const rule of SERVER_DEFS) {
-    if (rule.detect(rootPath)) return rule.server();
-  }
-  return {
-    command: resolveCmd("typescript-language-server"),
-    args: ["--stdio"],
-    languageId: "typescript",
-    extensions: [".ts", ".tsx", ".js", ".jsx"],
-    installId: "typescript-language-server",
-  };
-}
 
 /**
  * Returns ALL matching server defs for the given project root.

@@ -2,10 +2,9 @@
  * Indexer — builds and incrementally updates the CodeMapDB.
  *
  * Phase 1 (blocking, before "ready"):
- *   If a TreeSitterParser is available, each file is parsed synchronously
- *   with tree-sitter (fast — no LSP round-trips, no sleep).
- *   For files whose grammar is unavailable, falls back to LSP documentSymbol.
- *   Incremental: files whose mtime matches file_meta are skipped entirely.
+ *   Each file is parsed synchronously with tree-sitter (fast — no LSP
+ *   round-trips, no sleep). Files whose mtime matches file_meta are skipped.
+ *   LSP is never used for symbol extraction.
  *
  * Phase 2 (background, after "ready"):
  *   textDocument/references per fn/method/class → populate reverseRefs
@@ -17,16 +16,12 @@ import { fileURLToPath } from "node:url";
 
 import type { LspClient } from "../lsp/client.ts";
 import type { TreeSitterParser } from "../tree-sitter/parser.ts";
-import { REF_KINDS, nodeId, EXT_TO_LANG, type RefLocation, type GraphNode } from "./graph.ts";
+import { REF_KINDS, EXT_TO_LANG, type RefLocation, type GraphNode } from "./graph.ts";
 import { type CodeMapDB } from "./db.ts";
 import type { DiagRow } from "./db.ts";
 import {
-  SYMBOL_KIND_NAMES,
   SEVERITY_NAMES,
   DiagnosticSeverity,
-  SymbolKind,
-  type DocumentSymbol,
-  type SymbolInformation,
   type Diagnostic,
 } from "../lsp/protocol.ts";
 
@@ -35,11 +30,6 @@ const SKIP_DIRS = new Set([
   "target", "__pycache__", ".next", "build",
 ]);
 
-const SKIP_KINDS = new Set<SymbolKind>([
-  SymbolKind.File, SymbolKind.Variable, SymbolKind.String,
-  SymbolKind.Number, SymbolKind.Boolean, SymbolKind.Array,
-  SymbolKind.Object, SymbolKind.Key, SymbolKind.Null,
-]);
 
 type Log = (msg: string) => void;
 
@@ -389,48 +379,3 @@ export class Indexer {
   }
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-function flattenSymbols(
-  raw: DocumentSymbol[] | SymbolInformation[],
-  relFile: string,
-  language: string,
-  out: GraphNode[] = [],
-): GraphNode[] {
-  if (!raw.length) return out;
-  const isHierarchical = "selectionRange" in raw[0] || "children" in raw[0];
-
-  if (isHierarchical) {
-    for (const sym of raw as DocumentSymbol[]) {
-      if (!SKIP_KINDS.has(sym.kind as SymbolKind)) {
-        out.push({
-          id:        nodeId(relFile, sym.name, SYMBOL_KIND_NAMES[sym.kind] ?? ""),
-          name:      sym.name,
-          kind:      SYMBOL_KIND_NAMES[sym.kind] ?? `kind${sym.kind}`,
-          language,
-          file:      relFile,
-          lineStart: sym.range.start.line + 1,
-          lineEnd:   sym.range.end.line + 1,
-          colStart:  sym.selectionRange.start.character,
-        });
-      }
-      if (sym.children?.length) flattenSymbols(sym.children, relFile, language, out);
-    }
-  } else {
-    for (const sym of raw as SymbolInformation[]) {
-      if (!SKIP_KINDS.has(sym.kind as SymbolKind)) {
-        out.push({
-          id:        nodeId(relFile, sym.name, SYMBOL_KIND_NAMES[sym.kind] ?? ""),
-          name:      sym.name,
-          kind:      SYMBOL_KIND_NAMES[sym.kind] ?? `kind${sym.kind}`,
-          language,
-          file:      relFile,
-          lineStart: sym.location.range.start.line + 1,
-          lineEnd:   sym.location.range.end.line + 1,
-          colStart:  sym.location.range.start.character,
-        });
-      }
-    }
-  }
-  return out;
-}

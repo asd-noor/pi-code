@@ -83,18 +83,34 @@ export const QUERIES: Record<string, LangQuery> = {
   python: {
     kindMap: {},
     query: `
-; Functions (includes methods — caller differentiates by context)
-(function_definition
-  name: (identifier) @name) @def_function
+; Methods inside a class (must come before bare function_definition
+; so the more-specific pattern is tried first)
+(class_definition
+  body: (block
+    (function_definition
+      name: (identifier) @name) @def_method))
+
+; Decorated methods inside a class
+(class_definition
+  body: (block
+    (decorated_definition
+      definition: (function_definition
+        name: (identifier) @name)) @def_method))
+
+; Top-level functions (not inside a class)
+(module
+  (function_definition
+    name: (identifier) @name) @def_function)
+
+; Decorated top-level functions
+(module
+  (decorated_definition
+    definition: (function_definition
+      name: (identifier) @name)) @def_function)
 
 ; Classes
 (class_definition
   name: (identifier) @name) @def_class
-
-; Decorated functions
-(decorated_definition
-  definition: (function_definition
-    name: (identifier) @name)) @def_function
 
 ; Decorated classes
 (decorated_definition

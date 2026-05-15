@@ -154,7 +154,7 @@ export class DaemonServer {
     if (!SUPPORTED_LANGUAGES.has(lang)) {
       throw new Error(
         `Language '${lang}' is not natively indexed by code-map. ` +
-        `Supported: typescript, javascript, python, go. ` +
+        `Supported: typescript, javascript, python, go, c. ` +
         `For other languages use ptc with a language-specific AST library as described in the system instructions.`,
       );
     }
