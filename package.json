@@ -9,7 +9,14 @@
     "type": "module",
     "dependencies": {
         "@tmustier/pi-files-widget": "*",
-        "@ff-labs/fff-node": "*"
+        "@ff-labs/fff-node": "*",
+        "better-sqlite3": "^11.0.0",
+        "sqlite-vec": "^0.1.9",
+        "remark-parse": "^11.0.0",
+        "mdast-util-from-markdown": "^2.0.0",
+        "mdast-util-to-markdown": "^2.0.0",
+        "@types/better-sqlite3": "^7.6.0",
+        "@types/mdast": "^4.0.0"
     },
     "pi": {
         "extensions": [
@@ -25,7 +32,25 @@
     },
     "bundleDependencies": [
         "@tmustier/pi-files-widget",
-        "@ff-labs/fff-node"
+        "@ff-labs/fff-node",
+        "better-sqlite3",
+        "sqlite-vec",
+        "remark-parse",
+        "mdast-util-from-markdown",
+        "mdast-util-to-markdown",
+        "@types/better-sqlite3",
+        "@types/mdast"
+    ],
+    "bundledDependencies": [
+        "@tmustier/pi-files-widget",
+        "@ff-labs/fff-node",
+        "better-sqlite3",
+        "sqlite-vec",
+        "remark-parse",
+        "mdast-util-from-markdown",
+        "mdast-util-to-markdown",
+        "@types/better-sqlite3",
+        "@types/mdast"
     ],
     "overrides": {
         "basic-ftp": "6.0.1",
