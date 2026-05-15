@@ -200,7 +200,19 @@ function buildSubagentInstruction(): string {
   return lines.join("\n");
 }
 
-// ---- Extension factory ----------------------------------------------------
+function buildAskPrimaryInstruction(): string {
+  return [
+    "### Responding to subagent questions (ask_primary)",
+    "",
+    "A subagent may send you a blocking question via `ask_primary`. When this happens:",
+    "- You will receive a triggered message with the question and the subagent's ID.",
+    "- Answer it autonomously if you can, or use `ask_user` to clarify with the human first.",
+    "- **Always respond** using `steer_subagent(agentId, answer)` — the subagent is blocked waiting.",
+    "- Be concise. The subagent only needs the answer, not a full explanation.",
+    "- If you cannot answer, steer with a clear explanation so the subagent can proceed.",
+    "- Do not ignore ask_primary messages — the subagent will time out if you don't respond.",
+  ].join("\n");
+}
 
 export default function (pi: ExtensionAPI) {
   let currentCwd = process.cwd();
@@ -380,7 +392,7 @@ export default function (pi: ExtensionAPI) {
     if (sp.includes("<sub_agent_context>") || sp.startsWith("You are a pi coding agent sub-agent.")) {
       return {};
     }
-    return { systemPrompt: event.systemPrompt + "\n\n" + buildSubagentInstruction() };
+    return { systemPrompt: event.systemPrompt + "\n\n" + buildSubagentInstruction() + "\n\n" + buildAskPrimaryInstruction() };
   });
 
   pi.on("session_shutdown", async () => {

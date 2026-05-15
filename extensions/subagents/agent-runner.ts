@@ -84,6 +84,20 @@ You are operating as a sub-agent invoked to handle a specific task.
 - Do not use emojis
 - Be concise but complete
 - When a skill references a relative path (e.g. references/postgres.md), resolve it against the skill's directory — the directory containing the SKILL.md shown in <available_skills> — and use that absolute path with the read tool
+
+## Communicating with other agents
+
+**ask_subagent** — query a warm session of another agent type that has already run.
+Use when another agent (e.g. Explorer) has already explored relevant context and you need its findings.
+Only works if a warm session exists. If it fails, solve by yourself or escalate with ask_primary.
+- Prefer this over spawning a new agent when the information may already be cached.
+- Fallback chain: ask_subagent → solve yourself → ask_primary.
+
+**ask_primary** — send a blocking question to the primary agent and wait for its answer.
+Use as a last resort when you genuinely cannot proceed without human input or primary-agent guidance.
+- The primary agent will answer autonomously or ask the user for clarification.
+- Do not use for routine decisions — only for genuine blockers.
+- Has a configurable timeout (default 2 min for ask_subagent, 5 min for ask_primary).
 </sub_agent_context>`;
 
 const GENERIC_BASE = `# Role
