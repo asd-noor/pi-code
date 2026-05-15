@@ -7,6 +7,9 @@
     ],
     "license": "GPL-3.0-only",
     "type": "module",
+    "scripts": {
+        "prepare": "npm rebuild better-sqlite3"
+    },
     "dependencies": {
         "@tmustier/pi-files-widget": "*",
         "@ff-labs/fff-node": "*",
