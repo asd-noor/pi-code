@@ -25,7 +25,7 @@ import { resolveModel, modelLabel } from "./model-resolver.ts";
 import { getDefaultMaxTurns, setDefaultMaxTurns, getGraceTurns, setGraceTurns, ALL_BUILTIN_TOOL_NAMES, sessionManagerToAgentId } from "./agent-runner.ts";
 import { AgentWidget, formatMs } from "./widget.ts";
 import type { AgentConfig, AgentRecord, AgentActivity } from "./types.ts";
-import { getConfig as getPiCodeConfig, updateGlobalConfig } from "../_config/index.ts";
+import { getConfig as getPiCodeConfig, updateGlobalConfig, setSubagentsSharedManager, getSubagentsSharedManager, getSubagentsPendingAskPrimary, setSubagentsSendToPrimary, getSubagentsSendToPrimary } from "../_config/index.ts";
 
 // ---- Seed bundled agents --------------------------------------------------
 
@@ -204,13 +204,14 @@ function buildAskPrimaryInstruction(): string {
   return [
     "### Responding to subagent questions (ask_primary)",
     "",
-    "A subagent may send you a blocking question via `ask_primary`. When this happens:",
-    "- You will receive a triggered message with the question and the subagent's ID.",
-    "- Answer it autonomously if you can, or use `ask_user` to clarify with the human first.",
-    "- **Always respond** using `steer_subagent(agentId, answer)` — the subagent is blocked waiting.",
-    "- Be concise. The subagent only needs the answer, not a full explanation.",
-    "- If you cannot answer, steer with a clear explanation so the subagent can proceed.",
-    "- Do not ignore ask_primary messages — the subagent will time out if you don't respond.",
+    "A subagent may send you a blocking question via `ask_primary`. It will arrive as a triggered follow-up turn.",
+    "The subagent is **blocked and waiting** — respond immediately in the same turn you receive it.",
+    "",
+    "- Answer autonomously if you can, or use `ask_user` to clarify with the human first.",
+    "- **Always call `answer_subagent(agent_id, answer)`** to unblock the subagent.",
+    "- Be concise — the subagent only needs the answer, not a full explanation.",
+    "- If you cannot answer, still call `answer_subagent` with a clear explanation so the subagent can proceed.",
+    "- Do not defer or ignore — the subagent will time out if you don't respond in this turn.",
   ].join("\n");
 }
 
@@ -223,11 +224,8 @@ export default function (pi: ExtensionAPI) {
   const tempFiles = new Set<string>();
   const tailIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
-  const pendingAskPrimary = new Map<string, {
-    resolve: (answer: string) => void;
-    reject: (err: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
-  }>();
+  // getSubagentsPendingAskPrimary() lives in shared.ts so subagent extension instances can access it too
+  // (imported as `getSubagentsPendingAskPrimary()` from "./shared.ts")
 
   function startSessionFile(record: AgentRecord): void {
     const dir = join(tmpdir(), "pi-subagents");
@@ -355,13 +353,6 @@ export default function (pi: ExtensionAPI) {
     },
     // maxConcurrent (default)
     undefined,
-    // onAnswerSubagent — intercepts steer_subagent calls that answer a pending ask_primary
-    (agentId: string, answer: string): boolean => {
-      const pending = pendingAskPrimary.get(agentId);
-      if (!pending) return false;
-      pending.resolve(answer);
-      return true;
-    },
   );
 
   const widget = new AgentWidget(manager);
@@ -392,6 +383,14 @@ export default function (pi: ExtensionAPI) {
     if (sp.includes("<sub_agent_context>") || sp.startsWith("You are a pi coding agent sub-agent.")) {
       return {};
     }
+    // Primary instance — register shared singletons so subagent tool calls can reach them
+    setSubagentsSharedManager(manager);
+    setSubagentsSendToPrimary((content, customType, details) => {
+      pi.sendMessage(
+        { customType, content, display: true, details },
+        { triggerTurn: true, deliverAs: "followUp" },
+      );
+    });
     return { systemPrompt: event.systemPrompt + "\n\n" + buildSubagentInstruction() + "\n\n" + buildAskPrimaryInstruction() };
   });
 
@@ -405,11 +404,11 @@ export default function (pi: ExtensionAPI) {
     }
     tempFiles.clear();
     // Reject any pending ask_primary calls so subagents don't hang forever.
-    for (const pending of pendingAskPrimary.values()) {
+    for (const pending of getSubagentsPendingAskPrimary().values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error("Session shut down"));
     }
-    pendingAskPrimary.clear();
+    getSubagentsPendingAskPrimary().clear();
   });
 
   // =========================================================================
@@ -821,7 +820,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       if (!agentConfig) {
         return textResult(`Unknown agent type: "${params.subagent_type}". Available: ${getAvailableTypes().join(", ")}`);
       }
-      const warmRecord = manager.findWarmSession(params.subagent_type, cwd);
+      const warmRecord = (getSubagentsSharedManager() ?? manager).findWarmSession(params.subagent_type, cwd);
       if (!warmRecord) {
         return textResult(`No warm "${params.subagent_type}" session available. Try solving by yourself or use ask_primary.`);
       }
@@ -829,7 +828,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       warmRecord.completedAt = Date.now();
       const timeoutMs = params.timeout_ms ?? ((getPiCodeConfig().subagents?.askSubagentTimeout ?? 2) * 60_000);
       const record = await Promise.race([
-        manager.spawnAndWait({ ...ctx, cwd }, params.prompt, {
+        (getSubagentsSharedManager() ?? manager).spawnAndWait({ ...ctx, cwd }, params.prompt, {
           description: `ask: ${params.prompt.slice(0, 50)}`,
           agentConfig,
           existingSession: warmRecord.session,
@@ -861,38 +860,64 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       if (!agentId) {
         return textResult("ask_primary is only available to subagents.");
       }
-      if (pendingAskPrimary.has(agentId)) {
+      if (getSubagentsPendingAskPrimary().has(agentId)) {
         return textResult("An ask_primary call is already pending for this agent.");
       }
       const timeoutMs = params.timeout_ms ?? ((getPiCodeConfig().subagents?.askPrimaryTimeout ?? 5) * 60_000);
       return new Promise<ReturnType<typeof textResult>>((resolve) => {
         const timer = setTimeout(() => {
-          pendingAskPrimary.delete(agentId);
+          getSubagentsPendingAskPrimary().delete(agentId);
           resolve(textResult(`Timed out after ${timeoutMs / 1000}s waiting for primary agent response.`));
         }, timeoutMs);
-        pendingAskPrimary.set(agentId, {
+        getSubagentsPendingAskPrimary().set(agentId, {
           resolve: (answer: string) => {
             clearTimeout(timer);
-            pendingAskPrimary.delete(agentId);
+            getSubagentsPendingAskPrimary().delete(agentId);
             resolve(textResult(answer));
           },
           reject: (err: Error) => {
             clearTimeout(timer);
-            pendingAskPrimary.delete(agentId);
+            getSubagentsPendingAskPrimary().delete(agentId);
             resolve(textResult(`Error: ${err.message}`));
           },
           timer,
         });
-        pi.sendMessage(
-          {
-            customType: "subagents:ask_primary",
-            content: `Subagent (ID: ${agentId}, type: ${manager.getRecord(agentId)?.type ?? "unknown"}) is asking:\n\n${params.prompt}\n\nUse steer_subagent("${agentId}", your_answer) to respond.`,
-            display: true,
-            details: { agentId, prompt: params.prompt },
-          },
-          { triggerTurn: true, deliverAs: "followUp" },
-        );
+        const msg = `Subagent (ID: ${agentId}, type: ${(getSubagentsSharedManager() ?? manager).getRecord(agentId)?.type ?? "unknown"}) is asking:\n\n${params.prompt}\n\nUse answer_subagent("${agentId}", your_answer) to respond.`;
+        const msgDetails = { agentId, prompt: params.prompt };
+        const sendToPrimary = getSubagentsSendToPrimary();
+        if (sendToPrimary) {
+          // Running inside a subagent — use the primary's pi.sendMessage via shared ref
+          sendToPrimary(msg, "subagents:ask_primary", msgDetails);
+        } else {
+          // Running inside the primary itself
+          pi.sendMessage(
+            { customType: "subagents:ask_primary", content: msg, display: true, details: msgDetails },
+            { triggerTurn: true, deliverAs: "followUp" },
+          );
+        }
       });
+    },
+  });
+
+  // =========================================================================
+  // Tool: answer_subagent
+  // =========================================================================
+
+  pi.registerTool({
+    name: "answer_subagent",
+    label: "Answer Subagent",
+    description: "Answer a blocked subagent that called ask_primary. Only available to the primary agent. Use this immediately when a subagent question arrives — the subagent is blocked waiting.",
+    parameters: Type.Object({
+      agent_id: Type.String({ description: "The agent ID from the ask_primary notification." }),
+      answer: Type.String({ description: "Your answer to the subagent's question." }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const pending = getSubagentsPendingAskPrimary().get(params.agent_id);
+      if (!pending) {
+        return textResult(`No pending ask_primary for agent "${params.agent_id}". It may have timed out already.`);
+      }
+      pending.resolve(params.answer);
+      return textResult(`Answer delivered to subagent ${params.agent_id}.`);
     },
   });
 

@@ -21,10 +21,16 @@ import { buildSubagentAgendaInstruction } from "../agenda/instruction.ts";
 export const ALL_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
 /** Tools registered by this extension that subagents must NOT inherit. */
-const EXCLUDED_TOOL_NAMES = new Set(["Subagent", "MultiSubagent", "get_subagent_result", "steer_subagent"]);
+const EXCLUDED_TOOL_NAMES = new Set(["Subagent", "MultiSubagent", "get_subagent_result", "steer_subagent", "answer_subagent"]);
 
-/** Maps a SessionManager instance to its subagent ID — used by ask_primary for identity lookup. */
-export const sessionManagerToAgentId = new Map<any, string>();
+/** Maps a SessionManager instance to its subagent ID — used by ask_primary for identity lookup.
+ * Lives on globalThis so primary and subagent extension instances share one copy. */
+const SM_MAP_KEY = "__pi_sessionManagerToAgentId__";
+if (!(globalThis as Record<string, unknown>)[SM_MAP_KEY]) {
+  (globalThis as Record<string, unknown>)[SM_MAP_KEY] = new Map<any, string>();
+}
+export const sessionManagerToAgentId: Map<any, string> =
+  (globalThis as Record<string, unknown>)[SM_MAP_KEY] as Map<any, string>;
 
 // ---- Settings ----
 
@@ -95,9 +101,9 @@ Only works if a warm session exists. If it fails, solve by yourself or escalate 
 
 **ask_primary** — send a blocking question to the primary agent and wait for its answer.
 Use as a last resort when you genuinely cannot proceed without human input or primary-agent guidance.
-- The primary agent will answer autonomously or ask the user for clarification.
+- The primary agent will answer autonomously or ask the user for clarification, then call answer_subagent to unblock you.
 - Do not use for routine decisions — only for genuine blockers.
-- Has a configurable timeout (default 2 min for ask_subagent, 5 min for ask_primary).
+- Timeout: 5 min by default (configurable).
 </sub_agent_context>`;
 
 const GENERIC_BASE = `# Role

@@ -10,7 +10,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { validateParams } from "./validate.ts";
 import { AskController } from "./ui.ts";
-import { normalizeQuestions, toResult, createInitialState } from "./state.ts";
+import { toResult, createInitialState } from "./state.ts";
+import { normalizeQuestions } from "./validate.ts";
 import type { AskParams, AskResult } from "./types.ts";
 
 // ── Descriptions ──────────────────────────────────────────────────────────────

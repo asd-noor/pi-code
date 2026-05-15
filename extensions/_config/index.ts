@@ -296,6 +296,38 @@ export function updateGlobalConfig(patch: Partial<PiCodeConfig>): void {
   reloadConfig();
 }
 
+// ── Shared subagents runtime state ──────────────────────────────────────────
+// Uses globalThis so state is truly process-global regardless of how the SDK
+// loads or isolates extension modules across primary and subagent sessions.
+
+interface SubagentsShared {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  manager?: any;
+  pendingAskPrimary: Map<string, {
+    resolve: (answer: string) => void;
+    reject: (err: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>;
+  sendToPrimary?: (content: string, customType: string, details: Record<string, unknown>) => void;
+}
+
+const SUBAGENTS_SHARED_KEY = "__pi_subagents_shared__";
+if (!(globalThis as Record<string, unknown>)[SUBAGENTS_SHARED_KEY]) {
+  (globalThis as Record<string, unknown>)[SUBAGENTS_SHARED_KEY] = { pendingAskPrimary: new Map() };
+}
+function getSubagentsShared(): SubagentsShared {
+  return (globalThis as Record<string, unknown>)[SUBAGENTS_SHARED_KEY] as SubagentsShared;
+}
+
+export function getSubagentsSharedManager(): SubagentsShared["manager"] { return getSubagentsShared().manager; }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function setSubagentsSharedManager(m: any): void { getSubagentsShared().manager = m; }
+export function getSubagentsPendingAskPrimary(): SubagentsShared["pendingAskPrimary"] { return getSubagentsShared().pendingAskPrimary; }
+export function getSubagentsSendToPrimary(): SubagentsShared["sendToPrimary"] { return getSubagentsShared().sendToPrimary; }
+export function setSubagentsSendToPrimary(
+  fn: (content: string, customType: string, details: Record<string, unknown>) => void,
+): void { getSubagentsShared().sendToPrimary = fn; }
+
 // ── Extension factory ─────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI): void {

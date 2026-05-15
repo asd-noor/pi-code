@@ -15,7 +15,6 @@ const DEFAULT_MAX_CONCURRENT = 4;
 
 export type OnComplete = (record: AgentRecord) => void;
 export type OnStart = (record: AgentRecord) => void;
-export type OnAnswerSubagent = (agentId: string, answer: string) => boolean;
 
 export interface SpawnOptions {
   description: string;
@@ -48,14 +47,12 @@ export class AgentManager {
   private maxConcurrent: number;
   private onComplete?: OnComplete;
   private onStart?: OnStart;
-  private onAnswerSubagent?: OnAnswerSubagent;
   private cleanupTimer: ReturnType<typeof setInterval>;
 
-  constructor(onComplete?: OnComplete, onStart?: OnStart, maxConcurrent = DEFAULT_MAX_CONCURRENT, onAnswerSubagent?: OnAnswerSubagent) {
+  constructor(onComplete?: OnComplete, onStart?: OnStart, maxConcurrent = DEFAULT_MAX_CONCURRENT) {
     this.onComplete = onComplete;
     this.onStart = onStart;
     this.maxConcurrent = maxConcurrent;
-    this.onAnswerSubagent = onAnswerSubagent;
     this.cleanupTimer = setInterval(() => this.cleanup(), 60_000);
   }
 
@@ -221,9 +218,6 @@ export class AgentManager {
   async steer(id: string, message: string): Promise<boolean> {
     const record = this.records.get(id);
     if (!record) return false;
-    // If this steer is an answer to a pending ask_primary call, resolve the promise
-    // and skip normal session injection.
-    if (this.onAnswerSubagent?.(id, message)) return true;
     if (record.status !== "running") return false;
     if (!record.session) {
       record.pendingSteers = record.pendingSteers ?? [];
