@@ -153,6 +153,10 @@ export interface SubagentsConfig {
   graceTurns?: number;
   /** Minutes to keep a completed session warm for reuse. Default: 10. */
   warmPeriod?: number;
+  /** Timeout in minutes for ask_primary to wait for primary agent response. Default: 5. */
+  askPrimaryTimeout?: number;
+  /** Timeout in minutes for ask_subagent to wait for the warm agent response. Default: 2. */
+  askSubagentTimeout?: number;
 }
 
 export interface MemoryBrowserConfig {

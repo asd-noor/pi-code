@@ -15,6 +15,7 @@ const DEFAULT_MAX_CONCURRENT = 4;
 
 export type OnComplete = (record: AgentRecord) => void;
 export type OnStart = (record: AgentRecord) => void;
+export type OnAnswerSubagent = (agentId: string, answer: string) => boolean;
 
 export interface SpawnOptions {
   description: string;
@@ -28,6 +29,7 @@ export interface SpawnOptions {
   agendaId?: number;
   fresh?: boolean;
   existingSession?: any;
+  agentId?: string;
 }
 
 interface QueueItem {
@@ -46,12 +48,14 @@ export class AgentManager {
   private maxConcurrent: number;
   private onComplete?: OnComplete;
   private onStart?: OnStart;
+  private onAnswerSubagent?: OnAnswerSubagent;
   private cleanupTimer: ReturnType<typeof setInterval>;
 
-  constructor(onComplete?: OnComplete, onStart?: OnStart, maxConcurrent = DEFAULT_MAX_CONCURRENT) {
+  constructor(onComplete?: OnComplete, onStart?: OnStart, maxConcurrent = DEFAULT_MAX_CONCURRENT, onAnswerSubagent?: OnAnswerSubagent) {
     this.onComplete = onComplete;
     this.onStart = onStart;
     this.maxConcurrent = maxConcurrent;
+    this.onAnswerSubagent = onAnswerSubagent;
     this.cleanupTimer = setInterval(() => this.cleanup(), 60_000);
   }
 
@@ -92,7 +96,7 @@ export class AgentManager {
     this.deferreds.set(id, { resolve: _resolve });
 
     if (options.isBackground && this.runningBackground >= this.maxConcurrent) {
-      this.queue.push({ id, ctx, prompt, options });
+      this.queue.push({ id, ctx, prompt, options: { ...options, agentId: id } });
       return id;
     }
 
@@ -105,7 +109,7 @@ export class AgentManager {
       }
     }
 
-    this.startAgent(id, record, activity, ctx, prompt, options);
+    this.startAgent(id, record, activity, ctx, prompt, { ...options, agentId: id });
     return id;
   }
 
@@ -138,6 +142,7 @@ export class AgentManager {
       signal: record.abortController!.signal,
       activity,
       agendaId: options.agendaId,
+      agentId: options.agentId,
       onSessionCreated: (session) => {
         record.session = session;
         if (record.pendingSteers?.length) {
@@ -216,6 +221,9 @@ export class AgentManager {
   async steer(id: string, message: string): Promise<boolean> {
     const record = this.records.get(id);
     if (!record) return false;
+    // If this steer is an answer to a pending ask_primary call, resolve the promise
+    // and skip normal session injection.
+    if (this.onAnswerSubagent?.(id, message)) return true;
     if (record.status !== "running") return false;
     if (!record.session) {
       record.pendingSteers = record.pendingSteers ?? [];

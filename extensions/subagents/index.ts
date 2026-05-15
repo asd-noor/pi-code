@@ -22,7 +22,7 @@ import { Type } from "typebox";
 import { loadAgents } from "./agents.ts";
 import { AgentManager } from "./agent-manager.ts";
 import { resolveModel, modelLabel } from "./model-resolver.ts";
-import { getDefaultMaxTurns, setDefaultMaxTurns, getGraceTurns, setGraceTurns, ALL_BUILTIN_TOOL_NAMES } from "./agent-runner.ts";
+import { getDefaultMaxTurns, setDefaultMaxTurns, getGraceTurns, setGraceTurns, ALL_BUILTIN_TOOL_NAMES, sessionManagerToAgentId } from "./agent-runner.ts";
 import { AgentWidget, formatMs } from "./widget.ts";
 import type { AgentConfig, AgentRecord, AgentActivity } from "./types.ts";
 import { getConfig as getPiCodeConfig, updateGlobalConfig } from "../_config/index.ts";
@@ -211,6 +211,12 @@ export default function (pi: ExtensionAPI) {
   const tempFiles = new Set<string>();
   const tailIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
+  const pendingAskPrimary = new Map<string, {
+    resolve: (answer: string) => void;
+    reject: (err: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+
   function startSessionFile(record: AgentRecord): void {
     const dir = join(tmpdir(), "pi-subagents");
     mkdirSync(dir, { recursive: true });
@@ -335,6 +341,15 @@ export default function (pi: ExtensionAPI) {
       widget.update();
       startSessionFile(record);
     },
+    // maxConcurrent (default)
+    undefined,
+    // onAnswerSubagent — intercepts steer_subagent calls that answer a pending ask_primary
+    (agentId: string, answer: string): boolean => {
+      const pending = pendingAskPrimary.get(agentId);
+      if (!pending) return false;
+      pending.resolve(answer);
+      return true;
+    },
   );
 
   const widget = new AgentWidget(manager);
@@ -377,6 +392,12 @@ export default function (pi: ExtensionAPI) {
       try { rmSync(f); } catch {}
     }
     tempFiles.clear();
+    // Reject any pending ask_primary calls so subagents don't hang forever.
+    for (const pending of pendingAskPrimary.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("Session shut down"));
+    }
+    pendingAskPrimary.clear();
   });
 
   // =========================================================================
@@ -770,6 +791,100 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
   });
 
   // =========================================================================
+  // Tool: ask_subagent
+  // =========================================================================
+
+  pi.registerTool({
+    name: "ask_subagent",
+    label: "Ask Subagent",
+    description: "Ask a warm agent session a question. Only works if a completed session of the requested type exists within the warm period. Use this when another agent has already explored or processed relevant context. If no warm session exists, try to solve by yourself or use ask_primary.",
+    parameters: Type.Object({
+      subagent_type: Type.String({ description: "The agent type to query (must have a warm session)." }),
+      prompt: Type.String({ description: "The question or task to send to the warm agent." }),
+      timeout_ms: Type.Optional(Type.Number({ description: "Timeout in milliseconds. Default: askSubagentTimeout config (default 2 min)." })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const cwd = resolveCwd(ctx, currentCwd);
+      const agentConfig = getConfig(params.subagent_type);
+      if (!agentConfig) {
+        return textResult(`Unknown agent type: "${params.subagent_type}". Available: ${getAvailableTypes().join(", ")}`);
+      }
+      const warmRecord = manager.findWarmSession(params.subagent_type, cwd);
+      if (!warmRecord) {
+        return textResult(`No warm "${params.subagent_type}" session available. Try solving by yourself or use ask_primary.`);
+      }
+      // Reset the warm timer so the session stays warm through this interaction.
+      warmRecord.completedAt = Date.now();
+      const timeoutMs = params.timeout_ms ?? ((getPiCodeConfig().subagents?.askSubagentTimeout ?? 2) * 60_000);
+      const record = await Promise.race([
+        manager.spawnAndWait({ ...ctx, cwd }, params.prompt, {
+          description: `ask: ${params.prompt.slice(0, 50)}`,
+          agentConfig,
+          existingSession: warmRecord.session,
+          fresh: true,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Timed out after ${timeoutMs / 1000}s`)), timeoutMs)
+        ),
+      ]).catch((err: Error) => ({ status: "error" as const, error: err.message, result: undefined }));
+      if (record.status === "error") return textResult(`Agent error: ${record.error}`);
+      return textResult(record.result?.trim() || "(no output)");
+    },
+  });
+
+  // =========================================================================
+  // Tool: ask_primary
+  // =========================================================================
+
+  pi.registerTool({
+    name: "ask_primary",
+    label: "Ask Primary",
+    description: "Send a question to the primary agent and wait for its response. The primary agent will answer autonomously or use ask_user to clarify with the human. Use this when you need guidance, clarification, or information that only the primary agent or the human can provide.",
+    parameters: Type.Object({
+      prompt: Type.String({ description: "The question or request to send to the primary agent." }),
+      timeout_ms: Type.Optional(Type.Number({ description: "Timeout in milliseconds. Default: askPrimaryTimeout config (default 5 min)." })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const agentId = sessionManagerToAgentId.get(ctx.sessionManager);
+      if (!agentId) {
+        return textResult("ask_primary is only available to subagents.");
+      }
+      if (pendingAskPrimary.has(agentId)) {
+        return textResult("An ask_primary call is already pending for this agent.");
+      }
+      const timeoutMs = params.timeout_ms ?? ((getPiCodeConfig().subagents?.askPrimaryTimeout ?? 5) * 60_000);
+      return new Promise<ReturnType<typeof textResult>>((resolve) => {
+        const timer = setTimeout(() => {
+          pendingAskPrimary.delete(agentId);
+          resolve(textResult(`Timed out after ${timeoutMs / 1000}s waiting for primary agent response.`));
+        }, timeoutMs);
+        pendingAskPrimary.set(agentId, {
+          resolve: (answer: string) => {
+            clearTimeout(timer);
+            pendingAskPrimary.delete(agentId);
+            resolve(textResult(answer));
+          },
+          reject: (err: Error) => {
+            clearTimeout(timer);
+            pendingAskPrimary.delete(agentId);
+            resolve(textResult(`Error: ${err.message}`));
+          },
+          timer,
+        });
+        pi.sendMessage(
+          {
+            customType: "subagents:ask_primary",
+            content: `Subagent (ID: ${agentId}, type: ${manager.getRecord(agentId)?.type ?? "unknown"}) is asking:\n\n${params.prompt}\n\nUse steer_subagent("${agentId}", your_answer) to respond.`,
+            display: true,
+            details: { agentId, prompt: params.prompt },
+          },
+          { triggerTurn: true, deliverAs: "followUp" },
+        );
+      });
+    },
+  });
+
+  // =========================================================================
   // Command: /subagents
   // =========================================================================
 
@@ -907,6 +1022,8 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       `Default max turns  (current: ${getDefaultMaxTurns() ?? "unlimited"})`,
       `Grace turns  (current: ${getGraceTurns()})`,
       `Warm period  (current: ${getPiCodeConfig().subagents?.warmPeriod ?? 10} min)`,
+      `Ask-primary timeout  (current: ${getPiCodeConfig().subagents?.askPrimaryTimeout ?? 5} min)`,
+      `Ask-subagent timeout  (current: ${getPiCodeConfig().subagents?.askSubagentTimeout ?? 2} min)`,
     ]);
     if (!choice) return;
 
@@ -952,6 +1069,24 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
           updateGlobalConfig({ subagents: { warmPeriod: n } });
           ctx.ui.notify(`Warm period → ${n === 0 ? "disabled" : n + " min"}`, "info");
         } else ctx.ui.notify("Must be ≥ 0.", "warning");
+      }
+    } else if (choice.startsWith("Ask-primary timeout")) {
+      const val = await ctx.ui.input("Ask-primary timeout in minutes", String(getPiCodeConfig().subagents?.askPrimaryTimeout ?? 5));
+      if (val) {
+        const n = parseInt(val, 10);
+        if (n >= 1) {
+          updateGlobalConfig({ subagents: { askPrimaryTimeout: n } });
+          ctx.ui.notify(`Ask-primary timeout → ${n} min`, "info");
+        } else ctx.ui.notify("Must be ≥ 1.", "warning");
+      }
+    } else if (choice.startsWith("Ask-subagent timeout")) {
+      const val = await ctx.ui.input("Ask-subagent timeout in minutes", String(getPiCodeConfig().subagents?.askSubagentTimeout ?? 2));
+      if (val) {
+        const n = parseInt(val, 10);
+        if (n >= 1) {
+          updateGlobalConfig({ subagents: { askSubagentTimeout: n } });
+          ctx.ui.notify(`Ask-subagent timeout \u2192 ${n} min`, "info");
+        } else ctx.ui.notify("Must be \u2265 1.", "warning");
       }
     }
   }

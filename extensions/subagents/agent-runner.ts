@@ -21,7 +21,10 @@ import { buildSubagentAgendaInstruction } from "../agenda/instruction.ts";
 export const ALL_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
 /** Tools registered by this extension that subagents must NOT inherit. */
-const EXCLUDED_TOOL_NAMES = new Set(["Subagent", "get_subagent_result", "steer_subagent"]);
+const EXCLUDED_TOOL_NAMES = new Set(["Subagent", "MultiSubagent", "get_subagent_result", "steer_subagent"]);
+
+/** Maps a SessionManager instance to its subagent ID — used by ask_primary for identity lookup. */
+export const sessionManagerToAgentId = new Map<any, string>();
 
 // ---- Settings ----
 
@@ -215,6 +218,7 @@ export interface SpawnOptions {
   onSessionCreated?: (session: any) => void;
   agendaId?: number;
   existingSession?: any;
+  agentId?: string;
 }
 
 export async function spawnAndRun(
@@ -225,6 +229,10 @@ export async function spawnAndRun(
 ): Promise<SpawnResult> {
   const cwd = typeof ctx?.cwd === "string" && ctx.cwd ? ctx.cwd : process.cwd();
   const { model, isolated, inheritContext, thinkingLevel, signal, activity } = options;
+
+  // sessionManager is declared here (outside the if block) so it is visible in the
+  // finally clause and for warm-reuse paths where existingSession is provided.
+  let sessionManager: any;
 
   let _createdSession: any;
   if (!options.existingSession) {
@@ -268,10 +276,11 @@ export async function spawnAndRun(
     const resolvedModel = model ?? ctx.model;
     const resolvedThinking = thinkingLevel ?? agentConfig.thinking;
 
+    sessionManager = SessionManager.inMemory(cwd);
     const sessionOpts: any = {
       cwd,
       agentDir: agentDirPath,
-      sessionManager: SessionManager.inMemory(cwd),
+      sessionManager,
       settingsManager: SettingsManager.create(cwd, agentDirPath),
       modelRegistry: ctx.modelRegistry,
       model: resolvedModel,
@@ -336,6 +345,14 @@ export async function spawnAndRun(
     }
 
     _createdSession = newSession;
+  } else {
+    // For warm resumals, retrieve the sessionManager from the existing session so that
+    // ask_primary can look up the agent ID via ctx.sessionManager in tool execute.
+    sessionManager = (options.existingSession as any).sessionManager;
+  }
+
+  if (options.agentId && sessionManager) {
+    sessionManagerToAgentId.set(sessionManager, options.agentId);
   }
 
   const session = options.existingSession ?? _createdSession;
@@ -431,6 +448,7 @@ export async function spawnAndRun(
   } finally {
     unsub();
     if (abortListener && signal) signal.removeEventListener("abort", abortListener);
+    if (sessionManager) sessionManagerToAgentId.delete(sessionManager);
   }
 
   if (caughtError) {
