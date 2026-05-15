@@ -2,7 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.3.0] - 2026-05-15
+## [3.0.0] - 2026-05-16
+
+### Added
+
+- **subagents**: `ask_subagent` tool — a subagent can query a warm session of another agent type directly, reusing its conversation context instead of spawning a fresh session. Uses the fallback chain: ask_subagent → solve yourself → ask_primary.
+- **subagents**: `ask_primary` tool — a subagent can send a blocking question to the primary agent and wait for a response. The primary agent answers autonomously or uses `ask_user` for human clarification. Configurable timeout (`subagents.askPrimaryTimeout`, default 5 min).
+- **subagents**: `answer_subagent` tool — primary-only tool for responding to blocked `ask_primary` calls. Exclusive to the primary (excluded from subagent tool sets).
+- **subagents**: Warm session reuse — spawning an agent of the same type + working directory within the warm period reuses the existing session (conversation history preserved). Controlled by `reusable: false` in agent frontmatter to opt out. Warm period configurable via `subagents.warmPeriod` (default 10 min), resets on each reuse.
+- **subagents**: `fresh` parameter on `Subagent` tool — forces a new session, bypassing warm reuse.
+- **subagents**: Session file tailing — each agent writes its session log to `/tmp/pi-subagents/<projectHash>/<agentType>` on start. Warm reuse appends a `── resumed` divider to the existing file. File path shown in `/subagents` menu and completion notifications.
+- **subagents**: External session viewer — `subagents.viewer` config (e.g. `"zellij action new-tab --name 'Subagent $ID' -- less -R +F $FILE"`) opens the session file in an external program. `$FILE` and `$ID` are interpolated. Without a viewer, the menu shows the `less -R +F` command directly.
+- **subagents**: `(warm)` indicator in background agent completion notifications.
+- **subagents**: Settings now persist to `pi-code.json` — `maxConcurrent`, `defaultMaxTurns`, `graceTurns`, `warmPeriod`, `askPrimaryTimeout`, `askSubagentTimeout` all readable/writable via `/subagents → Settings`.
+- **subagents**: `reusable` frontmatter field for agent `.md` files — set to `false` to prevent warm session reuse for that agent type.
+- **_config**: `getProjectHash(cwd?)` utility — short 12-char sha256 of project root, used for namespacing temp files per project.
+- **_config**: `updateGlobalConfig(patch)` — deep-merges a patch into `~/.pi/agent/pi-code.json` and reloads; used by subagents settings persistence.
+- **_config**: Shared subagents runtime state (`subagentsSharedManager`, `subagentsPendingAskPrimary`, `subagentsSendToPrimary`) stored on `globalThis` via `_config` — ensures primary and subagent extension instances share one copy regardless of module isolation.
+
+### Changed
+
+- **subagents**: Internal TUI session viewer removed — it was crashing pi. Replaced entirely by the external viewer + file tailing approach.
+- **subagents**: Session files no longer use `.md` extension — they contain ANSI-colored output for terminal rendering, not markdown.
+- **subagents**: Session file format uses ANSI colors (cyan agent name, green tool checks, magenta thinking, dim summaries, gray separators) — renders correctly with `less -R +F`.
+- **subagents**: Turn order in session file corrected — thinking block now appears before tool calls within each turn.
+- **subagents**: `steer_subagent` no longer intercepts `ask_primary` answers — replaced by dedicated `answer_subagent` tool.
+- **subagents**: System prompt instructions updated — subagents instructed on `ask_subagent`/`ask_primary` fallback chain; primary instructed to respond immediately via `answer_subagent` in the same turn.
+- **subagents**: Instruction prose updated to use "assign" instead of "delegate".
+- **ask-tool**: Fixed broken `normalizeQuestions` import (`state.ts` → `validate.ts`).
+
 
 ### Changed
 
