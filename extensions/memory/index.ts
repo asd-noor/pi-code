@@ -207,7 +207,7 @@ export default function (pi: ExtensionAPI) {
   let isInteractive = false;
 
   // Pass projectRoot to all tools (per the naming-fix note in the spec)
-  registerTools(pi, () => sess?.projectRoot);
+  registerTools(pi, () => sess?.cacheDir);
 
   // ── System prompt injection ───────────────────────────────────────────────
 

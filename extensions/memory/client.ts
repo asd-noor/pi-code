@@ -5,21 +5,21 @@ import { getSocketPath, getStatusPath } from "./paths.ts";
 const TIMEOUT_MS = 30_000;
 
 export class MemoryClient {
-  private projectRoot: string;
+  private cacheDir: string;
 
-  constructor(projectRoot: string) {
-    this.projectRoot = projectRoot;
+  constructor(cacheDir: string) {
+    this.cacheDir = cacheDir;
   }
 
   readStatus(): string {
-    try { return readFileSync(getStatusPath(this.projectRoot), "utf8").trim(); }
+    try { return readFileSync(getStatusPath(this.cacheDir), "utf8").trim(); }
     catch { return "stopped"; }
   }
 
   async send<T extends Record<string, unknown>>(
     payload: Record<string, unknown>,
   ): Promise<T> {
-    const sockPath = getSocketPath(this.projectRoot);
+    const sockPath = getSocketPath(this.cacheDir);
     if (!existsSync(sockPath)) {
       const status = this.readStatus();
       if (status === "starting" || status === "indexing") {

@@ -2,10 +2,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { MemoryClient } from "./client.ts";
 
-export function registerTools(pi: ExtensionAPI, getProjectRoot: () => string | undefined): void {
+export function registerTools(pi: ExtensionAPI, getCacheDir: () => string | undefined): void {
   function client(ctx: { cwd: string }): MemoryClient {
-    const root = getProjectRoot() ?? ctx.cwd;
-    return new MemoryClient(root);
+    const dir = getCacheDir();
+    if (!dir) throw new Error("memory daemon is not initialised");
+    return new MemoryClient(dir);
   }
 
   pi.registerTool({

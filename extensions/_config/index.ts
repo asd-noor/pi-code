@@ -1,5 +1,10 @@
 /**
- * _config extension — centralised loader for ~/.pi/agent/pi-code.json.
+ * _config extension — centralised loader for pi-code.json.
+ *
+ * Config is merged from three sources in ascending precedence:
+ *   1. ~/.pi/agent/pi-code.json          (global)
+ *   2. <projectRoot>/.pi/pi-code.json    (project)
+ *   3. $PI_CODE_CONFIG                   (env override)
  *
  * Usage in other extensions:
  *   import { getConfig, loadConfig } from "../_config/index.ts";
@@ -15,13 +20,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-// ── Config path ───────────────────────────────────────────────────────────────
+// ── Config paths ─────────────────────────────────────────────────────────────
 
-export const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-code.json");
+/** Global config — ~/.pi/agent/pi-code.json */
+export const GLOBAL_CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-code.json");
 
 // ── Project root ─────────────────────────────────────────────────────────────
 
@@ -115,18 +121,6 @@ export function getProjectCacheDir(projectRoot?: string): string {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export interface WorkflowLogConfig {
-  /** Whether to write a timestamped entry to workflow.md after each agent turn. */
-  enabled?: boolean;
-  /** Model used for auto-summarisation, e.g. "github-copilot/claude-haiku-4.5". */
-  model?: string;
-}
-
-export interface MemoryAgentConfig {
-  /** Model used for /memory init and /memory curate commands. */
-  model?: string;
-}
-
 export interface ScoutConfig {
   /** Tavily API key — passed as TAVILY_API_KEY to the tvly CLI. */
   tavilyApiKey?: string;
@@ -156,8 +150,6 @@ export interface MemoryBrowserConfig {
 }
 
 export interface MemoryConfig {
-  /** Subdirectory name under `<projectRoot>/.pi/` for markdown files. Defaults to "memory". */
-  dirname?: string;
   /** Activity log auto-logging config. */
   activityLog?: MemoryActivityLogConfig;
   /** Per-subcommand model overrides. `default` applies unless a subcommand key is set. */
@@ -173,47 +165,96 @@ export interface MemoryConfig {
  * Unknown keys are preserved under `[key: string]: unknown`.
  */
 export interface PiCodeConfig {
-  workflowLog?: WorkflowLogConfig;
-  memoryAgent?: MemoryAgentConfig;
   scout?: ScoutConfig;
   memory?: MemoryConfig;
   [key: string]: unknown;
 }
 
+// ── Defaults ───────────────────────────────────────────────────────────────────
+
+const DEFAULT_CONFIG: PiCodeConfig = {
+  memory: {
+    activityLog: {
+      enabled: false,
+    },
+  },
+};
+
 // ── Loader ────────────────────────────────────────────────────────────────────
 
-/**
- * Load and parse the config file fresh from disk.
- * Returns an empty object when the file is absent or unparseable.
- */
-export function loadConfig(): PiCodeConfig {
+/** Parse one JSON file; returns {} on missing or invalid file. */
+function loadFile(filePath: string): PiCodeConfig {
   try {
-    if (!existsSync(CONFIG_PATH)) return {};
-    const raw = readFileSync(CONFIG_PATH, "utf-8");
-    return JSON.parse(raw) as PiCodeConfig;
+    if (!existsSync(filePath)) return {};
+    return JSON.parse(readFileSync(filePath, "utf-8")) as PiCodeConfig;
   } catch {
     return {};
   }
 }
 
-// ── Cached singleton ──────────────────────────────────────────────────────────
-
-let _cached: PiCodeConfig | undefined;
-
-/**
- * Return a cached copy of the config, loading from disk on the first call.
- * Call `invalidateConfig()` to force a reload on the next `getConfig()` call.
- */
-export function getConfig(): PiCodeConfig {
-  if (_cached === undefined) {
-    _cached = loadConfig();
+/** Recursively merge objects. Later sources override earlier ones. */
+function deepMerge(...sources: PiCodeConfig[]): PiCodeConfig {
+  const out: Record<string, unknown> = {};
+  for (const src of sources) {
+    for (const [k, v] of Object.entries(src)) {
+      const existing = out[k];
+      if (
+        v !== null && typeof v === "object" && !Array.isArray(v) &&
+        existing !== null && existing !== undefined && typeof existing === "object" && !Array.isArray(existing)
+      ) {
+        out[k] = deepMerge(existing as PiCodeConfig, v as PiCodeConfig);
+      } else {
+        out[k] = v;
+      }
+    }
   }
-  return _cached;
+  return out as PiCodeConfig;
 }
 
-/** Invalidate the in-memory cache so the next `getConfig()` re-reads the file. */
-export function invalidateConfig(): void {
-  _cached = undefined;
+/**
+ * Load and merge config from all sources in ascending precedence:
+ *   DEFAULT_CONFIG → global → project → $PI_CODE_CONFIG
+ *
+ * On first run, creates ~/.pi/agent/pi-code.json with DEFAULT_CONFIG.
+ * Pass `cwd` to enable project-level config lookup.
+ */
+export function loadConfig(cwd?: string): PiCodeConfig {
+  // Ensure global config exists; create with defaults on first run.
+  if (!existsSync(GLOBAL_CONFIG_PATH)) {
+    mkdirSync(dirname(GLOBAL_CONFIG_PATH), { recursive: true });
+    writeFileSync(GLOBAL_CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n", "utf-8");
+  }
+
+  const sources: PiCodeConfig[] = [DEFAULT_CONFIG, loadFile(GLOBAL_CONFIG_PATH)];
+
+  // Project — <projectRoot>/.pi/pi-code.json
+  if (cwd) {
+    const projectRoot = getProjectRoot(cwd);
+    sources.push(loadFile(join(projectRoot, ".pi", "pi-code.json")));
+  }
+
+  // Env override
+  const envPath = process.env.PI_CODE_CONFIG?.trim();
+  if (envPath) sources.push(loadFile(envPath));
+
+  return deepMerge(...sources);
+}
+
+// ── Cached singleton ──────────────────────────────────────────────────────────
+
+let _config: PiCodeConfig = loadConfig();
+
+/** Return the current merged config. Always up to date. */
+export function getConfig(): PiCodeConfig {
+  return _config;
+}
+
+/**
+ * Rebuild the merged config from all sources.
+ * Pass `cwd` to include the project-level config.
+ */
+export function reloadConfig(cwd?: string): void {
+  _config = loadConfig(cwd);
 }
 
 // ── Extension factory ─────────────────────────────────────────────────────────
@@ -221,9 +262,8 @@ export function invalidateConfig(): void {
 export default function (pi: ExtensionAPI): void {
   // On every session start (including /reload and /new), refresh the cache and
   // broadcast it so other extensions can subscribe without a direct import.
-  pi.on("session_start", async (_event, _ctx) => {
-    invalidateConfig();
-    const cfg = getConfig();
-    pi.events.emit("pi-code:config", cfg);
+  pi.on("session_start", async (_event, ctx) => {
+    reloadConfig(ctx.cwd);
+    pi.events.emit("pi-code:config", _config);
   });
 }

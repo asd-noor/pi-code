@@ -171,7 +171,7 @@ export class MemoryDB {
       for (let i = 0; i < sections.length; i++) {
         const s = sections[i];
         const result = insert.run({ fileName, ...s });
-        const newId = result.lastInsertRowid as number;
+        const newId = BigInt(result.lastInsertRowid);
         if (embeddings[i]?.length === 384) insertVec.run(newId, embeddings[i]);
       }
     })();
