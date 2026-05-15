@@ -12,8 +12,8 @@
  *   - Live widget         (● Subagents above editor)
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
@@ -24,8 +24,8 @@ import { AgentManager } from "./agent-manager.ts";
 import { resolveModel, modelLabel } from "./model-resolver.ts";
 import { getDefaultMaxTurns, setDefaultMaxTurns, getGraceTurns, setGraceTurns, ALL_BUILTIN_TOOL_NAMES } from "./agent-runner.ts";
 import { AgentWidget, formatMs } from "./widget.ts";
-import { SessionViewer } from "./session-viewer.ts";
-import type { AgentConfig } from "./types.ts";
+import type { AgentConfig, AgentRecord, AgentActivity } from "./types.ts";
+import { getConfig as getPiCodeConfig, updateGlobalConfig } from "../_config/index.ts";
 
 // ---- Seed bundled agents --------------------------------------------------
 
@@ -208,6 +208,98 @@ export default function (pi: ExtensionAPI) {
   seedBundledAgents();
   rebuildRegistry(currentCwd);
 
+  const tempFiles = new Set<string>();
+  const tailIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+  function startSessionFile(record: AgentRecord): void {
+    const dir = join(tmpdir(), "pi-subagents");
+    mkdirSync(dir, { recursive: true });
+    const filePath = join(dir, record.id);
+    writeFileSync(filePath, serializeHeader(record, manager.getActivity(record.id)), "utf-8");
+    tempFiles.add(filePath);
+    let lastTurnCount = 0;
+    const interval = setInterval(() => {
+      const rec = manager.getRecord(record.id);
+      const log = manager.getActivity(record.id)?.log ?? [];
+      while (lastTurnCount < log.length) {
+        appendFileSync(filePath, serializeTurn(log[lastTurnCount]!));
+        lastTurnCount++;
+      }
+      if (!rec || (rec.status !== "running" && rec.status !== "queued")) {
+        appendFileSync(filePath, `\n${GY}\u2500\u2500 ${R}${GR}session ended${R}  ${GY}${rec?.status ?? "unknown"}  ${formatMs((rec?.completedAt ?? Date.now()) - record.startedAt)}${R}\n`);
+        clearInterval(interval);
+        tailIntervals.delete(record.id);
+      }
+    }, 500);
+    tailIntervals.set(record.id, interval);
+  }
+
+  // ── ANSI helpers (no dependencies) ──────────────────────────────────────
+  const R  = "\x1b[0m";           // reset
+  const B  = "\x1b[1m";           // bold
+  const DM = "\x1b[2m";           // dim
+  const CY = "\x1b[36m";          // cyan
+  const GR = "\x1b[32m";          // green
+  const YL = "\x1b[33m";          // yellow
+  const RD = "\x1b[31m";          // red
+  const MG = "\x1b[35m";          // magenta
+  const GY = "\x1b[90m";          // bright-black / dark gray
+  const RULE = GY + "─".repeat(60) + R;
+
+  const STATUS_COLOR: Record<string, string> = {
+    completed: GR, running: CY, queued: YL, error: RD, aborted: RD, stopped: GY,
+  };
+
+  function serializeHeader(record: AgentRecord, activity: AgentActivity | undefined): string {
+    const duration = record.completedAt
+      ? formatMs(record.completedAt - record.startedAt)
+      : formatMs(Date.now() - record.startedAt);
+    const sc = STATUS_COLOR[record.status] ?? GY;
+    const lines: string[] = [
+      "",
+      `${B}${CY}${record.type}${R}  ${DM}\u2014${R}  ${B}${record.description}${R}`,
+      `${sc}${record.status}${R}  ${GY}turns: ${activity?.turnCount ?? record.turnCount}  tools: ${record.toolUses}  ${duration}${R}`,
+      RULE,
+      "",
+    ];
+    if (record.error) lines.splice(3, 0, `${RD}error: ${record.error}${R}`);
+    return lines.join("\n");
+  }
+
+  function serializeTurn(turn: import("./types.ts").TurnEntry): string {
+    const dur = turn.completedAt ? formatMs(turn.completedAt - turn.startedAt) : "…";
+    const lines: string[] = [
+      `${GY}\u2500\u2500 ${R}${B}Turn ${turn.turnNumber}${R}  ${GY}${dur}${R}`,
+      "",
+    ];
+    for (const tc of turn.toolCalls) {
+      const tcDur = tc.completedAt ? `  ${GY}${formatMs(tc.completedAt - tc.startedAt)}${R}` : "";
+      lines.push(`  ${GR}\u2713${R} ${B}${tc.name}${R}${tcDur}`);
+      if (tc.inputSummary) lines.push(`    ${DM}${tc.inputSummary}${R}`);
+      if (tc.resultSummary) lines.push(`    ${GY}${tc.resultSummary}${R}`);
+    }
+    if (turn.toolCalls.length > 0) lines.push("");
+    if (turn.thinking?.trim()) {
+      lines.push(`  ${MG}thinking${R}`);
+      for (const line of turn.thinking.trim().split("\n")) {
+        lines.push(`  ${DM}${line}${R}`);
+      }
+      lines.push("");
+    }
+    if (turn.text?.trim()) {
+      for (const line of turn.text.trim().split("\n")) {
+        lines.push(`  ${line}`);
+      }
+      lines.push("");
+    }
+    return lines.join("\n") + "\n";
+  }
+
+  function serializeSessionLog(record: AgentRecord, activity: AgentActivity | undefined): string {
+    const log = activity?.log ?? [];
+    return serializeHeader(record, activity) + log.map(serializeTurn).join("");
+  }
+
   const manager = new AgentManager(
     // onComplete
     (record) => {
@@ -238,9 +330,10 @@ export default function (pi: ExtensionAPI) {
       widget.markFinished(record.id);
     },
     // onStart
-    (_record) => {
+    (record) => {
       widget.ensureTimer();
       widget.update();
+      startSessionFile(record);
     },
   );
 
@@ -254,6 +347,11 @@ export default function (pi: ExtensionAPI) {
     if (event.reason === "new" || event.reason === "resume") {
       manager.clearCompleted();
     }
+    // Apply persisted settings from config
+    const cfg = getPiCodeConfig().subagents;
+    if (cfg?.maxConcurrent != null)    manager.setMaxConcurrent(cfg.maxConcurrent);
+    if (cfg?.defaultMaxTurns != null)  setDefaultMaxTurns(cfg.defaultMaxTurns === 0 ? undefined : cfg.defaultMaxTurns);
+    if (cfg?.graceTurns != null)       setGraceTurns(cfg.graceTurns);
   });
 
   pi.on("tool_execution_start", async (_event, ctx) => {
@@ -273,6 +371,12 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     manager.abortAll();
     widget.dispose();
+    for (const interval of tailIntervals.values()) clearInterval(interval);
+    tailIntervals.clear();
+    for (const f of tempFiles) {
+      try { rmSync(f); } catch {}
+    }
+    tempFiles.clear();
   });
 
   // =========================================================================
@@ -684,28 +788,6 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     else if (choice === "Settings")              await showSettings(ctx);
   }
 
-  async function showAgentSession(ctx: any, record: any): Promise<void> {
-    const isLive = record.status === "running" || record.status === "queued";
-
-    await ctx.ui.custom(
-      (tui: any, theme: any, _kb: any, done: (v: any) => void) => {
-        const viewer = new SessionViewer(record, () => manager.getActivity(record.id), theme);
-        viewer.onClose = () => {
-          if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = undefined; }
-          done(undefined);
-        };
-        let refreshTimer: ReturnType<typeof setInterval> | undefined;
-        if (isLive) refreshTimer = setInterval(() => tui.requestRender(), 300);
-        return {
-          render:      (w: number) => viewer.render(w),
-          invalidate:  ()          => viewer.invalidate(),
-          handleInput: (data: string) => { viewer.handleInput(data); tui.requestRender(); },
-        };
-      },
-      { overlay: true, overlayOptions: { anchor: "center", width: "95%", maxHeight: "95%" } },
-    );
-  }
-
   async function showRunningAgents(ctx: any): Promise<void> {
     const records = manager.listRecords();
     if (records.length === 0) { ctx.ui.notify("No subagents.", "info"); return; }
@@ -724,15 +806,29 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     const record = records[idx];
 
     const isActive = record.status === "running" || record.status === "queued";
-    const actions: string[] = ["View session"];
+    const viewerCmd = getPiCodeConfig().subagents?.viewer || undefined;
+    const sessionNote = viewerCmd ? undefined : `tail -F /tmp/pi-subagents/${record.id}`;
+    const title = sessionNote
+      ? `${record.type}  \u00b7  ${record.description}\n${sessionNote}`
+      : `${record.type}  \u00b7  ${record.description}`;
+    const actions: string[] = [];
+    if (viewerCmd) actions.push("View session");
     if (isActive) actions.push("Stop subagent");
     actions.push("Back");
 
-    const action = await ctx.ui.select(`${record.type}  ·  ${record.description}`, actions);
+    const action = await ctx.ui.select(title, actions);
     if (!action || action === "Back") return;
 
-    if (action === "View session") {
-      await showAgentSession(ctx, record);
+    if (action === "View session" && viewerCmd) {
+      const filePath = join(tmpdir(), "pi-subagents", record.id);
+      const cmd = viewerCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`);
+      try {
+        const { spawn } = await import("node:child_process");
+        const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });
+        child.unref();
+      } catch (err: any) {
+        ctx.ui.notify(`preview: ${err?.message ?? String(err)}`, "error");
+      }
     } else if (action === "Stop subagent") {
       const ok = await ctx.ui.confirm("Stop subagent?", `Abort: ${record.description}`);
       if (ok) { manager.abort(record.id); ctx.ui.notify(`Subagent ${record.id} stopped.`, "info"); }
@@ -759,8 +855,12 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     const cfg  = getConfig(name);
     if (!cfg) return;
 
-    // Show a quick summary and offer to view any running sessions of this type
+    // Show a quick summary; offer view session entries when viewer is configured
     const running = manager.listRecords().filter((r) => r.type === name);
+    const vCmd = getPiCodeConfig().subagents?.viewer || undefined;
+    const sessionLines = running
+      .filter(() => !vCmd)
+      .map((r) => `Session (${r.status}):  tail -F /tmp/pi-subagents/${r.id}`);
     const infoLines = [
       `Name:        ${name}`,
       `Source:      ${cfg.source ?? "unknown"}`,
@@ -768,11 +868,13 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       cfg.model    ? `Model:       ${cfg.model}` : null,
       cfg.thinking ? `Thinking:    ${cfg.thinking}` : null,
       cfg.maxTurns ? `Max turns:   ${cfg.maxTurns}` : null,
+      ...sessionLines,
     ].filter(Boolean).join("\n");
 
-    const menuOpts = running.length > 0
-      ? [`Info`, ...running.map((r) => `View session: ${r.id.slice(0, 8)} (${r.status})`)]
-      : ["Info"];
+    const menuOpts = [
+      "Info",
+      ...(vCmd ? running.map((r) => `View session: ${r.id.slice(0, 8)} (${r.status})`) : []),
+    ];
 
     const pick = await ctx.ui.select(name, menuOpts);
     if (!pick || pick === "Info") {
@@ -780,8 +882,16 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       return;
     }
     const sessionIdx = menuOpts.indexOf(pick) - 1;
-    if (sessionIdx >= 0 && running[sessionIdx]) {
-      await showAgentSession(ctx, running[sessionIdx]);
+    if (sessionIdx >= 0 && running[sessionIdx] && vCmd) {
+      const filePath = join(tmpdir(), "pi-subagents", running[sessionIdx]!.id);
+      const cmd = vCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`);
+      try {
+        const { spawn } = await import("node:child_process");
+        const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });
+        child.unref();
+      } catch (err: any) {
+        ctx.ui.notify(`preview: ${err?.message ?? String(err)}`, "error");
+      }
     }
   }
 
@@ -797,23 +907,35 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       const val = await ctx.ui.input("Max concurrent background agents", String(manager.getMaxConcurrent()));
       if (val) {
         const n = parseInt(val, 10);
-        if (n >= 1) { manager.setMaxConcurrent(n); ctx.ui.notify(`Max concurrency → ${n}`, "info"); }
-        else ctx.ui.notify("Must be ≥ 1.", "warning");
+        if (n >= 1) {
+          manager.setMaxConcurrent(n);
+          updateGlobalConfig({ subagents: { maxConcurrent: n } });
+          ctx.ui.notify(`Max concurrency → ${n}`, "info");
+        } else ctx.ui.notify("Must be ≥ 1.", "warning");
       }
     } else if (choice.startsWith("Default max turns")) {
       const val = await ctx.ui.input("Default max turns (0 = unlimited)", String(getDefaultMaxTurns() ?? 0));
       if (val) {
         const n = parseInt(val, 10);
-        if (n === 0)     { setDefaultMaxTurns(undefined); ctx.ui.notify("Max turns → unlimited", "info"); }
-        else if (n >= 1) { setDefaultMaxTurns(n);         ctx.ui.notify(`Max turns → ${n}`, "info"); }
-        else ctx.ui.notify("Must be 0 (unlimited) or ≥ 1.", "warning");
+        if (n === 0) {
+          setDefaultMaxTurns(undefined);
+          updateGlobalConfig({ subagents: { defaultMaxTurns: 0 } });
+          ctx.ui.notify("Max turns → unlimited", "info");
+        } else if (n >= 1) {
+          setDefaultMaxTurns(n);
+          updateGlobalConfig({ subagents: { defaultMaxTurns: n } });
+          ctx.ui.notify(`Max turns → ${n}`, "info");
+        } else ctx.ui.notify("Must be 0 (unlimited) or ≥ 1.", "warning");
       }
     } else if (choice.startsWith("Grace turns")) {
       const val = await ctx.ui.input("Grace turns after wrap-up steer", String(getGraceTurns()));
       if (val) {
         const n = parseInt(val, 10);
-        if (n >= 1) { setGraceTurns(n); ctx.ui.notify(`Grace turns → ${n}`, "info"); }
-        else ctx.ui.notify("Must be ≥ 1.", "warning");
+        if (n >= 1) {
+          setGraceTurns(n);
+          updateGlobalConfig({ subagents: { graceTurns: n } });
+          ctx.ui.notify(`Grace turns → ${n}`, "info");
+        } else ctx.ui.notify("Must be ≥ 1.", "warning");
       }
     }
   }

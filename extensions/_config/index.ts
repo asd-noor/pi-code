@@ -142,6 +142,17 @@ export interface MemorySubcommandModelConfig {
   compact?: string;
 }
 
+export interface SubagentsConfig {
+  /** Shell command to preview a session log file. Use `$FILE` as placeholder, e.g. `"tail -f $FILE"`. */
+  viewer?: string;
+  /** Max concurrent background agents. Default: 4. */
+  maxConcurrent?: number;
+  /** Default max turns per agent (0 = unlimited). */
+  defaultMaxTurns?: number;
+  /** Grace turns given to an agent after hitting its turn limit. Default: 5. */
+  graceTurns?: number;
+}
+
 export interface MemoryBrowserConfig {
   /** Shell command to edit a file (e / enter). Use `$FILE` as placeholder, e.g. `"code $FILE"`. */
   editor?: string;
@@ -177,6 +188,7 @@ export interface PiCodeConfig {
   codeMap?: CodeMapConfig;
   scout?: ScoutConfig;
   memory?: MemoryConfig;
+  subagents?: SubagentsConfig;
   [key: string]: unknown;
 }
 
@@ -265,6 +277,17 @@ export function getConfig(): PiCodeConfig {
  */
 export function reloadConfig(cwd?: string): void {
   _config = loadConfig(cwd);
+}
+
+/**
+ * Deep-merge `patch` into the global config file and reload.
+ * Use for persisting UI-driven settings changes.
+ */
+export function updateGlobalConfig(patch: Partial<PiCodeConfig>): void {
+  const current = loadFile(GLOBAL_CONFIG_PATH);
+  const updated = deepMerge(current, patch as PiCodeConfig);
+  writeFileSync(GLOBAL_CONFIG_PATH, JSON.stringify(updated, null, 2) + "\n", "utf-8");
+  reloadConfig();
 }
 
 // ── Extension factory ─────────────────────────────────────────────────────────
