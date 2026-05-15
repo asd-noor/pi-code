@@ -44,6 +44,36 @@ export function getProjectRoot(cwd?: string): string {
   return dir;
 }
 
+// ── Detached cache directory ────────────────────────────────────────────────
+
+/**
+ * Return (and initialise) a cache directory for a memory dir that lives
+ * outside any project root (i.e. when PI_MEMORY_SRC is set explicitly):
+ *   ~/.pi/cache/detached-memory/<sha256[:16] of memDir>/
+ */
+export function getDetachedCacheDir(memDir: string): string {
+  const hash = createHash("sha256").update(memDir).digest("hex").slice(0, 16);
+  const dir  = join(homedir(), ".pi", "cache", "detached-memory", hash);
+  const dirTxt = join(dir, "dir.txt");
+
+  mkdirSync(dir, { recursive: true });
+
+  if (!existsSync(dirTxt)) {
+    writeFileSync(dirTxt, memDir, "utf-8");
+  } else {
+    const stored = readFileSync(dirTxt, "utf-8").trim();
+    if (stored !== memDir) {
+      throw new Error(
+        `pi-code _config: detached cache dir mismatch for "${memDir}"\n` +
+        `  cache dir : ${dir}\n` +
+        `  dir.txt   : ${stored}`,
+      );
+    }
+  }
+
+  return dir;
+}
+
 // ── Project cache directory ──────────────────────────────────────────────────
 
 /**
@@ -118,6 +148,13 @@ export interface MemorySubcommandModelConfig {
   compact?: string;
 }
 
+export interface MemoryBrowserConfig {
+  /** Shell command to edit a file (e / enter). Use `$FILE` as placeholder, e.g. `"code $FILE"`. */
+  editor?: string;
+  /** Shell command to view a file (v). Use `$FILE` as placeholder, e.g. `"open -a Typora $FILE"`. */
+  viewer?: string;
+}
+
 export interface MemoryConfig {
   /** Subdirectory name under `<projectRoot>/.pi/` for markdown files. Defaults to "memory". */
   dirname?: string;
@@ -125,11 +162,8 @@ export interface MemoryConfig {
   activityLog?: MemoryActivityLogConfig;
   /** Per-subcommand model overrides. `default` applies unless a subcommand key is set. */
   subcommandModel?: MemorySubcommandModelConfig;
-  /**
-   * Shell command used by `/memory browser` to open a file.
-   * Use `$FILE` as the placeholder for the file path, e.g. `"code $FILE"`.
-   */
-  editorCommand?: string;
+  /** Browser widget commands. */
+  browser?: MemoryBrowserConfig;
 }
 
 /**

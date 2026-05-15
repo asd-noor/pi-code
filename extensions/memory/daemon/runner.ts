@@ -13,7 +13,6 @@
  */
 
 import { writeFileSync, readFileSync, unlinkSync, existsSync, openSync } from "node:fs";
-import { resolve } from "node:path";
 import type { ChildProcess } from "node:child_process";
 
 import {
@@ -21,30 +20,26 @@ import {
   getDbPath, getLogPath, getPidPath, getStatusPath,
   getEmbedScriptPath,
 } from "../paths.ts";
-import { getProjectCacheDir } from "../../_config/index.ts";
 import { MemoryDB } from "./db.ts";
 import { Indexer } from "./indexer.ts";
 import { DaemonServer } from "./server.ts";
 import { FileWatcher } from "./watcher.ts";
 import { isAppleSilicon, isUvAvailable, spawnSidecar, waitForSidecar } from "../sidecar/index.ts";
 
-const memDir      = process.argv[2];
-const projectRoot = process.argv[3];
+const memDir   = process.argv[2];
+const cacheDir = process.argv[3];
 
-if (!memDir || !projectRoot) {
-  process.stderr.write("usage: runner.ts <memDir> <projectRoot>\n");
+if (!memDir || !cacheDir) {
+  process.stderr.write("usage: runner.ts <memDir> <cacheDir>\n");
   process.exit(1);
 }
 
-// Validates dir.txt and ensures the cache dir exists
-getProjectCacheDir(resolve(projectRoot));
-
-const sockPath    = getSocketPath(projectRoot);
-const sidecarSock = getSidecarSocketPath(projectRoot);
-const dbPath      = getDbPath(projectRoot);
-const logPath     = getLogPath(projectRoot);
-const pidPath     = getPidPath(projectRoot);
-const statusPath  = getStatusPath(projectRoot);
+const sockPath    = getSocketPath(cacheDir);
+const sidecarSock = getSidecarSocketPath(cacheDir);
+const dbPath      = getDbPath(cacheDir);
+const logPath     = getLogPath(cacheDir);
+const pidPath     = getPidPath(cacheDir);
+const statusPath  = getStatusPath(cacheDir);
 
 const embedScript = getEmbedScriptPath();
 

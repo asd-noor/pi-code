@@ -5,7 +5,7 @@
  * Replaces the memory-md Go binary wrapper with a native TypeScript implementation.
  *
  * Dir resolution (first match wins):
- *   1. PI_MEMORY env var
+ *   1. PI_MEMORY_SRC env var
  *   2. <projectRoot>/.pi/<memory.dirname>  (dirname from pi-code.json, default "memory")
  */
 
@@ -24,8 +24,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { registerTools } from "./tools.ts";
 import { getLogPath, getStatusPath, getSocketPath } from "./paths.ts";
-import { getProjectRoot, getConfig, getProjectCacheDir } from "../_config/index.ts";
-import { openMemoryBrowserInteractive } from "./browser.ts";
+import { getProjectRoot, getConfig, getProjectCacheDir, getDetachedCacheDir } from "../_config/index.ts";
+import { openMemoryBrowserInteractive, type MemoryBrowserSelection } from "./browser.ts";
 
 // ── Activity log helpers ──────────────────────────────────────────────────────
 
@@ -187,7 +187,7 @@ const RUNNER_SCRIPT = join(EXTENSION_DIR, "daemon", "runner.ts");
 // ── Dir resolution ────────────────────────────────────────────────────────────
 
 function resolveMemDir(cwd: string): string {
-  if (process.env.PI_MEMORY?.trim()) return process.env.PI_MEMORY.trim();
+  if (process.env.PI_MEMORY_SRC?.trim()) return process.env.PI_MEMORY_SRC.trim();
   const dirname_ = getConfig().memory?.dirname ?? "memory";
   return join(getProjectRoot(cwd), ".pi", dirname_);
 }
@@ -197,6 +197,7 @@ function resolveMemDir(cwd: string): string {
 export default function (pi: ExtensionAPI) {
   let memDir:      string | undefined;
   let projectRoot: string | undefined;
+  let cacheDir:    string | undefined;
   let daemonChild: ChildProcess | undefined;
   let poller:      ReturnType<typeof setInterval> | undefined;
   let uiCtx:       { setStatus: (key: string, label: string | undefined) => void; notify: (msg: string, level: string) => void } | undefined;
@@ -274,8 +275,8 @@ Some description.
   // ── Status helpers ────────────────────────────────────────────────────────
 
   function readStatus(): string {
-    if (!projectRoot) return "stopped";
-    try { return readFileSync(getStatusPath(projectRoot), "utf8").trim(); }
+    if (!cacheDir) return "stopped";
+    try { return readFileSync(getStatusPath(cacheDir), "utf8").trim(); }
     catch { return "stopped"; }
   }
 
@@ -295,14 +296,13 @@ Some description.
 
   // ── Daemon lifecycle ──────────────────────────────────────────────────────
 
-  function spawnDaemon(dir: string, root: string): ChildProcess {
-    // getLogPath calls getProjectCacheDir which creates the directory
-    const logFd = openSync(getLogPath(root), "w");
+  function spawnDaemon(dir: string, cd: string): ChildProcess {
+    const logFd = openSync(getLogPath(cd), "w");
     const child = spawn(
       process.execPath,
-      ["--import", "jiti/register", RUNNER_SCRIPT, dir, root],
+      ["--import", "jiti/register", RUNNER_SCRIPT, dir, cd],
       {
-        env:   { ...process.env, PI_MEMORY: dir },
+        env:   { ...process.env, PI_MEMORY_SRC: dir },
         stdio: ["ignore", logFd, logFd],
         detached: false,
       },
@@ -325,7 +325,10 @@ Some description.
     projectRoot = getProjectRoot(ctx.cwd);
     memDir      = resolveMemDir(ctx.cwd);
     mkdirSync(memDir, { recursive: true });
-    process.env.PI_MEMORY = memDir;
+    process.env.PI_MEMORY_SRC = memDir;
+    cacheDir    = process.env.PI_MEMORY_SRC
+      ? getDetachedCacheDir(memDir)
+      : getProjectCacheDir(projectRoot);
 
     if (!ctx.hasUI) return;
     isInteractive = true;
@@ -336,7 +339,7 @@ Some description.
 
     const short = memDir.replace(homedir(), "~");
     uiCtx!.setStatus("memory-md", `☰ memory: starting… (${short})   `);
-    daemonChild = spawnDaemon(memDir, projectRoot);
+    daemonChild = spawnDaemon(memDir, cacheDir!);
     poller = setInterval(updateFooter, 2000);
   });
 
@@ -422,7 +425,7 @@ Some description.
       } catch (err) {
         try {
           appendFileSync(
-            getLogPath(projectRoot!),
+            getLogPath(cacheDir ?? ""),
             `[activity-log] error: ${(err as any)?.message ?? err}\n`,
           );
         } catch { /* ignore */ }
@@ -443,14 +446,15 @@ Some description.
     uiCtx?.setStatus("memory-md", undefined);
     memDir      = undefined;
     projectRoot = undefined;
+    cacheDir    = undefined;
     uiCtx       = undefined;
-    delete process.env.PI_MEMORY;
+    delete process.env.PI_MEMORY_SRC;
   });
 
   // ── /memory command ───────────────────────────────────────────────────────
 
   pi.registerCommand("memory", {
-    description: "memory management: status | restart | snapshot [--move] | logs | init | curate [file] | compact",
+    description: "memory management: status | restart | snapshot [--move] | logs | init | curate [file] | compact | browser",
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
       if (parts.length <= 1) {
@@ -476,12 +480,12 @@ Some description.
 
       if (sub === "status" || sub === "") {
         const status = readStatus();
-        const sockPath = getSocketPath(projectRoot);
+        const sockPath = getSocketPath(cacheDir ?? "");
         ctx.ui.notify(
           [
             `Status:  ${status}`,
             `Dir:     ${memDir}`,
-            `Cache:   ${getProjectCacheDir(projectRoot)}`,
+            `Cache:   ${cacheDir ?? "(unknown)"}`,
             `Socket:  ${sockPath}${existsSync(sockPath) ? "" : " (missing)"}`,
           ].join("\n"),
           "info",
@@ -494,8 +498,11 @@ Some description.
         memDir = resolveMemDir(ctx.cwd);
         projectRoot = getProjectRoot(ctx.cwd);
         mkdirSync(memDir, { recursive: true });
+        cacheDir = process.env.PI_MEMORY_SRC
+          ? getDetachedCacheDir(memDir)
+          : getProjectCacheDir(projectRoot);
         uiCtx!.setStatus("memory-md", `☰ memory: starting…   `);
-        daemonChild = spawnDaemon(memDir, projectRoot);
+        daemonChild = spawnDaemon(memDir, cacheDir!);
         poller = setInterval(updateFooter, 2000);
 
       } else if (sub === "snapshot") {
@@ -521,7 +528,7 @@ Some description.
         }
 
       } else if (sub === "logs") {
-        const logPath = getLogPath(projectRoot);
+        const logPath = getLogPath(cacheDir ?? "");
         if (!existsSync(logPath)) { ctx.ui.notify("(no log file yet)", "info"); return; }
         try {
           const lines = readFileSync(logPath, "utf8").trimEnd().split("\n");
@@ -610,14 +617,20 @@ File-specific rules:
         }).catch((err) => ctx.ui.notify(`memory compact failed: ${(err as Error).message}`, "error"));
 
       } else if (sub === "browser") {
-        const editorCmd = getConfig().memory?.editorCommand;
-        const selectedFile = await openMemoryBrowserInteractive(ctx, memDir, editorCmd);
-        if (selectedFile && editorCmd) {
-          const cmd = editorCmd.replace(/\$FILE/g, `"${selectedFile.replace(/"/g, '\\"')}"`);
-          try {
-            spawnSync(cmd, [], { shell: true, stdio: "inherit" });
-          } catch (err) {
-            ctx.ui.notify(`editor: ${(err as Error).message}`, "error");
+        const editorCmd  = getConfig().memory?.browser?.editor || undefined;
+        const previewCmd = getConfig().memory?.browser?.viewer || undefined;
+        const selection  = await openMemoryBrowserInteractive(ctx, memDir, editorCmd, previewCmd);
+        if (selection) {
+          const template = selection.action === "edit" ? editorCmd : previewCmd;
+          if (template) {
+            const cmd = template.replace(/\$FILE/g, `"${selection.path.replace(/"/g, '\\"')}"`);
+            try {
+              const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });
+              child.unref();
+              ctx.ui.notify(`${selection.action}: ${cmd}`, "info");
+            } catch (err) {
+              ctx.ui.notify(`${selection.action}: ${(err as Error).message}`, "error");
+            }
           }
         }
 
