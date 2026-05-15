@@ -54,7 +54,7 @@ export function getProjectRoot(cwd?: string): string {
 
 /**
  * Return (and initialise) a cache directory for a memory dir that lives
- * outside any project root (i.e. when PI_MEMORY_SRC is set explicitly):
+ * outside any project root (i.e. when memory.customSrcDir is set in config):
  *   ~/.pi/cache/detached-memory/<sha256[:16] of memDir>/
  */
 export function getDetachedCacheDir(memDir: string): string {
@@ -150,6 +150,8 @@ export interface MemoryBrowserConfig {
 }
 
 export interface MemoryConfig {
+  /** Custom memory source directory. If set and non-empty, behaves like a detached cache (cache keyed by this path, not the project root). */
+  customSrcDir?: string;
   /** Activity log auto-logging config. */
   activityLog?: MemoryActivityLogConfig;
   /** Per-subcommand model overrides. `default` applies unless a subcommand key is set. */
@@ -164,7 +166,15 @@ export interface MemoryConfig {
  * All fields are optional — the file may contain only a subset of keys.
  * Unknown keys are preserved under `[key: string]: unknown`.
  */
+export interface CodeMapConfig {
+  /** Enable the code-map daemon. Default: true. Set to false to skip daemon spawn, footer widget, and system prompt injection. */
+  enable?: boolean;
+  /** Max files for initial indexing. Watcher covers all dirs regardless. Default: 200. */
+  fileLimit?: number;
+}
+
 export interface PiCodeConfig {
+  codeMap?: CodeMapConfig;
   scout?: ScoutConfig;
   memory?: MemoryConfig;
   [key: string]: unknown;

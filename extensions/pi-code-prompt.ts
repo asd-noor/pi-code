@@ -7,25 +7,14 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getConfig } from "./_config/index.ts";
 
-const SYSTEM_INSTRUCTION = `
-## Mandatory Pre-Call Check
+function buildInstruction(codeMapEnabled: boolean): string {
+  const codeMapPreCallBullet = codeMapEnabled
+    ? `- Am I about to \`grep\`, \`read\`, \`ffgrep\`, or \`bash\` a file just to understand its structure or find a symbol? → **stop — use \`code_map_outline\` / \`code_map_symbol\` instead.** These are always faster and more accurate.`
+    : "";
 
-Before every tool action, run this internal decision check:
-- Is there a consequential ambiguity that should be clarified with \`ask_user\` first (interactive mode)?
-- Will this likely require >1 tool call?
-- Do I need iterative discovery/search/read/aggregate steps?
-- Am I less than 100% certain one direct call is enough?
-- Am I about to \`grep\`, \`read\`, \`ffgrep\`, or \`bash\` a file just to understand its structure or find a symbol? → **stop — use \`code_map_outline\` / \`code_map_symbol\` instead.** These are always faster and more accurate.
-
-## Tool selection
-
-\`ptc\` is the default tool. Prefer creating scripts and executing them with \`ptc\` — including bash scripts for shell-heavy work — whenever the task would otherwise take multiple tool calls. Use standalone \`bash\` (or a \`bash\` slot inside \`parallel\`) only when the command is genuinely one-shot.
-
-Use \`parallel\` when you have 2+ independent operations to fan out in one call. Common slots are \`read\`, \`bash\`, \`write\`, \`edit\`, and \`ptc\`; \`parallel\` can also inline any supported extension tool by passing \`tool: "<name>"\` plus that tool's normal arguments. For Python \`ptc\` scripts, prefer Python + uv by default and only choose bash when the task is clearly pure shell; require the shebang \`#!/usr/bin/env -S uv run --script\` at the top of Python scripts. Python \`ptc\` execution runs the saved script file directly so the shebang invokes \`uv run --script\`. Prefer uv because it is robust at dependency management and uses caching, which makes subsequent script runs very fast.
-
-Slots must be independent of each other (no slot depends on another's output). Results come back together, and you can combine or process them after the call. Prefer \`parallel\` over sequential calls whenever the independence condition holds.
-
+  const codeMapToolsSection = codeMapEnabled ? `
 ### Code intelligence — mandatory (never use grep/read/bash for these)
 
 code-map is indexed and always available for TypeScript, JavaScript, Python, and Go. Using grep, ffgrep, read, or bash to explore code structure in these languages is always wrong when a code-map tool applies.
@@ -43,12 +32,35 @@ code-map is indexed and always available for TypeScript, JavaScript, Python, and
 - Run \`code_map_diagnostics\` after edits to confirm no new errors were introduced.
 - \`code_map_symbol\` with \`source:true\` replaces a \`read\` + search in nearly every case.
 
-Supported languages: \`typescript\`, \`javascript\`, \`python\`, \`go\`. For other languages fall back to \`ptc\` with tree-sitter or \`ffgrep\`.
+Supported languages: \`typescript\`, \`javascript\`, \`python\`, \`go\`. For other languages fall back to \`ptc\` with tree-sitter or \`ffgrep\`.` : "";
+
+  const changeSafetyContext = codeMapEnabled
+    ? `- Understand context before editing: run \`code_map_outline\` on the file, \`code_map_impact\` to find callers, \`code_map_diagnostics\` to check for existing errors.`
+    : `- Understand context before editing: read the file, check callers, verify no existing errors.`;
+
+  return `
+## Mandatory Pre-Call Check
+
+Before every tool action, run this internal decision check:
+- Is there a consequential ambiguity that should be clarified with \`ask_user\` first (interactive mode)?
+- Will this likely require >1 tool call?
+- Do I need iterative discovery/search/read/aggregate steps?
+- Am I less than 100% certain one direct call is enough?
+${codeMapPreCallBullet}
+
+## Tool selection
+
+\`ptc\` is the default tool. Prefer creating scripts and executing them with \`ptc\` — including bash scripts for shell-heavy work — whenever the task would otherwise take multiple tool calls. Use standalone \`bash\` (or a \`bash\` slot inside \`parallel\`) only when the command is genuinely one-shot.
+
+Use \`parallel\` when you have 2+ independent operations to fan out in one call. Common slots are \`read\`, \`bash\`, \`write\`, \`edit\`, and \`ptc\`; \`parallel\` can also inline any supported extension tool by passing \`tool: "<name>"\` plus that tool's normal arguments. For Python \`ptc\` scripts, prefer Python + uv by default and only choose bash when the task is clearly pure shell; require the shebang \`#!/usr/bin/env -S uv run --script\` at the top of Python scripts. Python \`ptc\` execution runs the saved script file directly so the shebang invokes \`uv run --script\`. Prefer uv because it is robust at dependency management and uses caching, which makes subsequent script runs very fast.
+
+Slots must be independent of each other (no slot depends on another's output). Results come back together, and you can combine or process them after the call. Prefer \`parallel\` over sequential calls whenever the independence condition holds.
+${codeMapToolsSection}
 
 ## Change safety
 
 - Prefer minimal, targeted changes aligned with the existing codebase style.
-- Understand context before editing: run \`code_map_outline\` on the file, \`code_map_impact\` to find callers, \`code_map_diagnostics\` to check for existing errors.
+${changeSafetyContext}
 - Explain intent briefly before risky or destructive operations.
 - Do not delete or overwrite files without clear user intent.
 - Confirm assumptions when operating outside the current project directory.
@@ -95,9 +107,13 @@ Immediately after \`agenda_complete\` succeeds:
 4. Prioritise by outcome: \`unexpected\` discoveries are highest value; \`neutral\` only if the detail is worth keeping across sessions
 5. Use \`agenda_discovery_get(agendaId, discoveryId)\` to fetch the full detail body before writing to memory if the list view is too brief
 `.trim();
+}
 
 export default function (pi: ExtensionAPI) {
-  pi.on("before_agent_start", async (event) => ({
-    systemPrompt: event.systemPrompt + "\n\n" + SYSTEM_INSTRUCTION,
-  }));
+  pi.on("before_agent_start", async (event) => {
+    const codeMapEnabled = getConfig().codeMap?.enable !== false;
+    return {
+      systemPrompt: event.systemPrompt + "\n\n" + buildInstruction(codeMapEnabled),
+    };
+  });
 }

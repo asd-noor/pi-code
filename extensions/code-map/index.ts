@@ -9,42 +9,22 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, openSync, closeSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getProjectDir, ensureDir, getLspDir, getTreeSitterDir } from "./paths.ts";
 import { registerTools } from "./tools.ts";
+import { getConfig } from "../_config/index.ts";
 
 const EXTENSION_DIR  = dirname(fileURLToPath(import.meta.url));
 const DAEMON_SCRIPT  = join(EXTENSION_DIR, "daemon", "runner.ts");
-const CONFIG_PATH    = join(homedir(), ".pi", "agent", "code-map.json");
 
-// ── Config ────────────────────────────────────────────────────────────────────
+const DEFAULT_FILE_LIMIT = 200;
 
-interface CodeMapConfig {
-  /** Max files for initial indexing. Watcher covers all dirs regardless. Default: 200. */
-  fileLimit: number;
-}
-
-const DEFAULT_CONFIG: CodeMapConfig = { fileLimit: 200 };
-
-function loadConfig(): CodeMapConfig {
-  if (!existsSync(CONFIG_PATH)) {
-    writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2), "utf-8");
-    return { ...DEFAULT_CONFIG };
-  }
-  try {
-    const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) as Partial<CodeMapConfig>;
-    return {
-      fileLimit: typeof raw.fileLimit === "number" && raw.fileLimit > 0
-        ? raw.fileLimit
-        : DEFAULT_CONFIG.fileLimit,
-    };
-  } catch {
-    return { ...DEFAULT_CONFIG };
-  }
+function getFileLimit(): number {
+  const limit = getConfig().codeMap?.fileLimit;
+  return typeof limit === "number" && limit > 0 ? limit : DEFAULT_FILE_LIMIT;
 }
 
 // ── Daemon status ─────────────────────────────────────────────────────────────
@@ -98,7 +78,9 @@ export default function (pi: ExtensionAPI) {
 
   // ── System instruction ───────────────────────────────────────────────────────────
 
-  pi.on("before_agent_start", async (event) => ({
+  pi.on("before_agent_start", async (event) => {
+    if (getConfig().codeMap?.enable === false) return {};
+    return {
     systemPrompt: event.systemPrompt + `
 
 ## Code intelligence (code-map) — always use, never skip
@@ -114,7 +96,8 @@ code-map is indexed and ready. For TypeScript, JavaScript, Python, and Go these 
 
 All tools require a \`language\` parameter: typescript | javascript | python | go.
 For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
-  }));
+    };
+  });
 
 
   // ── Footer helpers ────────────────────────────────────────────────────────
@@ -146,14 +129,14 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
 
   // ── Daemon spawn ──────────────────────────────────────────────────────────
 
-  function spawnDaemon(root: string, config: CodeMapConfig): ChildProcess {
+  function spawnDaemon(root: string, fileLimit: number): ChildProcess {
     const dir     = ensureDir(getProjectDir(root));
     const logPath = join(dir, "codemap-daemon.log");
     const logFd   = openSync(logPath, "a");
 
     const child = spawn(
       "node",
-      [DAEMON_SCRIPT, root, "--auto-install", `--file-limit=${config.fileLimit}`],
+      [DAEMON_SCRIPT, root, "--auto-install", `--file-limit=${fileLimit}`],
       { stdio: ["ignore", logFd, logFd], detached: false },
     );
     closeSync(logFd);
@@ -188,6 +171,8 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
     projectRoot = await resolveProjectRoot(ctx.cwd, pi.exec.bind(pi));
     projectDir  = getProjectDir(projectRoot);
 
+    if (getConfig().codeMap?.enable === false) return;
+
     // ── Client-only guard (subagents only) ────────────────────────────────────
     // Subagent sessions connect to the running daemon; they must not spawn or
     // kill it.  The only reliable signal is the explicit flag passed from
@@ -213,7 +198,6 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
     if (poller) { clearInterval(poller); poller = undefined; }
 
     // Load config
-    const config = loadConfig();
 
     ownsDaemon = true;
 
@@ -225,7 +209,7 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
     try { writeFileSync(join(projectDir, "codemap-daemon.status"), "starting", "utf-8"); } catch {}
 
     // Spawn daemon async (fire and forget — don't block session start)
-    daemonChild = spawnDaemon(projectRoot, config);
+    daemonChild = spawnDaemon(projectRoot, getFileLimit());
 
     // Start polling status → footer
     startPolling();
@@ -270,13 +254,12 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
         const sockPath = join(projectDir, "codemap-daemon.sock");
         const alive    = existsSync(sockPath);
         const status   = alive ? readStatus(projectDir) : "stopped (socket missing)";
-        const cfg      = loadConfig();
         ctx.ui.notify(
           [
             `Status:     ${status}`,
             `Project:    ${projectRoot}`,
             `Socket:     ${sockPath}${alive ? "" : " (missing)"}`,
-            `File limit: ${cfg.fileLimit}`,
+            `File limit: ${getFileLimit()}`,
           ].join("\n"),
           alive ? "info" : "warning",
         );
@@ -285,9 +268,8 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
         ctx.ui.notify("code-map: restarting daemon…", "info");
         if (poller) { clearInterval(poller); poller = undefined; }
         killDaemon();
-        const config = loadConfig();
         setFooterStatus("starting");
-        daemonChild = spawnDaemon(projectRoot, config);
+        daemonChild = spawnDaemon(projectRoot, getFileLimit());
         startPolling();
 
       } else if (sub === "logs") {
@@ -340,9 +322,8 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
           ctx.ui.notify(`code-map: cache deletion failed — ${err}`, "error");
         } finally {
           try {
-            const config = loadConfig();
             setFooterStatus("starting");
-            daemonChild = spawnDaemon(projectRoot, config);
+            daemonChild = spawnDaemon(projectRoot, getFileLimit());
             ownsDaemon = true;
             startPolling();
             if (!deleteError) {
@@ -376,9 +357,8 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
           // Restart in tree-sitter-only mode; LSP servers will be re-downloaded on next install
           if (projectRoot) {
             try {
-              const config = loadConfig();
               setFooterStatus("starting");
-              daemonChild = spawnDaemon(projectRoot, config);
+              daemonChild = spawnDaemon(projectRoot, getFileLimit());
               ownsDaemon = true;
               startPolling();
               ctx.ui.notify("LSP binaries removed — daemon restarting in tree-sitter-only mode.", "info");
@@ -413,9 +393,8 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
           // Restart in LSP-only mode; grammars will be re-installed on next use
           if (projectRoot) {
             try {
-              const config = loadConfig();
               setFooterStatus("starting");
-              daemonChild = spawnDaemon(projectRoot, config);
+              daemonChild = spawnDaemon(projectRoot, getFileLimit());
               ownsDaemon = true;
               startPolling();
               ctx.ui.notify("tree-sitter binaries removed — daemon restarting in LSP-only mode.", "info");

@@ -5,7 +5,7 @@
  * Replaces the memory-md Go binary wrapper with a native TypeScript implementation.
  *
  * Dir resolution (first match wins):
- *   1. PI_MEMORY_SRC env var
+ *   1. memory.customSrcDir from config (if set and non-empty)
  *   2. <projectRoot>/.pi/memory
  */
 
@@ -187,7 +187,8 @@ const RUNNER_SCRIPT = join(EXTENSION_DIR, "daemon", "runner.ts");
 // ── Dir resolution ────────────────────────────────────────────────────────────
 
 function resolveMemDir(cwd: string): string {
-  if (process.env.PI_MEMORY_SRC?.trim()) return process.env.PI_MEMORY_SRC.trim();
+  const custom = getConfig().memory?.customSrcDir?.trim();
+  if (custom) return custom;
   return join(getProjectRoot(cwd), ".pi", "memory");
 }
 
@@ -328,7 +329,7 @@ Some description.
     const projectRoot = getProjectRoot(ctx.cwd);
     const memDir      = resolveMemDir(ctx.cwd);
     mkdirSync(memDir, { recursive: true });
-    const cacheDir    = process.env.PI_MEMORY_SRC?.trim()
+    const cacheDir    = getConfig().memory?.customSrcDir?.trim()
       ? getDetachedCacheDir(memDir)
       : getProjectCacheDir(projectRoot);
     sess = { memDir, projectRoot, cacheDir };
@@ -500,7 +501,7 @@ Some description.
         const memDir      = resolveMemDir(ctx.cwd);
         const projectRoot = getProjectRoot(ctx.cwd);
         mkdirSync(memDir, { recursive: true });
-        const cacheDir    = process.env.PI_MEMORY_SRC?.trim()
+        const cacheDir    = getConfig().memory?.customSrcDir?.trim()
           ? getDetachedCacheDir(memDir)
           : getProjectCacheDir(projectRoot);
         sess = { memDir, projectRoot, cacheDir };
