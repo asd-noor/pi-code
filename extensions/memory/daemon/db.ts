@@ -1,5 +1,12 @@
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
+import { createRequire } from "node:module";
+
+// better-sqlite3 and sqlite-vec are CJS packages that use the `bindings`
+// helper internally. When loaded as ESM (via jiti), `bindings` loses its
+// __dirname context and searches from the wrong directory. Loading them
+// through createRequire preserves the CJS module resolution.
+const _require = createRequire(import.meta.url);
+const Database  = _require("better-sqlite3") as typeof import("better-sqlite3");
+const sqliteVec = _require("sqlite-vec") as typeof import("sqlite-vec");
 
 export interface SectionRow {
   id: number;
