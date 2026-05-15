@@ -1,5 +1,5 @@
 /**
- * index.ts — Subagents extension entry point.
+ * index.ts - Subagents extension entry point.
  *
  * Registers:
  *   - Subagent           (foreground + background agent spawning)
@@ -8,7 +8,7 @@
  *   - steer_subagent      (inject a message into a running agent)
  *   - /subagents          (list running agents, view sessions)
  *   - /assign            (quick-assign to a named agent, result triggers AI turn)
- *   - /delegate          (fire-and-forget assign — UI-only feedback, no AI turn)
+ *   - /delegate          (fire-and-forget assign - UI-only feedback, no AI turn)
  *   - Live widget         (● Subagents above editor)
  */
 
@@ -134,7 +134,7 @@ function buildSubagentInstruction(): string {
     "",
     "Delegate by default. Only handle inline when genuinely trivial.",
     "**Trivial means:** a direct answer from existing context, a single tool call, no file changes.",
-    "Anything beyond that — delegate.",
+    "Anything beyond that - delegate.",
     "",
     "**Always spawn a subagent for:**",
     "- Any multi-phase task (exploration, implementation, refactor, planning, commit)",
@@ -150,18 +150,18 @@ function buildSubagentInstruction(): string {
     "### Foreground vs background",
     "",
     "**Default: always use background agents** (`run_in_background: true`).",
-    "Running agents in the background lets you continue taking instructions and spawn additional agents immediately — keeping throughput high and the conversation unblocked.",
+    "Running agents in the background lets you continue taking instructions and spawn additional agents immediately - keeping throughput high and the conversation unblocked.",
     "",
     "**Spawn with an agenda** (`agenda_id`): create a `not_started` agenda first, pass its ID to the subagent.",
     "The subagent will start, execute, evaluate, and complete the agenda, making progress easy to track.",
     "",
-    "**Use foreground ONLY when the result is immediately required to make a decision** — for example, you are researching options and need information before you can proceed.",
+    "**Use foreground ONLY when the result is immediately required to make a decision** - for example, you are researching options and need information before you can proceed.",
     "Any other case → background. Never block the conversation unless you have no choice.",
     "",
-    "### Parallel work — MultiSubagent vs individual Subagent",
+    "### Parallel work - MultiSubagent vs individual Subagent",
     "",
     "**Use `MultiSubagent`** for read-only, autonomous agents that run to completion without guidance:",
-    "- Explore, Research, Data-Expert — they don't need mid-run steering and have no interdependencies.",
+    "- Explore, Research, Data-Expert - they don't need mid-run steering and have no interdependencies.",
     "- One tool call starts all agents concurrently; results come back aggregated.",
     "",
     "**Use individual `Subagent(run_in_background: true)` calls** for worker agents:",
@@ -169,7 +169,7 @@ function buildSubagentInstruction(): string {
     "- You may need to react to one worker's output before deciding what to spawn next.",
     "- Spawning one at a time keeps you in control of sequencing and lets you intercept issues early.",
     "",
-    "Note: `MultiSubagent` with `run_in_background: true` does return agent IDs, so `steer_subagent` technically works — but individual `Subagent` calls are the right mental model for workers you actively orchestrate.",
+    "Note: `MultiSubagent` with `run_in_background: true` does return agent IDs, so `steer_subagent` technically works - but individual `Subagent` calls are the right mental model for workers you actively orchestrate.",
     "",
     "### Available agents",
     "",
@@ -267,7 +267,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   function serializeTurn(turn: import("./types.ts").TurnEntry): string {
-    const dur = turn.completedAt ? formatMs(turn.completedAt - turn.startedAt) : "…";
+    const dur = turn.completedAt ? formatMs(turn.completedAt - turn.startedAt) : "...";
     const lines: string[] = [
       `${GY}\u2500\u2500 ${R}${B}Turn ${turn.turnNumber}${R}  ${GY}${dur}${R}`,
       "",
@@ -311,12 +311,12 @@ export default function (pi: ExtensionAPI) {
         : record.status === "error"    ? `✗ error: ${record.error ?? "unknown"}`
         : `■ ${record.status}`;
       const preview = record.result?.trim().slice(0, 300) ?? "(no output)";
-      const dots = (record.result?.trim().length ?? 0) > 300 ? "\n…(truncated)" : "";
+      const dots = (record.result?.trim().length ?? 0) > 300 ? "\n...(truncated)" : "";
       pi.sendMessage(
         {
           customType: "subagents:complete",
           content: [
-            `Background subagent finished — ID: ${record.id}`,
+            `Background subagent finished - ID: ${record.id}`,
             `Type: ${record.type}  ·  ${record.description}`,
             `Status: ${statusLabel}  ·  ${record.toolUses} tool uses  ·  ${duration}`,
             "",
@@ -398,10 +398,10 @@ Guidelines:
 - Hard triggers: exploration across >2 files → Explore; implementation/refactor/edit → worker; committing staged changes → git-commit; any task with 3+ steps → worker.
 - Read each agent's description and pick the best fit. The available agents are listed in the system prompt.
 - **Prefer background agents** (run_in_background: true). Running in the background keeps the conversation unblocked so you can take new instructions and spawn more agents immediately.
-- **Pair with an agenda**: create a not_started agenda first, pass its agenda_id to the subagent. The subagent will start, execute, evaluate, and complete it — making progress easy to track.
+- **Pair with an agenda**: create a not_started agenda first, pass its agenda_id to the subagent. The subagent will start, execute, evaluate, and complete it - making progress easy to track.
 - **Use foreground only** when you need the result right now to make a decision (e.g. mid-research information gathering). Every other case → background.
 - Provide clear, detailed prompts so the subagent can work autonomously.
-- Subagent results are returned as text — summarize them for the user.
+- Subagent results are returned as text - summarize them for the user.
 - You will be notified when a background agent completes.
 - Use resume with an agent ID to continue a previous subagent's work.
 - Use steer_subagent to send mid-run messages to a running background subagent.
@@ -431,7 +431,7 @@ Guidelines:
         description: "Optional agent ID to resume from. Continues from previous context.",
       })),
       isolated: Type.Optional(Type.Boolean({
-        description: "If true, agent gets no extension/MCP tools — only built-in tools.",
+        description: "If true, agent gets no extension/MCP tools - only built-in tools.",
       })),
       inherit_context: Type.Optional(Type.Boolean({
         description: "If true, fork parent conversation into the agent. Default: false (fresh context).",
@@ -464,7 +464,7 @@ Guidelines:
       const isolated        = agentConfig.isolated        ?? params.isolated         ?? false;
       const inheritContext  = agentConfig.inheritContext  ?? params.inherit_context   ?? false;
       const maxTurns        = params.max_turns ?? agentConfig.maxTurns ?? getDefaultMaxTurns();
-      const fallbackNote    = fellBack ? `Note: Unknown subagent type "${params.subagent_type}" — using worker.\n\n` : "";
+      const fallbackNote    = fellBack ? `Note: Unknown subagent type "${params.subagent_type}" - using worker.\n\n` : "";
 
       // Resume existing agent
       if (params.resume) {
@@ -623,7 +623,7 @@ Guidelines:
     label: "Multi-Subagent",
     description: `Launch multiple independent subagents in one shot and collect all results.
 
-All agents start concurrently. Foreground (default): blocks until every agent finishes, returns aggregated results. Background (run_in_background: true): returns all agent IDs immediately — use get_subagent_result to collect each result later.
+All agents start concurrently. Foreground (default): blocks until every agent finishes, returns aggregated results. Background (run_in_background: true): returns all agent IDs immediately - use get_subagent_result to collect each result later.
 
 Best suited for read-only, autonomous agents (Explore, Research, Data-Expert) that run to completion without mid-run steering. For worker agents that may need steer_subagent or have interdependencies, prefer individual Subagent(run_in_background: true) calls instead.
 
@@ -648,7 +648,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
         minimum: 1,
       })),
       run_in_background: Type.Optional(Type.Boolean({
-        description: "If true, all agents start in background and agent IDs are returned immediately. Default: false (foreground — blocks until all finish).",
+        description: "If true, all agents start in background and agent IDs are returned immediately. Default: false (foreground - blocks until all finish).",
       })),
     }),
 
@@ -665,7 +665,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       const runInBackground = (params as any).run_in_background ?? false;
       const concurrency     = (params as any).concurrency ?? tasks.length;
 
-      // Resolve per-task agent configs and models up front — fail fast on unknown types
+      // Resolve per-task agent configs and models up front - fail fast on unknown types
       const resolved = tasks.map((task, i) => {
         const agentConfig = getConfig(task.subagent_type) ?? getConfig("worker")!;
         const fellBack    = !getConfig(task.subagent_type);
@@ -705,7 +705,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
         const lines = ids.map((id, i) => {
           const rec = manager.getRecord(id);
           const t   = tasks[i]!;
-          return `Task ${i + 1}: ${t.subagent_type} — "${t.description}"\n` +
+          return `Task ${i + 1}: ${t.subagent_type} - "${t.description}"\n` +
             `  Agent ID: ${id}  Status: ${rec?.status ?? "unknown"}` +
             (resolved[i] && "fellBack" in resolved[i]! && resolved[i]!.fellBack
               ? `  (unknown type "${t.subagent_type}" → worker)` : "");
@@ -745,7 +745,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
           });
           widget.markFinished(record.id);
           const duration = record.completedAt ? formatMs(record.completedAt - record.startedAt) : "?";
-          const label    = `Task ${i + 1} (${task.subagent_type}) — "${task.description}" · ${duration} · ${record.toolUses} tools`;
+          const label    = `Task ${i + 1} (${task.subagent_type}) - "${task.description}" · ${duration} · ${record.toolUses} tools`;
           const output   = record.status === "error"
             ? `${fallbackNote}ERROR: ${record.error ?? "unknown"}`
             : `${fallbackNote}${record.result?.trim() || "(no output)"}`;
@@ -776,7 +776,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     const allTypes = getAllTypes();
 
     const options: string[] = [];
-    if (records.length > 0) options.push(`Running subagents (${records.length}) — ${running.length} active`);
+    if (records.length > 0) options.push(`Running subagents (${records.length}) - ${running.length} active`);
     if (allTypes.length > 0) options.push(`Subagent types (${allTypes.length})`);
     options.push("Settings");
 
@@ -807,7 +807,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
 
     const isActive = record.status === "running" || record.status === "queued";
     const viewerCmd = getPiCodeConfig().subagents?.viewer || undefined;
-    const sessionNote = viewerCmd ? undefined : `tail -F /tmp/pi-subagents/${record.id}`;
+    const sessionNote = viewerCmd ? undefined : `less -R +F /tmp/pi-subagents/${record.id}`;
     const title = sessionNote
       ? `${record.type}  \u00b7  ${record.description}\n${sessionNote}`
       : `${record.type}  \u00b7  ${record.description}`;
@@ -821,7 +821,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
 
     if (action === "View session" && viewerCmd) {
       const filePath = join(tmpdir(), "pi-subagents", record.id);
-      const cmd = viewerCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`);
+      const cmd = viewerCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, record.id);
       try {
         const { spawn } = await import("node:child_process");
         const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });
@@ -844,7 +844,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       const src = cfg?.source === "project" ? "• " : "◦ ";
       const dis = cfg?.enabled === false ? "✕ " : "";
       const model = cfg?.model ? `  [${modelLabel(cfg.model)}]` : "";
-      return `${dis}${src}${name}${model}  —  ${cfg?.description ?? name}`;
+      return `${dis}${src}${name}${model}  -  ${cfg?.description ?? name}`;
     });
 
     const choice = await ctx.ui.select("Subagent types  (• = project  ◦ = global  ✕ = disabled)", options);
@@ -860,7 +860,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     const vCmd = getPiCodeConfig().subagents?.viewer || undefined;
     const sessionLines = running
       .filter(() => !vCmd)
-      .map((r) => `Session (${r.status}):  tail -F /tmp/pi-subagents/${r.id}`);
+      .map((r) => `Session (${r.status}):  less -R +F /tmp/pi-subagents/${r.id}`);
     const infoLines = [
       `Name:        ${name}`,
       `Source:      ${cfg.source ?? "unknown"}`,
@@ -884,7 +884,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     const sessionIdx = menuOpts.indexOf(pick) - 1;
     if (sessionIdx >= 0 && running[sessionIdx] && vCmd) {
       const filePath = join(tmpdir(), "pi-subagents", running[sessionIdx]!.id);
-      const cmd = vCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`);
+      const cmd = vCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, running[sessionIdx]!.id);
       try {
         const { spawn } = await import("node:child_process");
         const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });
@@ -941,7 +941,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
   }
 
   pi.registerCommand("subagents", {
-    description: "Manage subagents — list running agents, view sessions, configure",
+    description: "Manage subagents - list running agents, view sessions, configure",
     handler: async (_args, ctx) => {
       await showAgentsMenu(ctx);
     },
@@ -985,11 +985,11 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
 
       widget.setUICtx(ctx.ui);
 
-      ctx.ui.notify(`Delegating to ${agentName}…`, "info");
-      const description  = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
+      ctx.ui.notify(`Delegating to ${agentName}...`, "info");
+      const description  = task.length > 50 ? task.slice(0, 50) + "..." : (task || agentName);
       const effectiveTask = task || "Proceed with your configured task.";
 
-      // Spawn in background — mark resultConsumed so onComplete does not fire;
+      // Spawn in background - mark resultConsumed so onComplete does not fire;
       // assign sends its own result message with triggerTurn: true.
       const agentId = manager.spawn({ ...ctx, cwd: currentCwd }, effectiveTask, {
         description,
@@ -1053,11 +1053,11 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       const tasks: Array<{ agentName: string; task: string }> = [];
       for (let i = 0; i < pairs.length; i++) {
         const colon = pairs[i]!.indexOf(":");
-        if (colon === -1) { ctx.ui.notify(`Segment ${i + 1}: missing ":" — expected agent:task`, "error"); return; }
+        if (colon === -1) { ctx.ui.notify(`Segment ${i + 1}: missing ":" - expected agent:task`, "error"); return; }
         tasks.push({ agentName: pairs[i]!.slice(0, colon).trim(), task: pairs[i]!.slice(colon + 1).trim() });
       }
 
-      // Resolve agent configs up front — fail fast
+      // Resolve agent configs up front - fail fast
       const resolved: Array<{ agentName: string; task: string; agentConfig: any }> = [];
       for (let i = 0; i < tasks.length; i++) {
         const { agentName, task } = tasks[i]!;
@@ -1071,12 +1071,12 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       }
 
       widget.setUICtx(ctx.ui);
-      ctx.ui.notify(`Delegating to ${resolved.length} agents in parallel…`, "info");
+      ctx.ui.notify(`Delegating to ${resolved.length} agents in parallel...`, "info");
 
-      // Spawn all agents — mark each resultConsumed so onComplete does not fire
+      // Spawn all agents - mark each resultConsumed so onComplete does not fire
       // per-agent; the combined result is delivered once all finish.
       const agentIds = resolved.map(({ agentName, task, agentConfig }) => {
-        const description = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
+        const description = task.length > 50 ? task.slice(0, 50) + "..." : (task || agentName);
         const id = manager.spawn({ ...ctx, cwd: currentCwd }, task, {
           description,
           agentConfig,
@@ -1148,7 +1148,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       }
 
       widget.setUICtx(ctx.ui);
-      const description   = task.length > 50 ? task.slice(0, 50) + "…" : (task || agentName);
+      const description   = task.length > 50 ? task.slice(0, 50) + "..." : (task || agentName);
       const effectiveTask = task || "Proceed with your configured task.";
 
       ctx.ui.notify(`▶ ${agentName}: ${description}`, "info");
@@ -1158,7 +1158,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
         agentConfig,
         isBackground: true,
       });
-      // resultConsumed suppresses onComplete — no message injected, no AI turn triggered
+      // resultConsumed suppresses onComplete - no message injected, no AI turn triggered
       manager.getRecord(agentId)!.resultConsumed = true;
 
       manager.getRecord(agentId)!.promise!.then(() => {
