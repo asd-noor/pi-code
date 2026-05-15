@@ -130,11 +130,11 @@ function buildSubagentInstruction(): string {
   const lines: string[] = [
     "## Subagents",
     "",
-    "The parent agent is an orchestrator: plan, delegate, summarize. Subagents do the work and report back.",
+    "The parent agent is an orchestrator: plan, assign, summarize. Subagents do the work and report back.",
     "",
-    "Delegate by default. Only handle inline when genuinely trivial.",
+    "Assign by default. Only handle inline when genuinely trivial.",
     "**Trivial means:** a direct answer from existing context, a single tool call, no file changes.",
-    "Anything beyond that - delegate.",
+    "Anything beyond that — assign.",
     "",
     "**Always spawn a subagent for:**",
     "- Any multi-phase task (exploration, implementation, refactor, planning, commit)",
@@ -394,7 +394,7 @@ Available subagent types:
 ${buildTypeListText()}
 
 Guidelines:
-- Delegate to a subagent by default. Only handle work inline when it is a single, trivial action.
+- Assign to a subagent by default. Only handle work inline when it is a single, trivial action.
 - Hard triggers: exploration across >2 files → Explore; implementation/refactor/edit → worker; committing staged changes → git-commit; any task with 3+ steps → worker.
 - Read each agent's description and pick the best fit. The available agents are listed in the system prompt.
 - **Prefer background agents** (run_in_background: true). Running in the background keeps the conversation unblocked so you can take new instructions and spawn more agents immediately.
