@@ -30,17 +30,6 @@
             "./prompts"
         ]
     },
-    "bundleDependencies": [
-        "@tmustier/pi-files-widget",
-        "@ff-labs/fff-node",
-        "better-sqlite3",
-        "sqlite-vec",
-        "remark-parse",
-        "mdast-util-from-markdown",
-        "mdast-util-to-markdown",
-        "@types/better-sqlite3",
-        "@types/mdast"
-    ],
     "bundledDependencies": [
         "@tmustier/pi-files-widget",
         "@ff-labs/fff-node",
