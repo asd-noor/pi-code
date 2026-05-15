@@ -6,7 +6,7 @@
  *
  * Dir resolution (first match wins):
  *   1. PI_MEMORY_SRC env var
- *   2. <projectRoot>/.pi/<memory.dirname>  (dirname from pi-code.json, default "memory")
+ *   2. <projectRoot>/.pi/memory
  */
 
 import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, renameSync, readdirSync } from "node:fs";
@@ -188,8 +188,7 @@ const RUNNER_SCRIPT = join(EXTENSION_DIR, "daemon", "runner.ts");
 
 function resolveMemDir(cwd: string): string {
   if (process.env.PI_MEMORY_SRC?.trim()) return process.env.PI_MEMORY_SRC.trim();
-  const dirname_ = getConfig().memory?.dirname ?? "memory";
-  return join(getProjectRoot(cwd), ".pi", dirname_);
+  return join(getProjectRoot(cwd), ".pi", "memory");
 }
 
 // ── Extension ─────────────────────────────────────────────────────────────────
@@ -198,6 +197,7 @@ export default function (pi: ExtensionAPI) {
   let memDir:      string | undefined;
   let projectRoot: string | undefined;
   let cacheDir:    string | undefined;
+  let isDetached   = false;
   let daemonChild: ChildProcess | undefined;
   let poller:      ReturnType<typeof setInterval> | undefined;
   let uiCtx:       { setStatus: (key: string, label: string | undefined) => void; notify: (msg: string, level: string) => void } | undefined;
@@ -322,11 +322,12 @@ Some description.
   // ── Lifecycle events ──────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
+    isDetached  = !!process.env.PI_MEMORY_SRC?.trim();
     projectRoot = getProjectRoot(ctx.cwd);
     memDir      = resolveMemDir(ctx.cwd);
     mkdirSync(memDir, { recursive: true });
     process.env.PI_MEMORY_SRC = memDir;
-    cacheDir    = process.env.PI_MEMORY_SRC
+    cacheDir    = isDetached
       ? getDetachedCacheDir(memDir)
       : getProjectCacheDir(projectRoot);
 
@@ -447,6 +448,7 @@ Some description.
     memDir      = undefined;
     projectRoot = undefined;
     cacheDir    = undefined;
+    isDetached  = false;
     uiCtx       = undefined;
     delete process.env.PI_MEMORY_SRC;
   });
@@ -498,7 +500,7 @@ Some description.
         memDir = resolveMemDir(ctx.cwd);
         projectRoot = getProjectRoot(ctx.cwd);
         mkdirSync(memDir, { recursive: true });
-        cacheDir = process.env.PI_MEMORY_SRC
+        cacheDir = isDetached
           ? getDetachedCacheDir(memDir)
           : getProjectCacheDir(projectRoot);
         uiCtx!.setStatus("memory-md", `☰ memory: starting…   `);
