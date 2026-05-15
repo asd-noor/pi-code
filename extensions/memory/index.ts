@@ -181,8 +181,9 @@ function resolveSubcommandModel(sub: "init" | "curate" | "compact"): string | nu
   return cfg?.[sub] ?? cfg?.default ?? null;
 }
 
-const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
-const RUNNER_SCRIPT = join(EXTENSION_DIR, "daemon", "runner.ts");
+const EXTENSION_DIR  = dirname(fileURLToPath(import.meta.url));
+const RUNNER_SCRIPT  = join(EXTENSION_DIR, "daemon", "runner.ts");
+const JITI_REGISTER  = fileURLToPath(import.meta.resolve("jiti/register"));
 
 // ── Dir resolution ────────────────────────────────────────────────────────────
 
@@ -304,7 +305,7 @@ Some description.
     const logFd = openSync(getLogPath(cd), "w");
     const child = spawn(
       process.execPath,
-      ["--import", "jiti/register", RUNNER_SCRIPT, dir, cd],
+      ["--import", JITI_REGISTER, RUNNER_SCRIPT, dir, cd],
       {
         env:   process.env,
         stdio: ["ignore", logFd, logFd],

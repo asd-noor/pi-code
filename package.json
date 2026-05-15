@@ -11,6 +11,7 @@
         "prepare": "npm rebuild better-sqlite3"
     },
     "dependencies": {
+        "jiti": "^2.7.0",
         "@tmustier/pi-files-widget": "*",
         "@ff-labs/fff-node": "*",
         "better-sqlite3": "^11.0.0",
@@ -34,6 +35,7 @@
         ]
     },
     "bundledDependencies": [
+        "jiti",
         "@tmustier/pi-files-widget",
         "@ff-labs/fff-node",
         "better-sqlite3",
