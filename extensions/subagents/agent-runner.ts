@@ -214,6 +214,7 @@ export interface SpawnOptions {
   activity: AgentActivity;
   onSessionCreated?: (session: any) => void;
   agendaId?: number;
+  existingSession?: any;
 }
 
 export async function spawnAndRun(
@@ -225,113 +226,119 @@ export async function spawnAndRun(
   const cwd = typeof ctx?.cwd === "string" && ctx.cwd ? ctx.cwd : process.cwd();
   const { model, isolated, inheritContext, thinkingLevel, signal, activity } = options;
 
-  const noExtensions = isolated || agentConfig.extensions === false;
-  const systemPrompt = buildSystemPrompt(agentConfig, cwd);
-  const fullSystemPrompt = options.agendaId != null
-    ? systemPrompt + "\n\n" + buildSubagentAgendaInstruction(options.agendaId)
-    : systemPrompt;
+  let _createdSession: any;
+  if (!options.existingSession) {
+    const noExtensions = isolated || agentConfig.extensions === false;
+    const systemPrompt = buildSystemPrompt(agentConfig, cwd);
+    const fullSystemPrompt = options.agendaId != null
+      ? systemPrompt + "\n\n" + buildSubagentAgendaInstruction(options.agendaId)
+      : systemPrompt;
 
-  const agentDirPath = getAgentDir();
+    const agentDirPath = getAgentDir();
 
-  // Built-in tool allowlist: use agent's declared tools, falling back to all built-ins.
-  // Use != null (not ?.length) so that an explicit empty array (tools: none) is respected
-  // and doesn't silently fall back to all built-ins.
-  const toolNames = agentConfig.builtinToolNames != null
-    ? agentConfig.builtinToolNames.filter((n) => ALL_BUILTIN_TOOL_NAMES.includes(n))
-    : ALL_BUILTIN_TOOL_NAMES;
+    // Built-in tool allowlist: use agent's declared tools, falling back to all built-ins.
+    // Use != null (not ?.length) so that an explicit empty array (tools: none) is respected
+    // and doesn't silently fall back to all built-ins.
+    const toolNames = agentConfig.builtinToolNames != null
+      ? agentConfig.builtinToolNames.filter((n) => ALL_BUILTIN_TOOL_NAMES.includes(n))
+      : ALL_BUILTIN_TOOL_NAMES;
 
-  // Non-builtin names listed in tools: (e.g. ptc, parallel) are explicit extension
-  // tool allows — included unconditionally as long as the extension loaded.
-  const explicitExtTools = new Set(
-    (agentConfig.builtinToolNames ?? []).filter((n) => !ALL_BUILTIN_TOOL_NAMES.includes(n)),
-  );
-
-  const loader = new DefaultResourceLoader({
-    cwd,
-    agentDir: agentDirPath,
-    settingsManager: SettingsManager.create(cwd, agentDirPath),
-    noExtensions,
-    noSkills: false,
-    noPromptTemplates: true,
-    noThemes: true,
-    noContextFiles: true,
-    systemPrompt: fullSystemPrompt,
-  });
-  // Must reload before passing to createAgentSession. The SDK only calls reload()
-  // when it creates the loader itself — pre-built loaders are used as-is, so
-  // extensions never load and extension tools (agenda, ask, …) are absent.
-  await loader.reload();
-
-  const resolvedModel = model ?? ctx.model;
-  const resolvedThinking = thinkingLevel ?? agentConfig.thinking;
-
-  const sessionOpts: any = {
-    cwd,
-    agentDir: agentDirPath,
-    sessionManager: SessionManager.inMemory(cwd),
-    settingsManager: SettingsManager.create(cwd, agentDirPath),
-    modelRegistry: ctx.modelRegistry,
-    model: resolvedModel,
-    // Do not pass `tools` here — see toolNames comment above.
-    resourceLoader: loader,
-  };
-  if (resolvedThinking) sessionOpts.thinkingLevel = resolvedThinking;
-
-  const { session } = await createAgentSession(sessionOpts);
-
-  // Fire session_start on all loaded extension instances.
-  // createAgentSession() does NOT call bindExtensions() — that is only done by the
-  // interactive/print/rpc modes. Without this call, extension event handlers like
-  // session_start never fire, so extensions that initialise state there (e.g.
-  // memory-md sets memDir inside session_start) remain uninitialised and broken.
-  //
-  // Pass { subagentMode: true } so daemon-managing extensions (e.g. code-map)
-  // enter client-only mode: they resolve the project root and connect to the
-  // running daemon started by the parent session, without spawning a competing
-  // daemon or tearing it down on session_shutdown.
-  await (session as any).bindExtensions({ subagentMode: true });
-
-  // Apply tool restrictions:
-  // - Always exclude delegation tools (Subagent, get_subagent_result, steer_subagent)
-  //   to prevent recursive spawning beyond the configured depth.
-  // - For built-in tools, respect the agent config allowlist (toolNames).
-  // - Extension-registered tools are included based on agentConfig.extensions:
-  //     true  → all extension tools included
-  //     false → no extension tools (noExtensions=true already skipped loading,
-  //             but guard here too for safety)
-  //     string[] → only tools whose sourceInfo.path contains one of the listed
-  //               extension names (e.g. ["memory-md", "agenda"])
-  {
-    const allTools = session.getAllTools();
-    // Build name→sourcePath map once to avoid O(n²) lookups.
-    const sourceByName = new Map(
-      allTools.map((t: any) => [t.name, (t.sourceInfo?.path ?? "") as string]),
+    // Non-builtin names listed in tools: (e.g. ptc, parallel) are explicit extension
+    // tool allows — included unconditionally as long as the extension loaded.
+    const explicitExtTools = new Set(
+      (agentConfig.builtinToolNames ?? []).filter((n) => !ALL_BUILTIN_TOOL_NAMES.includes(n)),
     );
-    const extFilter = agentConfig.extensions;
-    const active = allTools
-      .map((t: any) => t.name as string)
-      .filter((name: string) => {
-        if (EXCLUDED_TOOL_NAMES.has(name)) return false;
-        if (ALL_BUILTIN_TOOL_NAMES.includes(name)) return toolNames.includes(name);
-        // Explicitly listed in tools: frontmatter — always include if the extension loaded.
-        if (explicitExtTools.has(name)) return true;
-        // Extension tool — apply extensions filter.
-        if (extFilter === false) return false;
-        if (extFilter === true) {
-          // Exclusion mode: skip tools whose source path matches any excluded extension.
-          if (agentConfig.extensionsExclude?.length) {
-            const src = sourceByName.get(name) ?? "";
-            return !agentConfig.extensionsExclude.some((ext) => src.includes(ext));
+
+    const loader = new DefaultResourceLoader({
+      cwd,
+      agentDir: agentDirPath,
+      settingsManager: SettingsManager.create(cwd, agentDirPath),
+      noExtensions,
+      noSkills: false,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+      systemPrompt: fullSystemPrompt,
+    });
+    // Must reload before passing to createAgentSession. The SDK only calls reload()
+    // when it creates the loader itself — pre-built loaders are used as-is, so
+    // extensions never load and extension tools (agenda, ask, …) are absent.
+    await loader.reload();
+
+    const resolvedModel = model ?? ctx.model;
+    const resolvedThinking = thinkingLevel ?? agentConfig.thinking;
+
+    const sessionOpts: any = {
+      cwd,
+      agentDir: agentDirPath,
+      sessionManager: SessionManager.inMemory(cwd),
+      settingsManager: SettingsManager.create(cwd, agentDirPath),
+      modelRegistry: ctx.modelRegistry,
+      model: resolvedModel,
+      // Do not pass `tools` here — see toolNames comment above.
+      resourceLoader: loader,
+    };
+    if (resolvedThinking) sessionOpts.thinkingLevel = resolvedThinking;
+
+    const { session: newSession } = await createAgentSession(sessionOpts);
+
+    // Fire session_start on all loaded extension instances.
+    // createAgentSession() does NOT call bindExtensions() — that is only done by the
+    // interactive/print/rpc modes. Without this call, extension event handlers like
+    // session_start never fire, so extensions that initialise state there (e.g.
+    // memory-md sets memDir inside session_start) remain uninitialised and broken.
+    //
+    // Pass { subagentMode: true } so daemon-managing extensions (e.g. code-map)
+    // enter client-only mode: they resolve the project root and connect to the
+    // running daemon started by the parent session, without spawning a competing
+    // daemon or tearing it down on session_shutdown.
+    await (newSession as any).bindExtensions({ subagentMode: true });
+
+    // Apply tool restrictions:
+    // - Always exclude delegation tools (Subagent, get_subagent_result, steer_subagent)
+    //   to prevent recursive spawning beyond the configured depth.
+    // - For built-in tools, respect the agent config allowlist (toolNames).
+    // - Extension-registered tools are included based on agentConfig.extensions:
+    //     true  → all extension tools included
+    //     false → no extension tools (noExtensions=true already skipped loading,
+    //             but guard here too for safety)
+    //     string[] → only tools whose sourceInfo.path contains one of the listed
+    //               extension names (e.g. ["memory-md", "agenda"])
+    {
+      const allTools = newSession.getAllTools();
+      // Build name→sourcePath map once to avoid O(n²) lookups.
+      const sourceByName = new Map(
+        allTools.map((t: any) => [t.name, (t.sourceInfo?.path ?? "") as string]),
+      );
+      const extFilter = agentConfig.extensions;
+      const active = allTools
+        .map((t: any) => t.name as string)
+        .filter((name: string) => {
+          if (EXCLUDED_TOOL_NAMES.has(name)) return false;
+          if (ALL_BUILTIN_TOOL_NAMES.includes(name)) return toolNames.includes(name);
+          // Explicitly listed in tools: frontmatter — always include if the extension loaded.
+          if (explicitExtTools.has(name)) return true;
+          // Extension tool — apply extensions filter.
+          if (extFilter === false) return false;
+          if (extFilter === true) {
+            // Exclusion mode: skip tools whose source path matches any excluded extension.
+            if (agentConfig.extensionsExclude?.length) {
+              const src = sourceByName.get(name) ?? "";
+              return !agentConfig.extensionsExclude.some((ext) => src.includes(ext));
+            }
+            return true;
           }
-          return true;
-        }
-        // string[] allowlist — match against source path of the tool.
-        const src = sourceByName.get(name) ?? "";
-        return (extFilter as string[]).some((ext) => src.includes(ext));
-      });
-    session.setActiveToolsByName(active);
+          // string[] allowlist — match against source path of the tool.
+          const src = sourceByName.get(name) ?? "";
+          return (extFilter as string[]).some((ext) => src.includes(ext));
+        });
+      newSession.setActiveToolsByName(active);
+    }
+
+    _createdSession = newSession;
   }
 
+  const session = options.existingSession ?? _createdSession;
   options.onSessionCreated?.(session);
 
   // Turn limit tracking

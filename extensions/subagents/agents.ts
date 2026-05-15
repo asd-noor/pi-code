@@ -65,6 +65,7 @@ function loadFromDir(
         inheritContext:   fm.inherit_context != null ? fm.inherit_context === true : undefined,
         runInBackground:  fm.run_in_background != null ? fm.run_in_background === true : undefined,
         isolated:         fm.isolated != null ? fm.isolated === true : undefined,
+        reusable:         fm.reusable !== false,
         enabled:          fm.enabled !== false,
         source,
       });

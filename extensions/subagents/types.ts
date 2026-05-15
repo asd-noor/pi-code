@@ -25,6 +25,7 @@ export interface AgentConfig {
   inheritContext?: boolean;
   runInBackground?: boolean;
   isolated?: boolean;
+  reusable?: boolean;
   enabled?: boolean;
   source?: "project" | "global";
 }
@@ -41,6 +42,7 @@ export interface AgentRecord {
   turnCount: number;
   startedAt: number;
   completedAt?: number;
+  cwd?: string;
   session?: any;
   abortController?: AbortController;
   promise?: Promise<void>;

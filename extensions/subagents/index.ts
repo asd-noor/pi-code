@@ -272,13 +272,6 @@ export default function (pi: ExtensionAPI) {
       `${GY}\u2500\u2500 ${R}${B}Turn ${turn.turnNumber}${R}  ${GY}${dur}${R}`,
       "",
     ];
-    for (const tc of turn.toolCalls) {
-      const tcDur = tc.completedAt ? `  ${GY}${formatMs(tc.completedAt - tc.startedAt)}${R}` : "";
-      lines.push(`  ${GR}\u2713${R} ${B}${tc.name}${R}${tcDur}`);
-      if (tc.inputSummary) lines.push(`    ${DM}${tc.inputSummary}${R}`);
-      if (tc.resultSummary) lines.push(`    ${GY}${tc.resultSummary}${R}`);
-    }
-    if (turn.toolCalls.length > 0) lines.push("");
     if (turn.thinking?.trim()) {
       lines.push(`  ${MG}thinking${R}`);
       for (const line of turn.thinking.trim().split("\n")) {
@@ -286,6 +279,13 @@ export default function (pi: ExtensionAPI) {
       }
       lines.push("");
     }
+    for (const tc of turn.toolCalls) {
+      const tcDur = tc.completedAt ? `  ${GY}${formatMs(tc.completedAt - tc.startedAt)}${R}` : "";
+      lines.push(`  ${GR}\u2713${R} ${B}${tc.name}${R}${tcDur}`);
+      if (tc.inputSummary) lines.push(`    ${DM}${tc.inputSummary}${R}`);
+      if (tc.resultSummary) lines.push(`    ${GY}${tc.resultSummary}${R}`);
+    }
+    if (turn.toolCalls.length > 0) lines.push("");
     if (turn.text?.trim()) {
       for (const line of turn.text.trim().split("\n")) {
         lines.push(`  ${line}`);
@@ -407,7 +407,8 @@ Guidelines:
 - Use steer_subagent to send mid-run messages to a running background subagent.
 - Use model to specify a different model (as "provider/modelId", or fuzzy e.g. "haiku", "sonnet").
 - Use thinking to control extended thinking level.
-- Use inherit_context if the subagent needs the parent conversation history.`,
+- Use inherit_context if the subagent needs the parent conversation history.
+- Warm session reuse: completed sessions are kept warm for 10 min (configurable). The next spawn of the same type+cwd reuses the warm session automatically. Pass fresh: true to force a new session.`,
     parameters: Type.Object({
       prompt: Type.String({ description: "The task for the agent to perform." }),
       description: Type.String({ description: "A short (3-5 word) description of the task (shown in UI)." }),
@@ -439,6 +440,9 @@ Guidelines:
       agenda_id: Type.Optional(Type.Number({
         description: "ID of a not_started agenda created by the primary agent. The subagent will start, execute, and complete it.",
         minimum: 1,
+      })),
+      fresh: Type.Optional(Type.Boolean({
+        description: "If true, always spawn a fresh session instead of reusing a warm one. Default: false.",
       })),
     }),
 
@@ -488,6 +492,7 @@ Guidelines:
           thinkingLevel: params.thinking as any,
           isBackground:  true,
           agendaId:      params.agenda_id,
+          fresh:         params.fresh,
         });
         const record   = manager.getRecord(id);
         const isQueued = record?.status === "queued";
@@ -513,6 +518,7 @@ Guidelines:
         inheritContext,
         thinkingLevel: params.thinking as any,
         agendaId:      params.agenda_id,
+        fresh:         params.fresh,
       });
       widget.markFinished(record.id);
 
@@ -900,6 +906,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       `Max concurrency  (current: ${manager.getMaxConcurrent()})`,
       `Default max turns  (current: ${getDefaultMaxTurns() ?? "unlimited"})`,
       `Grace turns  (current: ${getGraceTurns()})`,
+      `Warm period  (current: ${getPiCodeConfig().subagents?.warmPeriod ?? 10} min)`,
     ]);
     if (!choice) return;
 
@@ -936,6 +943,15 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
           updateGlobalConfig({ subagents: { graceTurns: n } });
           ctx.ui.notify(`Grace turns → ${n}`, "info");
         } else ctx.ui.notify("Must be ≥ 1.", "warning");
+      }
+    } else if (choice.startsWith("Warm period")) {
+      const val = await ctx.ui.input("Warm period in minutes (0 = disabled)", String(getPiCodeConfig().subagents?.warmPeriod ?? 10));
+      if (val) {
+        const n = parseInt(val, 10);
+        if (n >= 0) {
+          updateGlobalConfig({ subagents: { warmPeriod: n } });
+          ctx.ui.notify(`Warm period → ${n === 0 ? "disabled" : n + " min"}`, "info");
+        } else ctx.ui.notify("Must be ≥ 0.", "warning");
       }
     }
   }

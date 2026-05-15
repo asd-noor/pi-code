@@ -8,6 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import { spawnAndRun, resumeSession, steerSession } from "./agent-runner.ts";
+import { getConfig } from "../_config/index.ts";
 import type { AgentActivity, AgentConfig, AgentRecord, ThinkingLevel } from "./types.ts";
 
 const DEFAULT_MAX_CONCURRENT = 4;
@@ -25,6 +26,8 @@ export interface SpawnOptions {
   thinkingLevel?: ThinkingLevel;
   isBackground?: boolean;
   agendaId?: number;
+  fresh?: boolean;
+  existingSession?: any;
 }
 
 interface QueueItem {
@@ -79,6 +82,7 @@ export class AgentManager {
       startedAt: Date.now(),
       abortController: new AbortController(),
     };
+    record.cwd = typeof ctx?.cwd === "string" && ctx.cwd ? ctx.cwd : process.cwd();
     this.records.set(id, record);
     this.activities.set(id, activity);
 
@@ -91,6 +95,16 @@ export class AgentManager {
       this.queue.push({ id, ctx, prompt, options });
       return id;
     }
+
+    // Check for warm session reuse (background agents only, unless fresh is requested or agent opts out)
+    if (!options.fresh && options.isBackground !== false && options.agentConfig.reusable !== false) {
+      const warmRecord = this.findWarmSession(options.agentConfig.name, record.cwd ?? "");
+      if (warmRecord?.session) {
+        options.existingSession = warmRecord.session;
+        warmRecord.completedAt = Date.now(); // reset warm timer
+      }
+    }
+
     this.startAgent(id, record, activity, ctx, prompt, options);
     return id;
   }
@@ -274,6 +288,22 @@ export class AgentManager {
       this.records.delete(id);
       this.activities.delete(id);
     }
+  }
+
+  findWarmSession(type: string, cwd: string): AgentRecord | undefined {
+    const warmMs = (getConfig().subagents?.warmPeriod ?? 10) * 60_000;
+    const now = Date.now();
+    const candidates = [...this.records.values()].filter((r) =>
+      r.status === "completed" &&
+      r.type === type &&
+      r.cwd === cwd &&
+      r.session != null &&
+      r.completedAt != null &&
+      (now - r.completedAt) < warmMs,
+    );
+    if (candidates.length === 0) return undefined;
+    // Most recently completed first
+    return candidates.sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))[0];
   }
 
   dispose(): void {

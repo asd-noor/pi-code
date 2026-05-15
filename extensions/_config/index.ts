@@ -151,6 +151,8 @@ export interface SubagentsConfig {
   defaultMaxTurns?: number;
   /** Grace turns given to an agent after hitting its turn limit. Default: 5. */
   graceTurns?: number;
+  /** Minutes to keep a completed session warm for reuse. Default: 10. */
+  warmPeriod?: number;
 }
 
 export interface MemoryBrowserConfig {
