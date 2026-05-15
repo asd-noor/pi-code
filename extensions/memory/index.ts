@@ -9,15 +9,116 @@
  *   2. <projectRoot>/.pi/<memory.dirname>  (dirname from pi-code.json, default "memory")
  */
 
-import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, copyFileSync, renameSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, renameSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  createAgentSession,
+  SessionManager,
+  SettingsManager,
+  DefaultResourceLoader,
+  getAgentDir,
+} from "@earendil-works/pi-coding-agent";
 import { registerTools } from "./tools.ts";
 import { getLogPath, getStatusPath, getSocketPath } from "./paths.ts";
 import { getProjectRoot, getConfig, getProjectCacheDir } from "../_config/index.ts";
+
+// ── Workflow log helpers ──────────────────────────────────────────────────────
+
+interface WorkflowConfig { enabled: boolean; model: string; }
+
+function loadWorkflowConfig(): WorkflowConfig | null {
+  const wl = getConfig().memory?.workflow;
+  if (!wl?.enabled || !wl?.model) return null;
+  return { enabled: true, model: wl.model };
+}
+
+/**
+ * Append a timestamped entry to workflow.md, writing directly to the file
+ * (bypassing the daemon) so the watcher picks up one atomic change.
+ */
+async function appendWorkflowEntry(
+  memDir: string,
+  title: string,
+  body: string,
+  ts: Date,
+): Promise<void> {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const dateStr     = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}`;
+  const displayTime = `${pad(ts.getHours())}:${pad(ts.getMinutes())}`;
+  const filePath    = join(memDir, "workflow.md");
+
+  if (!existsSync(filePath)) {
+    mkdirSync(memDir, { recursive: true });
+    writeFileSync(filePath, "# Workflow\n\nAuto-generated activity log — do not edit manually.\n");
+  }
+
+  const content = readFileSync(filePath, "utf-8");
+  const parts: string[] = [];
+
+  if (!content.includes(`## ${dateStr}`)) parts.push(`\n## ${dateStr}\n`);
+  parts.push(`\n### ${displayTime}\n`);
+  parts.push(`\n**${title}**\n`);
+  if (body.trim()) parts.push(`\n${body.trim()}\n`);
+
+  appendFileSync(filePath, parts.join(""));
+}
+
+async function callModelForSummary(
+  modelStr: string,
+  prompt: string,
+  ctx: any,
+  cwd: string,
+): Promise<string> {
+  const [provider, ...rest] = modelStr.split("/");
+  const modelId = rest.join("/");
+  const model = ctx.modelRegistry?.find(provider, modelId) ?? ctx.model;
+  if (!model) return "";
+
+  const agentDirPath = getAgentDir();
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir: agentDirPath,
+    settingsManager: SettingsManager.create(cwd, agentDirPath),
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    systemPrompt: "You are a concise technical log writer. Respond only with the requested log entry — no preamble.",
+  });
+  await loader.reload();
+
+  const { session } = await createAgentSession({
+    cwd,
+    agentDir: agentDirPath,
+    sessionManager: SessionManager.inMemory(cwd),
+    settingsManager: SettingsManager.create(cwd, agentDirPath),
+    modelRegistry: ctx.modelRegistry,
+    model,
+    resourceLoader: loader,
+  });
+
+  await (session as any).bindExtensions({});
+  await session.prompt(prompt);
+
+  const messages: any[] = (session as any).messages ?? [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== "assistant") continue;
+    const blocks = Array.isArray(msg.content) ? msg.content : [];
+    const text = blocks
+      .filter((b: any) => b.type === "text" && b.text)
+      .map((b: any) => b.text as string)
+      .join("\n")
+      .trim();
+    if (text) return text;
+  }
+  return "";
+}
 
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const RUNNER_SCRIPT = join(EXTENSION_DIR, "daemon", "runner.ts");
@@ -192,6 +293,97 @@ You **MUST** call a memory write tool if **ANY** of these are true this turn:
 
   pi.on("tool_execution_start", async (_event, ctx) => {
     if (ctx.hasUI) uiCtx = ctx.ui as typeof uiCtx;
+  });
+
+  // ── agent_end: workflow log ─────────────────────────────────────────
+
+  pi.on("agent_end", (event, ctx) => {
+    if (!memDir || !projectRoot) return;
+
+    const config = loadWorkflowConfig();
+    if (!config) return;
+
+    const msgs = (event as any).messages ?? [];
+    // Skip aborted / errored turns
+    const wasAborted = msgs.some(
+      (m: any) => m.stopReason === "aborted" || m.stopReason === "error",
+    );
+    if (wasAborted) return;
+
+    // Fire-and-forget — must not block the hook
+    void (async () => {
+      const toolCalls: Array<{ name: string; inputSummary: string }> = [];
+      let lastAssistantText = "";
+
+      for (const msg of msgs) {
+        if (msg.role !== "assistant") continue;
+        const blocks = Array.isArray(msg.content) ? msg.content : [];
+        for (const block of blocks) {
+          if (block.type === "toolCall") {
+            const inp = block.arguments ?? {};
+            let summary = "";
+            switch (block.name) {
+              case "bash":  summary = String(inp.command ?? "").replace(/\s+/g, " ").slice(0, 100); break;
+              case "read":
+              case "edit":
+              case "write": summary = String(inp.path ?? ""); break;
+              case "grep":  summary = [inp.pattern, inp.path].filter(Boolean).join(" in ").slice(0, 100); break;
+              default: try { summary = JSON.stringify(inp).slice(0, 100); } catch { summary = ""; }
+            }
+            toolCalls.push({ name: block.name, inputSummary: summary });
+          }
+          if (block.type === "text" && block.text?.trim()) {
+            lastAssistantText = block.text.trim();
+          }
+        }
+      }
+
+      // Skip pure text conversations
+      if (toolCalls.length === 0) return;
+
+      const toolSummary = toolCalls
+        .map((t) => `- ${t.name}${t.inputSummary ? `: ${t.inputSummary}` : ""}`)
+        .join("\n");
+
+      const summaryPrompt = [
+        "Write a workflow log entry for this agent session.",
+        "",
+        "Tool calls made:",
+        toolSummary,
+        "",
+        lastAssistantText ? `Final response:\n${lastAssistantText.slice(0, 500)}` : "",
+        "",
+        "Format your response as:",
+        "Line 1: one-line action title (no heading markers, no timestamp)",
+        "Line 2: blank",
+        "Lines 3+: 2-5 bullet points (- prefix) listing specific files changed, commands run, or key findings",
+        "",
+        "Be factual and specific. Use past tense. No preamble or closing remarks.",
+      ].filter(Boolean).join("\n");
+
+      try {
+        const cwd = (ctx as any).cwd ?? process.cwd();
+        const raw = await callModelForSummary(config.model, summaryPrompt, ctx, cwd);
+        if (!raw) return;
+        const lines = raw.trim().split("\n");
+        const title = lines[0].trim();
+        const body  = lines.slice(1).join("\n").trim();
+        if (!title) return;
+        await appendWorkflowEntry(memDir!, title, body, new Date());
+      } catch (err) {
+        try {
+          appendFileSync(
+            getLogPath(projectRoot!),
+            `[workflow] error: ${(err as any)?.message ?? err}\n`,
+          );
+        } catch { /* ignore */ }
+        void pi.exec(
+          "osascript",
+          ["-e", `display notification "workflow log error — run /memory logs" with title "pi — memory"`],
+          { timeout: 3000 },
+        ).catch(() => {});
+      }
+    })();
   });
 
   pi.on("session_shutdown", async () => {
