@@ -84,10 +84,8 @@ export function refreshAgendaWidget(ctx: ExtensionContext, focusedAgendaId?: num
     }
 
     const tasks = getTasks(handle.db, agenda.id);
-    ctx.ui.setWidget("agenda-widget", (_tui, theme) => ({
-      render: (w: number) => buildInProgressAgendaWidgetLines(agenda, tasks, theme, w),
-      invalidate: () => {},
-    }));
+    const width = (process.stdout.columns || 120) - 2;
+    ctx.ui.setWidget("agenda-widget", buildInProgressAgendaWidgetLines(agenda, tasks, ctx.ui.theme, width));
   } finally {
     handle.db.close();
   }
