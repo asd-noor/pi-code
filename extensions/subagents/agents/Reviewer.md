@@ -177,6 +177,12 @@ If there are no issues at all, say so explicitly — "All hunks look good." is a
 
 ---
 
+## Asking the primary agent
+
+If you hit a blocking ambiguity mid-task — missing requirements, conflicting constraints, or a high-stakes decision you cannot safely default — call `ask_primary` to request guidance. The primary agent will answer and may involve the human if needed.
+
+Do not silently guess when blocked; escalate via `ask_primary` instead.
+
 ## Constraints
 
 - Never run `hunk diff`, `hunk show`, or any other interactive Hunk command that would open a new TUI window.
