@@ -25,7 +25,7 @@ import { resolveModel, modelLabel } from "./model-resolver.ts";
 import { getDefaultMaxTurns, setDefaultMaxTurns, getGraceTurns, setGraceTurns, ALL_BUILTIN_TOOL_NAMES, sessionManagerToAgentId } from "./agent-runner.ts";
 import { AgentWidget, formatMs } from "./widget.ts";
 import type { AgentConfig, AgentRecord, AgentActivity } from "./types.ts";
-import { getConfig as getPiCodeConfig, updateGlobalConfig, setSubagentsSharedManager, getSubagentsSharedManager, getSubagentsPendingAskPrimary, setSubagentsSendToPrimary, getSubagentsSendToPrimary, getProjectHash } from "../_config/index.ts";
+import { getConfig as getPiCodeConfig, updateGlobalConfig, setSubagentsSharedManager, getSubagentsSharedManager, getSubagentsPendingAskPrimary, setSubagentsSendToPrimary, getSubagentsSendToPrimary, } from "../_config/index.ts";
 
 // ---- Seed bundled agents --------------------------------------------------
 
@@ -225,9 +225,9 @@ export default function (pi: ExtensionAPI) {
   // (imported as `getSubagentsPendingAskPrimary()` from "./shared.ts")
 
   function startSessionFile(record: AgentRecord): void {
-    const dir = `/tmp/pi-subagents/${getProjectHash(currentCwd)}`;
+    const dir = `/tmp/pi-subagents`;
     mkdirSync(dir, { recursive: true });
-    const filePath = join(dir, record.type);
+    const filePath = join(dir, record.id);
     tempFiles.add(filePath);
 
     if (record.warmReuse) {
@@ -969,7 +969,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
 
     const isActive = record.status === "running" || record.status === "queued";
     const viewerCmd = getPiCodeConfig().subagents?.viewer || undefined;
-    const sessionNote = viewerCmd ? undefined : `less -R +F /tmp/pi-subagents/${getProjectHash(currentCwd)}/${record.type}`;
+    const sessionNote = viewerCmd ? undefined : `less -R +F /tmp/pi-subagents/${record.id}`;
     const title = sessionNote
       ? `${record.type}  \u00b7  ${record.description}\n${sessionNote}`
       : `${record.type}  \u00b7  ${record.description}`;
@@ -982,8 +982,8 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     if (!action || action === "Back") return;
 
     if (action === "View session" && viewerCmd) {
-      const filePath = `/tmp/pi-subagents/${getProjectHash(currentCwd)}/${record.type}`;
-      const cmd = viewerCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, record.type);
+      const filePath = `/tmp/pi-subagents/${record.id}`;
+      const cmd = viewerCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, record.id);
       try {
         const { spawn } = await import("node:child_process");
         const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });
@@ -1022,7 +1022,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     const vCmd = getPiCodeConfig().subagents?.viewer || undefined;
     const sessionLines = running
       .filter(() => !vCmd)
-      .map((r) => `Session (${r.status}):  less -R +F /tmp/pi-subagents/${getProjectHash(currentCwd)}/${r.type}`);
+      .map((r) => `Session (${r.status}):  less -R +F /tmp/pi-subagents/${r.id}`);
     const infoLines = [
       `Name:        ${name}`,
       `Source:      ${cfg.source ?? "unknown"}`,
@@ -1045,8 +1045,8 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     }
     const sessionIdx = menuOpts.indexOf(pick) - 1;
     if (sessionIdx >= 0 && running[sessionIdx] && vCmd) {
-      const filePath = `/tmp/pi-subagents/${getProjectHash(currentCwd)}/${running[sessionIdx]!.type}`;
-      const cmd = vCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, running[sessionIdx]!.type);
+      const filePath = `/tmp/pi-subagents/${running[sessionIdx]!.id}`;
+      const cmd = vCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, running[sessionIdx]!.id);
       try {
         const { spawn } = await import("node:child_process");
         const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });

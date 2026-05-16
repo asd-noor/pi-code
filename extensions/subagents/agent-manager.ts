@@ -63,7 +63,25 @@ export class AgentManager {
   }
 
   spawn(ctx: any, prompt: string, options: SpawnOptions): string {
-    const id = randomUUID().slice(0, 17);
+    const cwd = typeof ctx?.cwd === "string" && ctx.cwd ? ctx.cwd : process.cwd();
+
+    // Check for warm session reuse before assigning an ID.
+    // Warm agents preserve their original ID — a new UUID is only generated for
+    // forced-fresh spawns or when no warm session exists.
+    let warmExistingSession: any;
+    let id: string;
+    if (!options.fresh && options.isBackground !== false && options.agentConfig.reusable !== false) {
+      const warmRecord = this.findWarmSession(options.agentConfig.name, cwd);
+      if (warmRecord?.session) {
+        warmExistingSession = warmRecord.session;
+        id = warmRecord.id;
+      } else {
+        id = randomUUID().slice(0, 17);
+      }
+    } else {
+      id = randomUUID().slice(0, 17);
+    }
+
     const activity: AgentActivity = {
       toolUses: 0,
       turnCount: 0,
@@ -83,7 +101,11 @@ export class AgentManager {
       startedAt: Date.now(),
       abortController: new AbortController(),
     };
-    record.cwd = typeof ctx?.cwd === "string" && ctx.cwd ? ctx.cwd : process.cwd();
+    record.cwd = cwd;
+    if (warmExistingSession) {
+      options.existingSession = warmExistingSession;
+      record.warmReuse = true;
+    }
     this.records.set(id, record);
     this.activities.set(id, activity);
 
@@ -95,16 +117,6 @@ export class AgentManager {
     if (options.isBackground && this.runningBackground >= this.maxConcurrent) {
       this.queue.push({ id, ctx, prompt, options: { ...options, agentId: id } });
       return id;
-    }
-
-    // Check for warm session reuse (background agents only, unless fresh is requested or agent opts out)
-    if (!options.fresh && options.isBackground !== false && options.agentConfig.reusable !== false) {
-      const warmRecord = this.findWarmSession(options.agentConfig.name, record.cwd ?? "");
-      if (warmRecord?.session) {
-        options.existingSession = warmRecord.session;
-        warmRecord.completedAt = Date.now(); // reset warm timer
-        record.warmReuse = true;
-      }
     }
 
     this.startAgent(id, record, activity, ctx, prompt, { ...options, agentId: id });
