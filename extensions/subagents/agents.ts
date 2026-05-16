@@ -1,9 +1,10 @@
 /**
  * agents.ts — Load agent configs from .md files.
  *
- * Discovery (project overrides global):
- *   1. Global:  ~/.pi/agent/agents/*.md
- *   2. Project: <cwd>/.pi/agents/*.md
+ * Discovery order (later entries win / override earlier):
+ *   1. Bundled: <extensionDir>/agents/*.md  (shipped defaults)
+ *   2. Global:  ~/.pi/agent/agents/*.md     (user overrides)
+ *   3. Project: <cwd>/.pi/agents/*.md       (project overrides)
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -14,12 +15,13 @@ import type { AgentConfig, ThinkingLevel } from "./types.ts";
 
 const ALL_BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
-export function loadAgents(cwd?: string): Map<string, AgentConfig> {
+export function loadAgents(cwd?: string, bundledDir?: string): Map<string, AgentConfig> {
   const baseCwd = typeof cwd === "string" && cwd ? cwd : process.cwd();
   const globalDir = join(homedir(), ".pi", "agent", "agents");
   const projectDir = join(baseCwd, ".pi", "agents");
 
   const agents = new Map<string, AgentConfig>();
+  if (bundledDir) loadFromDir(bundledDir, agents, "bundled");
   loadFromDir(globalDir, agents, "global");
   loadFromDir(projectDir, agents, "project");
   return agents;
@@ -28,7 +30,7 @@ export function loadAgents(cwd?: string): Map<string, AgentConfig> {
 function loadFromDir(
   dir: string,
   agents: Map<string, AgentConfig>,
-  source: "project" | "global",
+  source: "project" | "global" | "bundled",
 ): void {
   if (!existsSync(dir)) return;
   let files: string[];

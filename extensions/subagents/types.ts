@@ -27,7 +27,7 @@ export interface AgentConfig {
   isolated?: boolean;
   reusable?: boolean;
   enabled?: boolean;
-  source?: "project" | "global";
+  source?: "project" | "global" | "bundled";
 }
 
 /** Live state of a spawned agent. */

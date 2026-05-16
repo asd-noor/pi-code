@@ -12,7 +12,7 @@
  *   - Live widget         (● Subagents above editor)
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,37 +31,16 @@ import { getConfig as getPiCodeConfig, updateGlobalConfig, setSubagentsSharedMan
 
 const EXTENSION_DIR    = dirname(fileURLToPath(import.meta.url));
 const BUNDLED_AGENTS_DIR = join(EXTENSION_DIR, "agents");
-const GLOBAL_AGENTS_DIR  = join(homedir(), ".pi", "agent", "agents");
 
-/**
- * Copy bundled agent .md files to ~/.pi/agent/agents/ on first run.
- * Never overwrites files the user has already customised.
- */
-function seedBundledAgents(): void {
-  mkdirSync(GLOBAL_AGENTS_DIR, { recursive: true });
-  let files: string[];
-  try {
-    files = readdirSync(BUNDLED_AGENTS_DIR).filter((f) => f.endsWith(".md"));
-  } catch {
-    return;
-  }
-  for (const file of files) {
-    const dest = join(GLOBAL_AGENTS_DIR, file);
-    if (existsSync(dest)) continue; // never overwrite user's version
-    try {
-      writeFileSync(dest, readFileSync(join(BUNDLED_AGENTS_DIR, file), "utf-8"), "utf-8");
-    } catch {
-      // best-effort
-    }
-  }
-}
+// (seedBundledAgents removed — bundled agents are loaded directly from the
+// extension directory; ~/.pi/agent/agents/ is an override layer, not a seed target)
 
 // ---- Agent registry -------------------------------------------------------
 
 let agentRegistry = new Map<string, AgentConfig>();
 
 function rebuildRegistry(cwd: string): void {
-  agentRegistry = loadAgents(cwd);
+  agentRegistry = loadAgents(cwd, BUNDLED_AGENTS_DIR);
 }
 
 function getConfig(name: string): AgentConfig | undefined {
@@ -96,10 +75,20 @@ function resolveCwd(ctx?: { cwd?: string }, fallback = process.cwd()): string {
 // ---- Type-list text (for tool descriptions) -------------------------------
 
 function buildTypeListText(): string {
+  const bundled = getAllTypes().filter((n) => getConfig(n)?.source === "bundled");
   const global  = getAllTypes().filter((n) => getConfig(n)?.source === "global");
   const project = getAllTypes().filter((n) => getConfig(n)?.source === "project");
   const lines: string[] = [];
+  if (bundled.length > 0) {
+    lines.push("Built-in agents:");
+    for (const name of bundled) {
+      const cfg = getConfig(name);
+      const modelSuffix = cfg?.model ? ` (${modelLabel(cfg.model)})` : "";
+      lines.push(`- ${name}: ${cfg?.description ?? name}${modelSuffix}`);
+    }
+  }
   if (global.length > 0) {
+    if (lines.length > 0) lines.push("");
     lines.push("Global agents (~/.pi/agent/agents/):");
     for (const name of global) {
       const cfg = getConfig(name);
@@ -118,8 +107,8 @@ function buildTypeListText(): string {
   }
   lines.push(
     "",
-    "Agents are defined in .pi/agents/<name>.md (project) or ~/.pi/agent/agents/<name>.md (global).",
-    "Project-level agents override global ones.",
+    "Agents are defined in .pi/agents/<name>.md (project), ~/.pi/agent/agents/<name>.md (global), or bundled with the extension.",
+    "Project agents override global agents, which override built-in agents.",
   );
   return lines.join("\n");
 }
@@ -177,12 +166,13 @@ function buildSubagentInstruction(): string {
     "If no agent matches, handle the work inline.",
   ];
 
+  const bundled = getAllTypes().filter((n) => getConfig(n)?.source === "bundled");
   const global  = getAllTypes().filter((n) => getConfig(n)?.source === "global");
   const project = getAllTypes().filter((n) => getConfig(n)?.source === "project");
 
-  if (project.length > 0) {
-    lines.push("", "Project agents (.pi/agents/):");
-    for (const name of project) {
+  if (bundled.length > 0) {
+    lines.push("", "Built-in agents:");
+    for (const name of bundled) {
       const cfg = getConfig(name);
       const modelSuffix = cfg?.model ? ` [${modelLabel(cfg.model)}]` : "";
       lines.push(`- **${name}**${modelSuffix}: ${cfg?.description ?? name}`);
@@ -191,6 +181,14 @@ function buildSubagentInstruction(): string {
   if (global.length > 0) {
     lines.push("", "Global agents (~/.pi/agent/agents/):");
     for (const name of global) {
+      const cfg = getConfig(name);
+      const modelSuffix = cfg?.model ? ` [${modelLabel(cfg.model)}]` : "";
+      lines.push(`- **${name}**${modelSuffix}: ${cfg?.description ?? name}`);
+    }
+  }
+  if (project.length > 0) {
+    lines.push("", "Project agents (.pi/agents/):");
+    for (const name of project) {
       const cfg = getConfig(name);
       const modelSuffix = cfg?.model ? ` [${modelLabel(cfg.model)}]` : "";
       lines.push(`- **${name}**${modelSuffix}: ${cfg?.description ?? name}`);
@@ -218,7 +216,6 @@ function buildAskPrimaryInstruction(): string {
 export default function (pi: ExtensionAPI) {
   let currentCwd = process.cwd();
 
-  seedBundledAgents();
   rebuildRegistry(currentCwd);
 
   const tempFiles = new Set<string>();
