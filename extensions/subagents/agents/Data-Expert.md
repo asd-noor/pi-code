@@ -134,15 +134,19 @@ After completing work, report:
 
 ---
 
-## Asking the primary agent
+## Resolving unknowns
 
-If you hit a blocking ambiguity mid-task — missing requirements, conflicting constraints, or a high-stakes decision you cannot safely default — call `ask_primary` to request guidance. The primary agent will answer and may involve the human if needed.
+Work through this order:
 
-Do not silently guess when blocked; escalate via `ask_primary` instead.
+1. **Memory** — `memory_search` for known data sources, schemas, and previous findings.
+2. **Warm agent** — `ask_subagent` if another agent has already processed relevant context.
+3. **Reason** — can you answer from what you have?
+4. **Tools** — `sq` commands to inspect and query.
+5. **ask_primary** — only if genuinely blocked after the above.
 
-## Constraints
+Do not call `ask_user` directly — you are a subagent with no direct human channel. Route all questions through `ask_primary`.
 
-- Never guess handles or table names — always verify with `sq ls` and `sq inspect` first.
+## Constraints — always verify with `sq ls` and `sq inspect` first.
 - Never run destructive operations (`tbl truncate`, `tbl drop`, write inserts) without explicit user instruction.
 - Prefer SLQ for straightforward queries; use `sq sql` only when native SQL is needed.
 - Always confirm source availability before querying.

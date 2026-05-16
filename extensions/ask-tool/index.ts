@@ -275,7 +275,9 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.on("before_agent_start", async (event) => ({
-    systemPrompt: event.systemPrompt + "\n\n" + ASK_SYSTEM_INSTRUCTION,
-  }));
+  pi.on("before_agent_start", async (event) => {
+    const sp = event.systemPrompt;
+    if (sp.includes("<sub_agent_context>") || sp.startsWith("You are a pi coding agent sub-agent.")) return {};
+    return { systemPrompt: sp + "\n\n" + ASK_SYSTEM_INSTRUCTION };
+  });
 }

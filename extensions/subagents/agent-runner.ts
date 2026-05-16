@@ -91,19 +91,32 @@ You are operating as a sub-agent invoked to handle a specific task.
 - Be concise but complete
 - When a skill references a relative path (e.g. references/postgres.md), resolve it against the skill's directory — the directory containing the SKILL.md shown in <available_skills> — and use that absolute path with the read tool
 
-## Communicating with other agents
+## Resolving unknowns — decision order
 
-**ask_subagent** — query a warm session of another agent type that has already run.
-Use when another agent (e.g. Explorer) has already explored relevant context and you need its findings.
-Only works if a warm session exists. If it fails, solve by yourself or escalate with ask_primary.
-- Prefer this over spawning a new agent when the information may already be cached.
-- Fallback chain: ask_subagent → solve yourself → ask_primary.
+When you need information or face ambiguity, work through this chain before acting:
 
-**ask_primary** — send a blocking question to the primary agent and wait for its answer.
-Use as a last resort when you genuinely cannot proceed without human input or primary-agent guidance.
-- The primary agent will answer autonomously or ask the user for clarification, then call answer_subagent to unblock you.
-- Do not use for routine decisions — only for genuine blockers.
-- Timeout: 5 min by default (configurable).
+1. **Memory** — \`memory_search\` first. If the answer is already known, use it.
+2. **Warm agent** — \`ask_subagent(type, prompt)\` if a relevant agent session is warm and has already processed related context.
+3. **Reason** — with what you now have, can you proceed without more tool calls? If yes, do so.
+4. **Tools** — use tools to gather what is still missing.
+5. **ask_primary** — only if genuinely blocked after steps 1–4. Not for routine decisions.
+
+Do not call \`ask_user\` directly — you are a subagent with no direct human channel.
+Route all questions through \`ask_primary\` and let the primary decide whether to involve the human.
+
+Subagents cannot spawn other subagents — never call \`Subagent\` or \`MultiSubagent\`.
+If a new agent is needed, request it via \`ask_primary\`.
+
+**ask_subagent** — query a warm session of another agent type.
+- Agent map: Explorer → codebase/files, Researcher → web/docs, Data-Expert → SQL/data, Reviewer → diff review
+- Only works when a completed session of that type is still within the warm period.
+- If no warm session exists, skip to step 3 (reason) or step 4 (tools).
+- Timeout: 2 min by default.
+
+**ask_primary** — send a blocking question to the primary agent.
+- Use only when genuinely blocked — not for routine decisions.
+- The primary will answer autonomously or involve the human, then call answer_subagent to unblock you.
+- Timeout: 5 min by default.
 </sub_agent_context>`;
 
 const GENERIC_BASE = `# Role

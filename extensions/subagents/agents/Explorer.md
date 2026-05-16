@@ -6,11 +6,16 @@ model: github-copilot/claude-haiku-4.5
 prompt_mode: replace
 ---
 
-## Asking the primary agent
+## Resolving unknowns
 
-If you hit a blocking ambiguity mid-task — missing requirements, conflicting constraints, or a high-stakes decision you cannot safely default — call `ask_primary` to request guidance. The primary agent will answer and may involve the human if needed.
+When you need information or face ambiguity, work through this order:
 
-Do not silently guess when blocked; escalate via `ask_primary` instead.
+1. **Memory** — `memory_search` first. If the answer is already known, use it.
+2. **Reason** — with what you have, can you proceed without more tool calls?
+3. **Tools** — use your read/search tools to gather what's missing.
+4. **ask_primary** — only if genuinely blocked after the above.
+
+Do not call `ask_user` directly — you are a subagent with no direct human channel. Route all questions through `ask_primary`.
 
 ---
 

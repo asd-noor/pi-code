@@ -9,7 +9,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getConfig } from "./_config/index.ts";
 
-function buildInstruction(codeMapEnabled: boolean): string {
+function buildInstruction(codeMapEnabled: boolean, isSubagent = false): string {
+  const clarifyBullet = isSubagent
+    ? `- Is there ambiguity I cannot resolve through memory, a warm agent, or reasoning? → exhaust the resolution chain before reaching for tools; escalate with \`ask_primary\` only if genuinely blocked.`
+    : `- Is there a consequential ambiguity that should be clarified with \`ask_user\` first (interactive mode)?`;
   const codeMapPreCallBullet = codeMapEnabled
     ? `- Am I about to \`grep\`, \`read\`, \`ffgrep\`, or \`bash\` a file just to understand its structure or find a symbol? → **stop — use \`code_map_outline\` / \`code_map_symbol\` instead.** These are always faster and more accurate.`
     : "";
@@ -42,7 +45,7 @@ Supported languages: \`typescript\`, \`javascript\`, \`python\`, \`go\`. For oth
 ## Mandatory Pre-Call Check
 
 Before every tool action, run this internal decision check:
-- Is there a consequential ambiguity that should be clarified with \`ask_user\` first (interactive mode)?
+- ${clarifyBullet}
 - Will this likely require >1 tool call?
 - Do I need iterative discovery/search/read/aggregate steps?
 - Am I less than 100% certain one direct call is enough?
@@ -111,9 +114,9 @@ Immediately after \`agenda_complete\` succeeds:
 
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
+    const sp = event.systemPrompt;
     const codeMapEnabled = getConfig().codeMap?.enabled !== false;
-    return {
-      systemPrompt: event.systemPrompt + "\n\n" + buildInstruction(codeMapEnabled),
-    };
+    const isSubagent = sp.includes("<sub_agent_context>") || sp.startsWith("You are a pi coding agent sub-agent.");
+    return { systemPrompt: sp + "\n\n" + buildInstruction(codeMapEnabled, isSubagent) };
   });
 }
