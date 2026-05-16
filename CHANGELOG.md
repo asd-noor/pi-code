@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.1.0] - 2026-05-16
+
+### Added
+
+- **subagents**: Resolution chain encoded in `SUBAGENT_BRIDGE` — all subagents now follow a structured 5-step decision order before acting: (1) memory, (2) warm agent, (3) reason, (4) tools, (5) `ask_primary`. Each step has explicit guidance and fallback behaviour.
+- **subagents**: `ask_primary` and `ask_subagent` guidance added to all built-in agent `.md` files (Explorer, Researcher, Reviewer, Data-Expert). Each agent has a tailored `## Resolving unknowns` section with the resolution chain relevant to its role.
+- **subagents**: `ask_primary` added to Explorer’s allowed tool set — Explorer can now escalate blocking questions to the primary agent.
+- **subagents**: Built-in agent loading — bundled agents are now loaded directly from the extension’s `agents/` directory. `~/.pi/agent/agents/` acts as a user-override layer (same-named file wins). No files are seeded on startup.
+- **subagents**: `"bundled"` source type added to `AgentConfig` — system prompt agent lists now distinguish **Built-in agents** (extension-bundled), **Global agents** (`~/.pi/agent/agents/`), and **Project agents** (`.pi/agents/`).
+
+### Changed
+
+- **subagents**: `git-committer` removed from built-in agents — it now lives as a custom global agent at `~/.pi/agent/agents/git-committer.md`, allowing per-user customisation without touching the extension.
+- **subagents**: `worker.md` body trimmed — inter-agent communication guidance already injected via `SUBAGENT_BRIDGE`; the `.md` file now contains only the frontmatter.
+- **subagents**: `seedBundledAgents()` removed from `index.ts` — replaced by direct loading of the bundled directory via `loadAgents(cwd, BUNDLED_AGENTS_DIR)`.
+- **subagents**: Agent registry type-list labels updated — previously all non-project agents showed as `Global agents (~/.pi/agent/agents/)`; now correctly labelled by origin.
+- **ask-tool**: `before_agent_start` now guards subagents — `ASK_SYSTEM_INSTRUCTION` (which instructs direct `ask_user` calls) is no longer injected into subagent sessions.
+- **pi-code-prompt**: `buildInstruction` accepts `isSubagent` flag — subagent sessions receive a variant Pre-Call Check that replaces the `ask_user` clarification bullet with a resolution-chain + `ask_primary` reference.
+
 ## [3.0.0] - 2026-05-16
 
 ### Added
