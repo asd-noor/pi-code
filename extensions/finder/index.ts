@@ -514,9 +514,9 @@ export default function fffExtension(pi: ExtensionAPI) {
     name:          toolNames.grep,
     label:         toolNames.grep,
     description:   `Grep file contents. Smart-case, auto-detects regex vs literal, git-aware. Results are ranked by frecency (most-accessed files first); matches within a file stay in source order. Default limit ${DEFAULT_GREP_LIMIT}.`,
-    promptSnippet: "Grep contents",
+    promptSnippet: "Grep file contents — use instead of bash grep/rg/find for all content search",
     promptGuidelines: [
-      "Prefer bare identifiers as patterns. Literal queries are most efficient.",
+      "Always use ffgrep instead of bash grep, rg, or any shell pipeline for content search.",
       "Use path for include ('src/', '*.ts') and exclude for noise ('test/,*.min.js').",
       "caseSensitive: true when you need exact case (smart-case otherwise).",
       "After 1-2 greps, read the top match instead of more greps.",
@@ -610,9 +610,9 @@ export default function fffExtension(pi: ExtensionAPI) {
     name:          toolNames.find,
     label:         toolNames.find,
     description:   `Fuzzy path search and glob search. Matches against the whole repo-relative path, not just the filename. Frecency-ranked, git-aware. Multi-word = narrower (AND). Default limit ${DEFAULT_FIND_LIMIT}.`,
-    promptSnippet: "Find files by path or glob",
+    promptSnippet: "Find files by path or glob — use instead of bash find/ls for all file discovery",
     promptGuidelines: [
-      "Matches the WHOLE path, not just the filename — `profile` hits `chrome/browser/profiles/x.cc` too.",
+      "Always use fffind instead of bash find, ls, or glob expansion for file discovery.",
       "Keep queries to 1-2 terms; extra words narrow.",
       "Use for paths, not content. Use grep for content.",
       "For exact path matches use a glob in `path` — e.g. path: '**/profile.h' for exact filename, or path: 'src/**/profile.h' scoped to a subtree. Bare patterns are fuzzy.",
@@ -751,11 +751,12 @@ export default function fffExtension(pi: ExtensionAPI) {
 ## fff — file search and grep
 
 \`ffgrep\` and \`fffind\` are the primary tools for exploring and searching the codebase.
+**Never use \`bash\` + \`find\`/\`grep\`/\`rg\`/\`ls\` for file discovery or content search** — always use \`ffgrep\` or \`fffind\`.
 
 ### When to use each
 
-- **\`fffind\`** — first step whenever you need to locate files. Prefer over \`ls\`, \`find\`, or \`bash\` for any file discovery task. Frecency-ranked (most-accessed files surface first).
-- **\`ffgrep\`** — first step whenever you need to search file contents. Prefer over \`bash\` + ripgrep/grep. Auto-detects regex vs literal; falls back to fuzzy when no exact matches found.
+- **\`fffind\`** — first step whenever you need to locate files. Replaces \`ls\`, \`find\`, and \`bash\` glob expansion entirely. Frecency-ranked (most-accessed files surface first).
+- **\`ffgrep\`** — first step whenever you need to search file contents. Replaces \`grep\`, \`rg\`, and \`bash\` pipelines entirely. Auto-detects regex vs literal; falls back to fuzzy when no exact matches found.
 
 ### Usage rules
 
