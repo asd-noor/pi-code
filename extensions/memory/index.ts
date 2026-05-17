@@ -211,6 +211,20 @@ export default function (pi: ExtensionAPI) {
   // Pass projectRoot to all tools (per the naming-fix note in the spec)
   registerTools(pi, () => sess?.cacheDir);
 
+  // ── Disabled mode: inject MEMORY.md if present ──────────────────────────
+
+  if (getConfig().memory?.enabled === false) {
+    pi.on("before_agent_start", async (event) => {
+      const cwd = (event as any).systemPromptOptions?.cwd ?? process.cwd();
+      const memPath = join(cwd, "MEMORY.md");
+      try {
+        const content = readFileSync(memPath, "utf-8").trim();
+        if (content) return { systemPrompt: event.systemPrompt + "\n\n## Memory (MEMORY.md)\n\n" + content };
+      } catch { /* no MEMORY.md */ }
+    });
+    return;
+  }
+
   // ── System prompt injection ───────────────────────────────────────────────
 
   const MEMORY_INSTRUCTION = `

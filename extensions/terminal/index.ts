@@ -799,6 +799,27 @@ export default function (pi: ExtensionAPI): void {
     if (typeof data?.window === "string") { knownWindows.delete(data.window); updateFooter(); }
   });
 
+  // Open a file in the pager (used by subagents and other extensions).
+  pi.events.on("terminal:open-pager", async (data: any) => {
+    if (typeof data?.file !== "string") return;
+    const cwd = storedCtx?.cwd ?? process.cwd();
+    const pagerCmd = getConfig().terminal?.pagerCmd ?? "less -RS +F $FILE";
+    const cmd = pagerCmd.replace(/\$FILE/g, shellQuote(data.file));
+    const winName = "pi-code-pager";
+    try {
+      const sess = await ensureSession(cwd);
+      if (await windowExists(sess, winName)) {
+        await tmux(["kill-window", "-t", windowTarget(sess, winName)]).catch(() => {});
+        knownWindows.delete(winName);
+      }
+      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", wrapCmd(cmd, true)]);
+      knownWindows.add(winName);
+      if (storedCtx) await openFocusModal(storedCtx, winName);
+    } catch (err) {
+      storedCtx?.ui.notify(`terminal: could not open pager: ${err instanceof Error ? err.message : String(err)}`, "warning");
+    }
+  });
+
   pi.on("session_shutdown", async () => {
     // Cancel all watchers.
     for (const [, cleanup] of watchers) cleanup();

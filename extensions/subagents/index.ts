@@ -968,29 +968,17 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     const record = records[idx];
 
     const isActive = record.status === "running" || record.status === "queued";
-    const viewerCmd = getPiCodeConfig().subagents?.viewer || undefined;
-    const sessionNote = viewerCmd ? undefined : `less -R +F ${join(getProjectTempDir(record.cwd), "subagents", record.id)}`;
-    const title = sessionNote
-      ? `${record.type}  \u00b7  ${record.description}\n${sessionNote}`
-      : `${record.type}  \u00b7  ${record.description}`;
-    const actions: string[] = [];
-    if (viewerCmd) actions.push("View session");
+    const filePath = join(getProjectTempDir(record.cwd ?? currentCwd), "subagents", record.id);
+    const title = `${record.type}  \u00b7  ${record.description}`;
+    const actions: string[] = ["View session"];
     if (isActive) actions.push("Stop subagent");
     actions.push("Back");
 
     const action = await ctx.ui.select(title, actions);
     if (!action || action === "Back") return;
 
-    if (action === "View session" && viewerCmd) {
-      const filePath = join(getProjectTempDir(record.cwd), "subagents", record.id);
-      const cmd = viewerCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, record.id);
-      try {
-        const { spawn } = await import("node:child_process");
-        const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });
-        child.unref();
-      } catch (err: any) {
-        ctx.ui.notify(`preview: ${err?.message ?? String(err)}`, "error");
-      }
+    if (action === "View session") {
+      pi.events.emit("terminal:open-pager", { file: filePath });
     } else if (action === "Stop subagent") {
       const ok = await ctx.ui.confirm("Stop subagent?", `Abort: ${record.description}`);
       if (ok) { manager.abort(record.id); ctx.ui.notify(`Subagent ${record.id} stopped.`, "info"); }
@@ -1017,12 +1005,10 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     const cfg  = getConfig(name);
     if (!cfg) return;
 
-    // Show a quick summary; offer view session entries when viewer is configured
+    // Show a quick summary; offer view session entries
     const running = manager.listRecords().filter((r) => r.type === name);
-    const vCmd = getPiCodeConfig().subagents?.viewer || undefined;
     const sessionLines = running
-      .filter(() => !vCmd)
-      .map((r) => `Session (${r.status}):  less -R +F ${join(getProjectTempDir(r.cwd), "subagents", r.id)}`);
+      .map((r) => `Session (${r.status}):  ${join(getProjectTempDir(r.cwd ?? currentCwd), "subagents", r.id)}`);
     const infoLines = [
       `Name:        ${name}`,
       `Source:      ${cfg.source ?? "unknown"}`,
@@ -1035,7 +1021,7 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
 
     const menuOpts = [
       "Info",
-      ...(vCmd ? running.map((r) => `View session: ${r.id.slice(0, 8)} (${r.status})`) : []),
+      ...running.map((r) => `View session: ${r.id.slice(0, 8)} (${r.status})`),
     ];
 
     const pick = await ctx.ui.select(name, menuOpts);
@@ -1044,16 +1030,9 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
       return;
     }
     const sessionIdx = menuOpts.indexOf(pick) - 1;
-    if (sessionIdx >= 0 && running[sessionIdx] && vCmd) {
-      const filePath = join(getProjectTempDir(running[sessionIdx]!.cwd), "subagents", running[sessionIdx]!.id);
-      const cmd = vCmd.replace(/\$FILE/g, `"${filePath.replace(/"/g, '\\"')}"`).replace(/\$ID/g, running[sessionIdx]!.id);
-      try {
-        const { spawn } = await import("node:child_process");
-        const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });
-        child.unref();
-      } catch (err: any) {
-        ctx.ui.notify(`preview: ${err?.message ?? String(err)}`, "error");
-      }
+    if (sessionIdx >= 0 && running[sessionIdx]) {
+      const filePath = join(getProjectTempDir(running[sessionIdx]!.cwd ?? currentCwd), "subagents", running[sessionIdx]!.id);
+      pi.events.emit("terminal:open-pager", { file: filePath });
     }
   }
 

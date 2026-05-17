@@ -205,8 +205,6 @@ export interface MemorySubcommandModelConfig {
 }
 
 export interface SubagentsConfig {
-  /** Shell command to preview a session log file. Use `$FILE` as placeholder, e.g. `"tail -f $FILE"`. */
-  viewer?: string;
   /** Max concurrent background agents. Default: 4. */
   maxConcurrent?: number;
   /** Default max turns per agent (0 = unlimited). */
@@ -231,8 +229,8 @@ export interface MemoryBrowserConfig {
 export interface MemoryConfig {
   /** Custom memory source directory. If set and non-empty, behaves like a detached cache (cache keyed by this path, not the project root). */
   customSrcDir?: string;
-  /** Activity log auto-logging config. */
-  activityLog?: MemoryActivityLogConfig;
+  /** Whether memory is enabled. Default: true. When false, agents use MEMORY.md if it exists. */
+  enabled?: boolean;
   /** Per-subcommand model overrides. `default` applies unless a subcommand key is set. */
   subcommandModel?: MemorySubcommandModelConfig;
   /** Browser widget commands. */
