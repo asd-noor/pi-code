@@ -104,6 +104,18 @@ export function getProjectHash(cwd?: string): string {
   return createHash("sha256").update(root).digest("hex").slice(0, 12);
 }
 
+/**
+ * Returns true if `cwd` (or the current directory) is inside a git repository.
+ * Uses `git rev-parse --git-dir` — fast, works from any subdirectory.
+ */
+export function isGitRepo(cwd?: string): boolean {
+  const result = spawnSync("git", ["rev-parse", "--git-dir"], {
+    cwd: cwd ?? process.cwd(),
+    stdio: "ignore",
+  });
+  return result.status === 0;
+}
+
 export function getProjectCacheDir(projectRoot?: string): string {
   const root = projectRoot ?? getProjectRoot();
   const hash = createHash("sha256").update(root).digest("hex").slice(0, 16);
@@ -199,15 +211,23 @@ export interface CodeMapConfig {
   fileLimit?: number;
 }
 
-export interface TmuxAppConfig {
+export interface TerminalAppConfig {
   /** Command to run, e.g. ["lazygit"] or ["psql", "mydb"]. */
   cmd: string[];
-  /** Kill the window when the command exits. Default: false. */
-  autodestroy?: boolean;
+  /** Kill the window when the command exits. Default: true. */
+  autoClose?: boolean;
+  /** Only show this app when pi is opened inside a git repository. */
+  gitExclusive?: boolean;
 }
 
-export interface TmuxConfig {
-  apps?: Record<string, TmuxAppConfig>;
+export interface TerminalConfig {
+  /** Override the command for /terminal:previewer. Default: "mcat $FILE; read -n1...". */
+  previewerCmd?: string;
+  /** Override the command for /terminal:pager. Default: "less -RS +F $FILE". */
+  pagerCmd?: string;
+  /** Override the command for /terminal:editor. Default: "vim $FILE". */
+  editorCmd?: string;
+  apps?: Record<string, TerminalAppConfig>;
 }
 
 export interface PiCodeConfig {
@@ -215,7 +235,7 @@ export interface PiCodeConfig {
   scout?: ScoutConfig;
   memory?: MemoryConfig;
   subagents?: SubagentsConfig;
-  tmux?: TmuxConfig;
+  terminal?: TerminalConfig;
   [key: string]: unknown;
 }
 
