@@ -31,7 +31,6 @@ All extensions are automatically loaded from `./extensions/`:
 | finder | First-party `ffgrep`/`fffind` tools backed by `@ff-labs/fff-node` — frecency-ranked search, @-mention autocomplete, mode system | Directory |
 | scout | Native `web_search`, `web_extract`, `web_crawl`, `web_map`, `web_research`, `find_library_id`, `query_library_docs` tools via `tvly`/`ctx7` CLIs | Standalone |
 | ask-tool | Interactive clarification tool — structured multi-question UI for preference-sensitive decisions | Standalone |
-| [pi-files-widget](https://github.com/tmustier/pi-extensions/tree/main/files-widget) | In-terminal file browser and viewer via `/readfiles` — requires `bat`, `git-delta`, `glow` | Bundled |
 | [parallel](./docs/parallel.md) | Fan out multiple independent operations (read/bash/write/edit/ptc/code-map/memory/agenda/finder/scout) in one call | Standalone |
 | [pi-code-prompt](./docs/system-prompt.md) | Package-wide runtime policy injection | Standalone |
 | [ptc](./docs/ptc.md) | Programmatic Tool Calling — run Python/bash scripts in a single call | Standalone |
@@ -101,7 +100,6 @@ These are included automatically when you install `pi-code`:
 
 | Package | Purpose |
 |---|---|
-| `@tmustier/pi-files-widget` | In-terminal file browser (`/readfiles`) — requires `bat`, `git-delta`, `glow` |
 | `@ff-labs/fff-node` | Native Rust file-finder backing `ffgrep`/`fffind` tools |
 
 ### Peer Dependencies
@@ -148,9 +146,6 @@ The following binaries must be in your `PATH`:
 | `uv` | Executes Python ptc scripts via `#!/usr/bin/env -S uv run --script` | ptc extension and parallel ptc slots |
 | `tvly` | Tavily CLI for web search, extract, crawl, map, research | scout extension |
 | `ctx7` | Context7 CLI for library ID resolution and docs | scout extension |
-| `bat` | Syntax-highlighted file viewer | pi-files-widget (`/readfiles`) — `brew install bat` |
-| `delta` | Git diff viewer | pi-files-widget (`/readfiles`) — `brew install git-delta` |
-| `glow` | Markdown renderer | pi-files-widget (`/readfiles`) — `brew install glow` |
 | `sq` | Command-line data wrangling for SQL databases and tabular files | data-wrangler skill — install from [sq.io/docs/install](https://sq.io/docs/install/) |
 | `hunk` | Interactive terminal diff viewer for code review sessions | hunk-review skill — install from [hunk.tools](https://hunk.tools) |
 

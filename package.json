@@ -11,21 +11,19 @@
     "prepare": "npm rebuild better-sqlite3"
   },
   "dependencies": {
-    "jiti": "^2.7.0",
-    "@tmustier/pi-files-widget": "*",
     "@ff-labs/fff-node": "*",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/mdast": "^4.0.0",
     "better-sqlite3": "^11.0.0",
-    "sqlite-vec": "^0.1.9",
-    "remark-parse": "^11.0.0",
+    "jiti": "^2.7.0",
     "mdast-util-from-markdown": "^2.0.0",
     "mdast-util-to-markdown": "^2.0.0",
-    "@types/better-sqlite3": "^7.6.0",
-    "@types/mdast": "^4.0.0"
+    "remark-parse": "^11.0.0",
+    "sqlite-vec": "^0.1.9"
   },
   "pi": {
     "extensions": [
-      "./extensions",
-      "node_modules/@tmustier/pi-files-widget/index.ts"
+      "./extensions"
     ],
     "skills": [
       "./skills"
@@ -36,7 +34,6 @@
   },
   "bundledDependencies": [
     "jiti",
-    "@tmustier/pi-files-widget",
     "@ff-labs/fff-node",
     "better-sqlite3",
     "sqlite-vec",
