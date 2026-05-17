@@ -108,6 +108,8 @@ export default function (pi: ExtensionAPI) {
     label: "Run Script",
     description: `Default tool. Run a Python (preferably uv-backed via the uv shebang) or bash script in one call. Prefer Python + uv by default, and even for shell-heavy work prefer a bash script through ptc; use raw bash only when the command is genuinely one-shot.
 
+Every ptc call must include a \`name\` field — a short snake_case identifier used as the filename (e.g. \`parse_json\`, \`build_summary\`).
+
 Every ptc call must include a purpose field — a one-line description of what the script does.
 The purpose is shown in the UI when the tool runs.
 
@@ -130,6 +132,9 @@ Execution:
 On failure: fix the script and call ptc again — do not fall back to individual tool calls.`,
     promptSnippet: "Default tool — runs Python or bash scripts. Prefer Python + uv by default, and even for shell-heavy work prefer a bash script through ptc. Use raw bash only when the command is genuinely one-shot. Uv-backed Python scripts execute directly by file path, require `#!/usr/bin/env -S uv run --script`, and benefit from robust dependency management plus fast cached reruns. Use `parallel` for 2+ independent operations, including `ptc` slots.",
     parameters: Type.Object({
+      name: Type.String({
+        description: "Short descriptive name for this script, used as the filename. Use snake_case, no extension.",
+      }),
       purpose: Type.String({
         description: "One-line description of what this script does. Shown in the UI when the tool runs.",
       }),
@@ -148,11 +153,12 @@ On failure: fix the script and call ptc again — do not fall back to individual
     }),
 
 
-    async execute(toolCallId, params, signal, onUpdate, _ctx) {
-      mkdirSync(SANDBOX_DIR, { recursive: true });
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const ptcDir = join(getProjectTempDir(ctx.cwd), "ptc");
+      mkdirSync(ptcDir, { recursive: true });
 
       const ext  = params.type === "python" ? "py" : "sh";
-      const file = `${SANDBOX_DIR}/${toolCallId.slice(0, 8)}.${ext}`;
+      const file = join(ptcDir, `${params.name}.${ext}`);
       writeFileSync(file, params.script, { mode: 0o755 });
 
       const cmd  = params.type === "python" ? file : "bash";

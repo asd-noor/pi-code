@@ -17,7 +17,7 @@
  *   pi.events.on("pi-code:config", (cfg: PiCodeConfig) => { ... });
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
@@ -104,6 +104,13 @@ export function getProjectHash(cwd?: string): string {
   return createHash("sha256").update(root).digest("hex").slice(0, 12);
 }
 
+const PROJECT_TEMP_BASE = "/tmp/pi-code";
+
+/** Returns /tmp/pi-code/<projectHash> — the per-project temp root. */
+export function getProjectTempDir(cwd?: string): string {
+  return join(PROJECT_TEMP_BASE, getProjectHash(cwd));
+}
+
 /**
  * Returns true if `cwd` (or the current directory) is inside a git repository.
  * Uses `git rev-parse --git-dir` — fast, works from any subdirectory.
@@ -114,6 +121,40 @@ export function isGitRepo(cwd?: string): boolean {
     stdio: "ignore",
   });
   return result.status === 0;
+}
+
+export interface DebugLogger {
+  /** Append a log line. */
+  log: (...args: unknown[]) => void;
+  /** Truncate the log file (call on session_start). */
+  truncate: () => void;
+  /** Full path to the log file. */
+  path: string;
+}
+
+/**
+ * Create a debug logger for an extension.
+ * Logs to /tmp/pi-code/<projectHash>/logs/<extName>.log.
+ * Call truncate() on session_start to clear stale logs.
+ */
+export function createLogger(extName: string, cwd?: string): DebugLogger {
+  const logDir = join(getProjectTempDir(cwd), "logs");
+  const logPath = join(logDir, `${extName}.log`);
+  return {
+    path: logPath,
+    truncate() {
+      try {
+        mkdirSync(logDir, { recursive: true });
+        writeFileSync(logPath, "");
+      } catch {}
+    },
+    log(...args: unknown[]) {
+      try {
+        mkdirSync(logDir, { recursive: true });
+        appendFileSync(logPath, `[${new Date().toISOString()}] ${args.map(String).join(" ")}\n`);
+      } catch {}
+    },
+  };
 }
 
 export function getProjectCacheDir(projectRoot?: string): string {

@@ -31,10 +31,10 @@ import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createReadStream, promises as fsp } from "node:fs";
+import { createReadStream, mkdirSync, promises as fsp, rmSync } from "node:fs";
 import type { ReadStream } from "node:fs";
-import { resolve } from "node:path";
-import { getProjectHash, getConfig, isGitRepo } from "../_config/index.ts";
+import { join, resolve } from "node:path";
+import { getProjectHash, getConfig, isGitRepo, createLogger, getProjectTempDir } from "../_config/index.ts";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -52,6 +52,8 @@ let storedCtx: ExtensionContext | undefined;
 let uiCtx: any;
 /** The managed tmux session name for the current project. */
 let sessionName: string | undefined;
+/** Hook called when the managed session is first created. Set by the factory. */
+let onSessionReady: ((sess: string, cwd: string) => void) | undefined;
 /** Whether the managed session has been created. */
 let sessionReady = false;
 /** The current "focused" window name for the modal. */
@@ -72,6 +74,9 @@ type PaneStream = {
   stream: ReadStream;
   subscribers: Set<PaneSubscriber>;
 };
+
+let logger = createLogger("terminal");
+function debug(...args: unknown[]): void { logger.log(...args); }
 
 /** In-memory cache of known window names in the managed session. */
 const knownWindows = new Set<string>();
@@ -130,12 +135,14 @@ async function ensureSession(cwd: string): Promise<string> {
       out.split("\n").map((l) => l.trim()).filter(Boolean).forEach((w) => knownWindows.add(w));
     } catch {}
     sessionReady = true;
+    onSessionReady?.(sessionName, cwd); // also fire for existing sessions
     return sessionName;
   } catch {
     // Session does not exist — create it.
   }
   await tmux(["new-session", "-d", "-s", sessionName, "-c", cwd]);
   sessionReady = true;
+  onSessionReady?.(sessionName, cwd);
   return sessionName;
 }
 
@@ -180,9 +187,11 @@ async function resolveWindowTarget(sess: string, window?: string): Promise<strin
 
 // ── Pane stream (pipe-pane via FIFO) ─────────────────────────────────────────
 
-async function createPaneStream(target: string): Promise<PaneStream> {
+async function createPaneStream(target: string, cwd: string): Promise<PaneStream> {
   try {
-    const fifoPath = `/tmp/pi-tmux-${process.pid}-${randomBytes(6).toString("hex")}.fifo`;
+    const fifoDir = join(getProjectTempDir(cwd), "fifo");
+    mkdirSync(fifoDir, { recursive: true });
+    const fifoPath = join(fifoDir, `pi-tmux-${process.pid}-${randomBytes(6).toString("hex")}.fifo`);
     await new Promise<void>((resolve, reject) => {
       execFile("mkfifo", [fifoPath], (err) => (err ? reject(err) : resolve()));
     });
@@ -204,7 +213,7 @@ async function createPaneStream(target: string): Promise<PaneStream> {
       const winName = target.includes(":") ? target.split(":").slice(1).join(":") : target;
       knownWindows.delete(winName);
       const count = knownWindows.size;
-      uiCtx?.setStatus("terminal", count > 0 ? `\u276f ${count}` : undefined);
+      uiCtx?.setStatus("terminal", count > 0 ? `| terminals: ${count}` : undefined);
       void closePaneStream(target).catch(() => {});
     });
     await tmux(["pipe-pane", "-O", "-t", target, `cat > ${shellQuote(fifoPath)}`]);
@@ -232,11 +241,12 @@ async function subscribePaneOutput(
   target: string,
   subscriber: PaneSubscriber,
   onEnd?: () => void,
+  cwd?: string,
 ): Promise<() => Promise<void>> {
   let ps = paneStreams.get(target);
   if (!ps) {
     const pending =
-      paneStreamCreates.get(target) ?? createPaneStream(target);
+      paneStreamCreates.get(target) ?? createPaneStream(target, cwd ?? storedCtx?.cwd ?? process.cwd());
     paneStreamCreates.set(target, pending);
     ps = await pending;
   }
@@ -707,7 +717,7 @@ async function openFocusModal(ctx: ExtensionContext, window?: string): Promise<v
     focusModalOpen = false;
     // Refresh footer after modal closes — uiCtx was set at openFocusModal entry.
     const count = knownWindows.size;
-    uiCtx?.setStatus("terminal", count > 0 ? `\u276f ${count}` : undefined);
+    uiCtx?.setStatus("terminal", count > 0 ? `| terminals: ${count}` : undefined);
   }
 }
 
@@ -718,12 +728,21 @@ export default function (pi: ExtensionAPI): void {
   function updateFooter(): void {
     if (!uiCtx) return;
     const count = knownWindows.size;
-    uiCtx.setStatus("terminal", count > 0 ? `\u276f ${count}` : undefined);
+    uiCtx.setStatus("terminal", count > 0 ? `| terminals: ${count}` : undefined);
   }
 
   // ── Session lifecycle ───────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
+    try { logger.truncate(); } catch {} // truncate on start
+    logger = createLogger("terminal", ctx.cwd);
+    logger.truncate();
+    debug("session_start", ctx.cwd);
+    // Delete the project temp root to clean up any leftovers from a crash.
+    try {
+      const tempDir = getProjectTempDir(ctx.cwd ?? process.cwd());
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
     storedCtx = ctx;
     uiCtx = ctx.ui;
     sessionName = deriveSessionName(ctx.cwd ?? process.cwd());
@@ -759,6 +778,27 @@ export default function (pi: ExtensionAPI): void {
   pi.on("tool_execution_start", async (_event, ctx) => { uiCtx = ctx.ui; });
   pi.on("agent_end", async (_event, ctx) => { uiCtx = ctx.ui; updateFooter(); });
 
+  // Allow other extensions to request session creation.
+  pi.events.on("terminal:ensure-session", async (data: any) => {
+    const cwd = data?.cwd ?? storedCtx?.cwd ?? process.cwd();
+    debug("terminal:ensure-session requested", cwd);
+    await ensureSession(cwd).catch(() => {});
+  });
+
+  // Emit terminal:session-ready when the managed session is first created.
+  onSessionReady = (sess, cwd) => {
+    debug("session-ready", sess, cwd);
+    pi.events.emit("terminal:session-ready", { session: sess, cwd });
+  };
+
+  // Listen for windows created/removed by other extensions (e.g. git-hunk).
+  pi.events.on("terminal:window-added", (data: any) => {
+    if (typeof data?.window === "string") { knownWindows.add(data.window); updateFooter(); }
+  });
+  pi.events.on("terminal:window-removed", (data: any) => {
+    if (typeof data?.window === "string") { knownWindows.delete(data.window); updateFooter(); }
+  });
+
   pi.on("session_shutdown", async () => {
     // Cancel all watchers.
     for (const [, cleanup] of watchers) cleanup();
@@ -769,6 +809,11 @@ export default function (pi: ExtensionAPI): void {
     for (const target of [...paneStreams.keys()]) {
       await closePaneStream(target).catch(() => {});
     }
+    // Delete the project temp root (logs, fifo, ptc scripts, subagent sessions).
+    try {
+      const tempDir = getProjectTempDir(storedCtx?.cwd);
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
     storedCtx = undefined;
     uiCtx?.setStatus("terminal", undefined);
     uiCtx = undefined;

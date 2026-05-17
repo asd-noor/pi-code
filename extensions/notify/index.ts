@@ -42,7 +42,7 @@ export default function (pi: ExtensionAPI) {
 
   function refreshFooter(): void {
     if (!uiCtx) return;
-    uiCtx.setStatus(FOOTER_KEY, enabled ? "🔔 notify: on   " : undefined);
+    uiCtx.setStatus(FOOTER_KEY, enabled ? uiCtx.theme.fg("accent", "| notify: on") : undefined);
   }
 
   // ── Extract reply preview from agent_end messages ────────────────────────

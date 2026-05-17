@@ -45,11 +45,11 @@ function readLogTail(projectDir: string, lines = 50): string {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  starting: "⬡ code-map: starting…   ",
-  indexing: "⬡ code-map: indexing…   ",
-  ready:    "⬡ code-map: ready   ",
-  error:    "⬡ code-map: error   ",
-  stopped:  "⬡ code-map: stopped   ",
+  starting: "| code-map: starting…",
+  indexing: "| code-map: indexing…",
+  ready:    "| code-map: ready",
+  error:    "| code-map: error",
+  stopped:  "| code-map: stopped",
 };
 
 // ── Project root resolution ───────────────────────────────────────────────────
@@ -104,7 +104,7 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
 
   function setFooterStatus(status: string): void {
     if (!uiCtx) return;
-    uiCtx.setStatus("code-map", STATUS_LABEL[status] ?? `⬡ code-map: ${status}`);
+    uiCtx.setStatus("code-map", STATUS_LABEL[status] ?? `| code-map: ${status}`);
   }
 
   function clearFooterStatus(): void {

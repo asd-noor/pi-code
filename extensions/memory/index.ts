@@ -290,11 +290,11 @@ Some description.
     const status = readStatus();
     const short  = sess.memDir.replace(homedir(), "~");
     const labels: Record<string, string> = {
-      starting: `☰ memory: starting… (${short})   `,
-      indexing: `☰ memory: indexing… (${short})   `,
-      ready:    `☰ memory: ready (${short})   `,
-      stopped:  `☰ memory: stopped (${short})   `,
-      error:    `☰ memory: error (${short})   `,
+      starting: `| memory: starting… (${short})`,
+      indexing: `| memory: indexing… (${short})`,
+      ready:    `| memory: ready (${short})`,
+      stopped:  `| memory: stopped (${short})`,
+      error:    `| memory: error (${short})`,
     };
     uiCtx.setStatus("memory-md", labels[status] ?? labels["stopped"]);
   }
@@ -343,7 +343,7 @@ Some description.
     if (poller) { clearInterval(poller); poller = undefined; }
 
     const short = memDir.replace(homedir(), "~");
-    uiCtx!.setStatus("memory-md", `☰ memory: starting… (${short})   `);
+    uiCtx!.setStatus("memory-md", `| memory: starting… (${short})`);
     daemonChild = spawnDaemon(memDir, cacheDir);
     poller = setInterval(updateFooter, 2000);
   });
@@ -506,7 +506,7 @@ Some description.
           ? getDetachedCacheDir(memDir)
           : getProjectCacheDir(projectRoot);
         sess = { memDir, projectRoot, cacheDir };
-        uiCtx!.setStatus("memory-md", `☰ memory: starting…   `);
+        uiCtx!.setStatus("memory-md", `| memory: starting…`);
         daemonChild = spawnDaemon(memDir, cacheDir);
         poller = setInterval(updateFooter, 2000);
 

@@ -78,7 +78,7 @@ export default function (pi: ExtensionAPI) {
       const count = Number(row.count || 0);
       ui.setStatus(
         "agenda",
-        count > 0 ? `❆ ${count} in progress   ` : undefined,
+        count > 0 ? `| agenda: ${count} in progress` : undefined,
       );
     } finally {
       handle.db.close();
