@@ -9,36 +9,36 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { basename } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { getProjectTempDir } from "./_config/index.ts";
 
 const execFileAsync = promisify(execFile);
-const SANDBOX_DIR   = "/tmp/pi-sandbox";
 
 const SYSTEM_INSTRUCTION = `
 ## Programmatic Tool Calling (PTC)
 
-**\`ptc\` is the default tool.** Prefer creating scripts and executing them with \`ptc\` — including bash scripts for shell-heavy work — whenever the task would otherwise take multiple tool calls. Use standalone \`bash\` only for genuinely one-shot commands.
+**\`ptc\` is the default tool.** Prefer creating scripts and executing them with \`ptc\` — including bash scripts for shell-heavy work — whenever the task would otherwise take multiple tool calls. **Never use the standalone \`bash\` tool** — always go through \`ptc\`.
 Use \`read\` and \`edit\` only in the specific cases below.
 
 ### Decision tree
 
 1. **Two or more independent operations?** → \`parallel\` — fan them out in one call, all run concurrently
-   - Common slots are: \`read\`, \`bash\`, \`write\`, \`edit\`, and **\`ptc\`**
+   - Common slots are: \`read\`, \`write\`, \`edit\`, and **\`ptc\`**
    - \`parallel\` can also inline any supported extension tool by passing \`tool: "<name>"\` plus that tool's normal arguments
-   - Use a raw \`bash\` slot only when that specific command is genuinely one-shot; otherwise prefer a \`ptc\` script slot, including for bash scripts
+   - do NOT use raw \`bash\` slots
    - Slots must be independent: no slot may depend on another slot's output
    - Results are returned together — combine or process them after the call
-2. **Single operation?** → prefer \`ptc\`; use standalone \`bash\` only when the command is genuinely one-shot. Every \`ptc\` call must include a \`purpose\` field
+2. **Single operation?** → always use \`ptc\`. Every \`ptc\` call must include a \`purpose\` field
 3. **Exceptions — use the named tool directly:**
    - \`read\` — when you need raw file content in your context window *before deciding* what to do
    - \`edit\` — when two parallel slots write to the same file (\`edit\` uses a mutation queue to prevent races)
 
 ### \`parallel\` with \`ptc\` slots
 
-\`parallel\` can mix \`ptc\` scripts with reads, one-shot shell ops, and other supported extension tools in one fan-out call:
+\`parallel\` can mix \`ptc\` scripts with reads, edits, writes, and other supported extension tools in one fan-out call:
 
 \`\`\`
 parallel([
@@ -48,24 +48,26 @@ parallel([
 ])
 \`\`\`
 
-Use this to run multiple scripts and other independent operations all at once. Even for shell-heavy work, prefer a bash script through \`ptc\` unless the shell command is truly one-shot.
+Use this to run multiple scripts and other independent operations all at once. Always use \`ptc\` — never a raw \`bash\` slot.
 
-### Script type priority (inside \`ptc\`)
+### Script types
 
-1. **Python** (primary default) — for most scripting tasks, prefer uv-backed Python scripts using the uv shebang plus PEP 723 metadata because uv handles dependencies robustly and uses caching for very fast repeated runs
-2. **Bash** — use only when the task is clearly pure shell: shell operations, git, build commands, or multi-step shell logic
+1. **Python** (default) — executed via \`uv run\`. Include PEP 723 inline metadata for dependencies. No shebang needed.
+2. **Bash** — use only for clearly pure-shell tasks: git, build steps, shell pipelines.
 
-### Python scripts must start with the uv shebang
+### Python scripts
 
-Python \`ptc\` execution runs the saved script file directly so the kernel honors the shebang and \`uv run --script\` handles execution. Prefer uv-backed Python scripts because uv is robust at dependency management and its cache makes repeated runs very fast.
+Python scripts are executed via \`uv run\` — no shebang needed. Include PEP 723 inline metadata to declare dependencies:
 
 \`\`\`python
-#!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
 # dependencies = ["httpx>=0.27"]
 # ///
 \`\`\`
+
+uv handles dependencies robustly and its cache makes repeated runs very fast.
+Use \`tmux_run\` for long-running or interactive processes — \`ptc\` scripts are for short-lived tasks.
 
 ### code-map access from scripts
 
@@ -96,7 +98,11 @@ callers     = _code_map("impact",      {"name": "MyClass"},       "/abs/project/
 
 ### On failure
 
-Fix the script and call \`ptc\` again — do not fall back to individual tool calls.
+Fix the script and call \`ptc\` again — do not fall back to individual tool calls or the \`bash\` tool.
+
+### Script reuse
+
+Every \`ptc\` run prints the filename in the output header (e.g. \`ptc: my_script.py\`). Within the same session, omit \`script\` and pass only \`name\` to re-run an existing script without re-sending its content. If the script needs changes, provide \`script\` again to overwrite and re-run.
 `.trim();
 
 export default function (pi: ExtensionAPI) {
@@ -106,7 +112,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name:  "ptc",
     label: "Run Script",
-    description: `Default tool. Run a Python (preferably uv-backed via the uv shebang) or bash script in one call. Prefer Python + uv by default, and even for shell-heavy work prefer a bash script through ptc; use raw bash only when the command is genuinely one-shot.
+    description: `Default tool. Run a Python (uv) or bash script in one call. Prefer Python + uv by default; use bash only for clearly pure-shell tasks (git, build steps, pipelines). The standalone \`bash\` tool is prohibited — always use ptc.
 
 Every ptc call must include a \`name\` field — a short snake_case identifier used as the filename (e.g. \`parse_json\`, \`build_summary\`).
 
@@ -116,21 +122,18 @@ The purpose is shown in the UI when the tool runs.
 Use \`parallel\` for 2+ independent operations. Use individual tools directly only when:
 - read: raw file content is needed in context to reason before deciding
 - edit: parallel calls may touch the same file (mutation queue safety)
-- bash: the command is genuinely one-shot; otherwise write a script and run it with ptc
 Everything else: use ptc.
 
-Script type priority:
-1. Python (primary default) — Python scripts must start with \`#!/usr/bin/env -S uv run --script\` and include PEP 723 metadata; prefer them for data/files/APIs/logic because uv handles dependencies robustly and cached reruns are very fast
-2. Bash — use only for clearly pure-shell tasks such as shell operations, git, and build steps, and prefer a bash script through ptc unless the command is genuinely one-shot
+Script types:
+1. Python (default) — executed via \`uv run\`. Include PEP 723 inline metadata (\`# /// script\`) for dependencies. No shebang needed.
+2. Bash — use only for clearly pure-shell tasks: git, build steps, shell pipelines.
 
-Execution:
-- Prefer uv-backed Python scripts; they are executed directly by file path, so the kernel honors \`#!/usr/bin/env -S uv run --script\`
-- uv is preferred because it manages dependencies robustly and its cache makes repeated script runs very fast
-- Bash scripts are executed with bash
-- Prefer a bash script through ptc over raw bash when the shell work would otherwise require multiple calls
+Script reuse: omit \`script\` and pass only \`name\` to reuse a script written earlier this session. If the result is unexpected and changes are needed, provide \`script\` again to overwrite and re-run.
 
-On failure: fix the script and call ptc again — do not fall back to individual tool calls.`,
-    promptSnippet: "Default tool — runs Python or bash scripts. Prefer Python + uv by default, and even for shell-heavy work prefer a bash script through ptc. Use raw bash only when the command is genuinely one-shot. Uv-backed Python scripts execute directly by file path, require `#!/usr/bin/env -S uv run --script`, and benefit from robust dependency management plus fast cached reruns. Use `parallel` for 2+ independent operations, including `ptc` slots.",
+Use \`tmux_run\` for long-running or interactive processes — ptc scripts are for short-lived tasks.
+
+On failure: fix the script and call ptc again — do not fall back to individual tool calls or the \`bash\` tool.`,
+    promptSnippet: "Default tool — runs Python (uv) or bash scripts. Prefer Python + uv by default; use bash only for pure-shell tasks. The standalone `bash` tool is prohibited — always use ptc. Python scripts run via `uv run` with PEP 723 inline metadata — no shebang needed. Use `parallel` for 2+ independent operations, including `ptc` slots.",
     parameters: Type.Object({
       name: Type.String({
         description: "Short descriptive name for this script, used as the filename. Use snake_case, no extension.",
@@ -139,11 +142,11 @@ On failure: fix the script and call ptc again — do not fall back to individual
         description: "One-line description of what this script does. Shown in the UI when the tool runs.",
       }),
       type: StringEnum(["python", "bash"] as const, {
-        description: "Script type. Prefer python unless the task is clearly pure shell; prefer uv-backed Python scripts by default.",
+        description: "Script type. Default: python (run via uv). Use bash only for clearly pure-shell tasks.",
       }),
-      script: Type.String({
-        description: "Full script content. Python scripts must start with `#!/usr/bin/env -S uv run --script` and include PEP 723 metadata.",
-      }),
+      script: Type.Optional(Type.String({
+        description: "Full script content. If provided, writes (or overwrites) the file before running. Omit to reuse a script written earlier this session — pass only `name`.",
+      })),
       args: Type.Optional(Type.Array(Type.String(), {
         description: "Command-line arguments passed to the script.",
       })),
@@ -155,14 +158,19 @@ On failure: fix the script and call ptc again — do not fall back to individual
 
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const ptcDir = join(getProjectTempDir(ctx.cwd), "ptc");
+      mkdirSync(ptcDir, { recursive: true });
 
       const ext  = params.type === "python" ? "py" : "sh";
       const file = join(ptcDir, `${params.name}.${ext}`);
-      writeFileSync(file, params.script, { mode: 0o755 });
+      if (params.script) {
+        writeFileSync(file, params.script, { mode: 0o755 });
+      } else if (!existsSync(file)) {
+        throw new Error(`No script provided and no existing file found: ${file}`);
+      }
 
-      const cmd  = params.type === "python" ? file : "bash";
+      const cmd  = params.type === "python" ? "uv" : "bash";
       const args = params.type === "python"
-        ? [...(params.args ?? [])]
+        ? ["run", file, ...(params.args ?? [])]
         : [file, ...(params.args ?? [])];
 
       onUpdate?.({ content: [{ type: "text", text: "Running..." }], details: undefined });
