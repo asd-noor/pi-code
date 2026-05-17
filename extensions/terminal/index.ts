@@ -18,6 +18,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { rmSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { getConfig, isGitRepo, createLogger, getProjectTempDir } from "../_config/index.ts";
 import {
@@ -243,89 +244,6 @@ export default function (pi: ExtensionAPI): void {
       await openFocusModal(ctx, winName);
   }
 
-  // ── /terminal:previewer + /terminal:pager + /terminal:editor ───────────────
-
-  async function openFileWindow(
-    args: string | undefined,
-    ctx: any,
-    command: (file: string) => string,
-    autoClose: boolean,
-    usageName: string,
-    winName: string,
-  ): Promise<void> {
-    const file = typeof args === "string" && args.trim() ? args.trim() : undefined;
-    if (!file) {
-      ctx.ui.notify(`Usage: /${usageName} <file>`, "warning");      return;
-    }
-    const cwd = ctx.cwd ?? process.cwd();
-    let sess: string;
-    try {
-      sess = await ensureSession(cwd);
-    } catch (error) {
-      ctx.ui.notify(
-        `Could not start tmux session: ${error instanceof Error ? error.message : String(error)}`,
-        "warning",
-      );
-      return;
-    }
-    const target = windowTarget(sess, winName);
-    const exists = await windowExists(sess, winName);
-    if (!exists) {
-      const cmd = wrapCmd(command(file), autoClose);
-      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", cmd]);
-      knownWindows.add(winName);
-    }
-    state.focusWindow = winName;
-    await openFocusModal(ctx, winName);
-  }
-
-  pi.registerCommand("terminal:editor", {
-    description: "Open a file in the editor in a tmux window: /terminal:editor [file]",
-    handler: async (args, ctx) => {
-      const tmuxCfg = getConfig().terminal;
-      const cmdTpl = tmuxCfg?.editorCmd ?? "vim $FILE";
-      const cwd = ctx.cwd ?? process.cwd();
-      const file = args?.trim() || cwd;
-      const absoluteFile = file.startsWith("/") ? file : resolve(cwd, file);
-      const winName = `pi-code-editor-${absoluteFile.split("/").pop()?.replace(/[^A-Za-z0-9_-]/g, "-") ?? "file"}`;
-      let sess: string;
-      try {
-        sess = await ensureSession(cwd);
-      } catch (error) {
-        ctx.ui.notify(`Could not start tmux session: ${error instanceof Error ? error.message : String(error)}`, "warning");
-        return;
-      }
-      // Always kill existing window so the correct file is opened fresh.
-      if (await windowExists(sess, winName)) {
-        await tmux(["kill-window", "-t", windowTarget(sess, winName)]).catch(() => {});
-        knownWindows.delete(winName);
-      }
-      const cmd = wrapCmd(cmdTpl.replace(/\$FILE/g, shellQuote(absoluteFile)), true);
-      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", cmd]);
-      knownWindows.add(winName);
-      state.focusWindow = winName;
-      await openFocusModal(ctx, winName);
-    },
-  });
-
-  pi.registerCommand("terminal:previewer", {
-    description: "Render a file in a tmux window: /terminal:previewer <file>",
-    handler: (args, ctx) => {
-      const tmuxCfg = getConfig().terminal;
-      const cmdTpl = tmuxCfg?.previewerCmd ?? "mcat $FILE; read -n1 -s -r -p $'\\nPress any key to close...'";
-      return openFileWindow(args, ctx, (f) => cmdTpl.replace(/\$FILE/g, shellQuote(f)), false, "terminal:previewer", "pi-code-preview");
-    },
-  });
-
-  pi.registerCommand("terminal:pager", {
-    description: "Follow a file with less in a tmux window: /terminal:pager <file>",
-    handler: (args, ctx) => {
-      const tmuxCfg = getConfig().terminal;
-      const cmdTpl = tmuxCfg?.pagerCmd ?? "less -RS +F $FILE";
-      return openFileWindow(args, ctx, (f) => cmdTpl.replace(/\$FILE/g, shellQuote(f)), true, "terminal:pager", "pi-code-pager");
-    },
-  });
-
   // ── /app:<name> — user-configured app launcher ───────────────────────────────
 
   function registerAppCommands(): void {
@@ -367,6 +285,55 @@ export default function (pi: ExtensionAPI): void {
   }
 
   registerAppCommands();
+  registerLauncherCommands();
+
+  // ── /launcher:<name> — external fire-and-forget launcher ────────────────────
+
+  function registerLauncherCommands(): void {
+    const launchers = getConfig().terminal?.launch ?? {};
+    for (const [name, launcher] of Object.entries(launchers)) {
+      pi.registerCommand(`launch:${name}`, {
+        description: `Launch ${name} externally (fire and forget): ${launcher.cmd.join(" ")}`,
+        handler: async (args, ctx) => {
+          if (launcher.gitExclusive && !isGitRepo(ctx.cwd)) {
+            ctx.ui.notify(`${name} is only available inside a git repository.`, "warning");
+            return;
+          }
+          const cwd = ctx.cwd ?? process.cwd();
+          const argsStr = args?.trim() ?? "";
+          const resolvedCmd = launcher.cmd
+            .flatMap((token) => {
+              if (token === "$ARGS") return argsStr ? [argsStr] : [];
+              if (token === "$CWD") return [cwd];
+              return [token.replace(/\$ARGS/g, argsStr).replace(/\$CWD/g, cwd)];
+            });
+          const [bin, ...argv] = resolvedCmd;
+          const envOverrides: Record<string, string> = launcher.env ?? {};
+          debug(`launch:${name} cwd=${cwd} bin=${bin} argv=${JSON.stringify(argv)} env=${JSON.stringify(envOverrides)}`);
+          try {
+            const child = spawn(bin, argv, {
+              cwd,
+              detached: true,
+              stdio: "ignore",
+              env: { ...process.env, ...envOverrides },
+            });
+            child.on("error", (err) => {
+              debug(`launch:${name} spawn error: ${err.message}`);
+              ctx.ui.notify(`Failed to launch ${name}: ${err.message}`, "warning");
+            });
+            child.unref();
+            debug(`launch:${name} spawned pid=${child.pid}`);
+            ctx.ui.notify(`Launched ${name}: ${launcher.cmd.join(" ")}`, "info");
+          } catch (error) {
+            ctx.ui.notify(
+              `Failed to launch ${name}: ${error instanceof Error ? error.message : String(error)}`,
+              "warning",
+            );
+          }
+        },
+      });
+    }
+  }
 
   // ── Tool registrations ───────────────────────────────────────────────────────
 

@@ -52,12 +52,12 @@ Use this to run multiple scripts and other independent operations all at once. A
 
 ### Script types
 
-1. **Python** (default) — executed via \`uv run\`. Include PEP 723 inline metadata for dependencies. No shebang needed.
+1. **Python** (default) — executed via \`uv run --script\`. Include PEP 723 inline metadata for dependencies. No shebang needed.
 2. **Bash** — use only for clearly pure-shell tasks: git, build steps, shell pipelines.
 
 ### Python scripts
 
-Python scripts are executed via \`uv run\` — no shebang needed. Include PEP 723 inline metadata to declare dependencies:
+Python scripts are executed via \`uv run --script\` — no shebang needed. Include PEP 723 inline metadata to declare dependencies:
 
 \`\`\`python
 # /// script
@@ -125,7 +125,7 @@ Use \`parallel\` for 2+ independent operations. Use individual tools directly on
 Everything else: use ptc.
 
 Script types:
-1. Python (default) — executed via \`uv run\`. Include PEP 723 inline metadata (\`# /// script\`) for dependencies. No shebang needed.
+1. Python (default) — executed via \`uv run --script\`. Include PEP 723 inline metadata (\`# /// script\`) for dependencies. No shebang needed.
 2. Bash — use only for clearly pure-shell tasks: git, build steps, shell pipelines.
 
 Script reuse: omit \`script\` and pass only \`name\` to reuse a script written earlier this session. If the result is unexpected and changes are needed, provide \`script\` again to overwrite and re-run.
@@ -133,10 +133,10 @@ Script reuse: omit \`script\` and pass only \`name\` to reuse a script written e
 Use \`tmux_run\` for long-running or interactive processes — ptc scripts are for short-lived tasks.
 
 On failure: fix the script and call ptc again — do not fall back to individual tool calls or the \`bash\` tool.`,
-    promptSnippet: "Default tool — runs Python (uv) or bash scripts. Prefer Python + uv by default; use bash only for pure-shell tasks. The standalone `bash` tool is prohibited — always use ptc. Python scripts run via `uv run` with PEP 723 inline metadata — no shebang needed. Use `parallel` for 2+ independent operations, including `ptc` slots.",
+    promptSnippet: "Default tool — runs Python (uv) or bash scripts. Prefer Python + uv by default; use bash only for pure-shell tasks. The standalone `bash` tool is prohibited — always use ptc. Python scripts run via `uv run --script` with PEP 723 inline metadata — no shebang needed. Use `parallel` for 2+ independent operations, including `ptc` slots.",
     parameters: Type.Object({
       name: Type.String({
-        description: "Short descriptive name for this script, used as the filename. Use snake_case, no extension.",
+        description: "Short meaningful snake_case name for the script, e.g. `parse_config`, `fetch_users`. Used as the filename and for reuse. Do NOT use tool call IDs or generic names like `script` or `run`.",
       }),
       purpose: Type.String({
         description: "One-line description of what this script does. Shown in the UI when the tool runs.",
@@ -170,7 +170,7 @@ On failure: fix the script and call ptc again — do not fall back to individual
 
       const cmd  = params.type === "python" ? "uv" : "bash";
       const args = params.type === "python"
-        ? ["run", file, ...(params.args ?? [])]
+        ? ["run", "--script", file, ...(params.args ?? [])]
         : [file, ...(params.args ?? [])];
 
       onUpdate?.({ content: [{ type: "text", text: "Running..." }], details: undefined });
@@ -180,6 +180,7 @@ On failure: fix the script and call ptc again — do not fall back to individual
 
       try {
         const result = await execFileAsync(cmd, args, {
+          cwd: ctx.cwd,
           input: params.stdin,
           timeout: 120_000,
           signal,

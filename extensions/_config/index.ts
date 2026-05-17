@@ -257,6 +257,19 @@ export interface CodeMapConfig {
   fileLimit?: number;
 }
 
+export interface LauncherConfig {
+  /**
+   * Command to run externally (fire and forget), e.g. ["open", "-a", "Xcode"] or ["subl", "$ARGS"].
+   * `$ARGS` is replaced with arguments passed from the prompt (dropped if blank).
+   * `$CWD` is replaced with the current project directory.
+   */
+  cmd: string[];
+  /** Environment variables to set for the launched process. */
+  env?: Record<string, string>;
+  /** Only show this launcher when pi is opened inside a git repository. */
+  gitExclusive?: boolean;
+}
+
 export interface TerminalAppConfig {
   /** Command to run, e.g. ["lazygit"] or ["psql", "mydb"]. */
   cmd: string[];
@@ -276,6 +289,8 @@ export interface TerminalConfig {
   /** Windows to auto-start when pi opens. Key = window name, value = command array. */
   autostart?: Record<string, string[]>;
   apps?: Record<string, TerminalAppConfig>;
+  /** External launchers (fire and forget, no tmux). Key = name, value = config. */
+  launch?: Record<string, LauncherConfig>;
 }
 
 export interface PiCodeConfig {

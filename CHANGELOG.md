@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.0.0] - 2026-05-17
+
+### Added
+
+- **ptc**: Script reuse — `script` field is now optional. Omit it and pass only `name` to re-run a previously written script without resending content, saving output tokens. If changes are needed, provide `script` again to overwrite and re-run.
+- **ptc**: `tmux_run` guidance added — clarifies that `ptc` scripts are for short-lived tasks; long-running or interactive processes should use `tmux_run`.
+
+### Changed
+
+- **ptc**: Python scripts now executed via `uv run <file>` instead of direct file execution via shebang. No shebang required in scripts — only PEP 723 inline metadata (`# /// script`) needed for dependencies.
+- **ptc**: `bash` tool banned — all shell execution must go through `ptc` (Python via `uv run`, or bash scripts via `type: "bash"`). Raw `bash` tool and `bash` slots in `parallel` are prohibited.
+- **ptc**: Fixed missing `join` import and `getProjectTempDir` import (pre-existing errors).
+- **ptc**: Fixed missing `mkdirSync` call — script directory is now created before writing, preventing failures on first run per project.
+- **ptc**: Removed dead `SANDBOX_DIR` constant.
+- **terminal**: Split monolithic `index.ts` (1366 lines) into four focused modules: `instruction.ts`, `tmux.ts`, `tools.ts`, `index.ts`.
+- **terminal**: Subagent session pager windows now named `agent-type (agent-id)` instead of the generic `pi-code-pager`. Window name can be passed via `data.window` in the `terminal:open-pager` event.
+- **finder**: `ffgrep` and `fffind` are now hard bans on bash `find`/`grep`/`rg`/`ls` — system instruction and tool descriptions updated to prohibit bash alternatives entirely.
+- **ask-tool**: Removed `preview` question type — only `single` and `multi` remain. The side-by-side preview pane was not viable at typical TUI widths.
+- **ask-tool**: Fixed input/note overflow — long drafts now show a tail view (`…` + last N chars) so the cursor is always visible instead of truncating at the left edge.
+- **parallel**: Fixed `stdout`/`stderr` type error — coerced to string via `.toString()` before calling `.trim()`.
+
 ## [3.1.0] - 2026-05-16
 
 ### Added

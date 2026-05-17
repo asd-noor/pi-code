@@ -27,7 +27,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { exec, execFile, spawn } from "node:child_process";
@@ -44,6 +44,7 @@ import {
   toPositiveInt as agendaToPositiveInt,
   nowIso,
 } from "./agenda/db.ts";
+import { getProjectTempDir } from "./_config/index.ts";
 import { DISCOVERY_CATEGORIES, DISCOVERY_OUTCOMES } from "./agenda/types.ts";
 import { formatDiscovery, formatDiscoveryList } from "./agenda/format.ts";
 import { AGENDA_DISCOVERY_TOOL_NAMES } from "./agenda/tools.ts";
@@ -200,9 +201,10 @@ const EditCall = Type.Object({
 
 const PtcCall = Type.Object({
   tool:    Type.Literal("ptc"),
+  name:    Type.Optional(Type.String({ description: "Short meaningful snake_case name for the script, e.g. `parse_config`, `fetch_users`. Used as the filename and for reuse. Do NOT use tool call IDs or generic names like `script` or `run`." })),
   purpose: Type.String({ description: "One-line description of what this script does. Shown in the UI when the tool runs." }),
-  type:    StringEnum(["python", "bash"] as const, { description: "Script type. Prefer python unless the task is pure shell." }),
-  script:  Type.String({ description: "Full script content. Python scripts must start with `#!/usr/bin/env -S uv run --script` and include PEP 723 metadata." }),
+  type:    StringEnum(["python", "bash"] as const, { description: "Script type. Default: python (run via uv). Use bash only for clearly pure-shell tasks." }),
+  script:  Type.Optional(Type.String({ description: "Full script content. For Python: include PEP 723 inline metadata (`# /// script`) for dependencies — no shebang needed. Omit to reuse a script written earlier this session." })),
   args:    Type.Optional(Type.Array(Type.String(), { description: "Command-line arguments passed to the script." })),
   stdin:   Type.Optional(Type.String({ description: "Data to pipe to the script's stdin." })),
 });
@@ -275,19 +277,26 @@ function opEdit(path: string, edits: Array<{ oldText: string; newText: string }>
 // ── ptc implementation ───────────────────────────────────────────────────────
 
 async function opPtc(
-  call: { purpose: string; type: "python" | "bash"; script: string; args?: string[]; stdin?: string },
+  call: { name?: string; purpose: string; type: "python" | "bash"; script?: string; args?: string[]; stdin?: string },
   toolCallId: string,
   index: number,
   signal: AbortSignal | undefined,
+  cwd: string,
 ): Promise<string> {
-  mkdirSync(SANDBOX_DIR, { recursive: true });
+  const ptcDir = join(getProjectTempDir(cwd), "ptc");
+  mkdirSync(ptcDir, { recursive: true });
   const ext  = call.type === "python" ? "py" : "sh";
-  const file = `${SANDBOX_DIR}/${toolCallId.slice(0, 8)}-${index}.${ext}`;
-  writeFileSync(file, call.script, { mode: 0o755 });
+  const name = call.name ?? `${toolCallId.slice(0, 8)}-${index}`;
+  const file = join(ptcDir, `${name}.${ext}`);
+  if (call.script) {
+    writeFileSync(file, call.script, { mode: 0o755 });
+  } else if (!existsSync(file)) {
+    return `ptc: ${name}.${ext}\nPurpose: ${call.purpose}\nError: no script provided and no existing file found: ${file}`;
+  }
 
-  const cmd  = call.type === "python" ? file : "bash";
+  const cmd  = call.type === "python" ? "uv" : "bash";
   const args = call.type === "python"
-    ? [...(call.args ?? [])]
+    ? ["run", "--script", file, ...(call.args ?? [])]
     : [file, ...(call.args ?? [])];
 
   const scriptName = basename(file);
@@ -295,6 +304,7 @@ async function opPtc(
 
   try {
     const result = await execFileAsync(cmd, args, {
+      cwd,
       input:     call.stdin,
       timeout:   120_000,
       signal,
@@ -782,7 +792,7 @@ async function opExtension(
   const { tool: _name, ...params } = call;
 
   if (toolName === "ptc") {
-    return opPtc(params as any, toolCallId, index, signal);
+    return opPtc(params as any, toolCallId, index, signal, cwd);
   }
   if (CODE_MAP_TOOLS.has(toolName)) {
     return opCodeMap(toolName, params, cwd);
