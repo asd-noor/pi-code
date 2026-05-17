@@ -122,7 +122,7 @@ export default function (pi: ExtensionAPI): void {
     const cwd = state.storedCtx?.cwd ?? process.cwd();
     const pagerCmd = getConfig().terminal?.pagerCmd ?? "less -RS +F $FILE";
     const cmd = pagerCmd.replace(/\$FILE/g, shellQuote(data.file));
-    const winName = "pi-code-pager";
+    const winName = typeof data.window === "string" ? data.window : "pi-code-pager";
     try {
       const sess = await ensureSession(cwd);
       if (await windowExists(sess, winName)) {
