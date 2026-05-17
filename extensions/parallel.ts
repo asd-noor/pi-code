@@ -597,10 +597,10 @@ async function opScout(
       signal,
     } as any, (err, stdout, stderr) => {
       if (err) {
-        const detail = (stderr || "").trim() || (err.message ?? `exit ${(err as any).code}`);
+        const detail = (stderr?.toString() || "").trim() || (err.message ?? `exit ${(err as any).code}`);
         resolve(`${toolName} failed: ${detail}`);
       } else {
-        resolve((stdout || "").trim() || "(no output)");
+        resolve((stdout?.toString() || "").trim() || "(no output)");
       }
     });
     void proc;
