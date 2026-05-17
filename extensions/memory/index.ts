@@ -636,8 +636,8 @@ File-specific rules:
         }).catch((err) => ctx.ui.notify(`memory compact failed: ${(err as Error).message}`, "error"));
 
       } else if (sub === "browser") {
-        const editorCmd  = getConfig().memory?.browser?.editor || undefined;
-        const previewCmd = getConfig().memory?.browser?.viewer || undefined;
+        const editorCmd  = getConfig().memory?.browser?.editor;
+        const previewCmd = getConfig().memory?.browser?.viewer;
         const selection  = await openMemoryBrowserInteractive(ctx, memDir, editorCmd, previewCmd);
         if (selection) {
           const template = selection.action === "edit" ? editorCmd : previewCmd;
@@ -649,6 +649,13 @@ File-specific rules:
               ctx.ui.notify(`${selection.action}: ${cmd}`, "info");
             } catch (err) {
               ctx.ui.notify(`${selection.action}: ${(err as Error).message}`, "error");
+            }
+          } else {
+            // Default: use terminal extension events.
+            if (selection.action === "edit") {
+              pi.events.emit("terminal:open-editor", { file: selection.path });
+            } else {
+              pi.events.emit("terminal:open-pager", { file: selection.path });
             }
           }
         }

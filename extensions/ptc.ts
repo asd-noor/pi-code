@@ -155,7 +155,6 @@ On failure: fix the script and call ptc again — do not fall back to individual
 
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const ptcDir = join(getProjectTempDir(ctx.cwd), "ptc");
-      mkdirSync(ptcDir, { recursive: true });
 
       const ext  = params.type === "python" ? "py" : "sh";
       const file = join(ptcDir, `${params.name}.${ext}`);

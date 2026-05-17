@@ -105,10 +105,15 @@ export function getProjectHash(cwd?: string): string {
 }
 
 const PROJECT_TEMP_BASE = "/tmp/pi-code";
+const PROJECT_TEMP_SUBDIRS = ["logs", "subagents", "ptc", "fifo"];
 
-/** Returns /tmp/pi-code/<projectHash> — the per-project temp root. */
+/** Returns /tmp/pi-code/<projectHash> and ensures all subdirectories exist. */
 export function getProjectTempDir(cwd?: string): string {
-  return join(PROJECT_TEMP_BASE, getProjectHash(cwd));
+  const root = join(PROJECT_TEMP_BASE, getProjectHash(cwd));
+  for (const sub of PROJECT_TEMP_SUBDIRS) {
+    try { mkdirSync(join(root, sub), { recursive: true }); } catch {}
+  }
+  return root;
 }
 
 /**
@@ -229,8 +234,10 @@ export interface MemoryBrowserConfig {
 export interface MemoryConfig {
   /** Custom memory source directory. If set and non-empty, behaves like a detached cache (cache keyed by this path, not the project root). */
   customSrcDir?: string;
-  /** Whether memory is enabled. Default: true. When false, agents use MEMORY.md if it exists. */
+  /** Whether the memory engine is enabled globally. Default: true. When false, agents use MEMORY.md if it exists. */
   enabled?: boolean;
+  /** Activity log auto-logging config. */
+  activityLog?: MemoryActivityLogConfig;
   /** Per-subcommand model overrides. `default` applies unless a subcommand key is set. */
   subcommandModel?: MemorySubcommandModelConfig;
   /** Browser widget commands. */

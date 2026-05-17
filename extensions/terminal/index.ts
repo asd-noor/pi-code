@@ -190,7 +190,6 @@ async function resolveWindowTarget(sess: string, window?: string): Promise<strin
 async function createPaneStream(target: string, cwd: string): Promise<PaneStream> {
   try {
     const fifoDir = join(getProjectTempDir(cwd), "fifo");
-    mkdirSync(fifoDir, { recursive: true });
     const fifoPath = join(fifoDir, `pi-tmux-${process.pid}-${randomBytes(6).toString("hex")}.fifo`);
     await new Promise<void>((resolve, reject) => {
       execFile("mkfifo", [fifoPath], (err) => (err ? reject(err) : resolve()));
@@ -723,6 +722,49 @@ async function openFocusModal(ctx: ExtensionContext, window?: string): Promise<v
 
 // ── Extension factory ─────────────────────────────────────────────────────────
 
+// ── System instruction ───────────────────────────────────────────────────────
+
+const TERMINAL_INSTRUCTION = `
+## Terminal (tmux) Tools
+
+The terminal extension manages a dedicated tmux session (\`pi-tmux-<hash>\`) for long-running processes, background jobs, and async monitoring.
+
+### When to use
+- **\`tmux_run\`** — start long-running or interactive processes (dev servers, builds, watchers). Prefer over \`bash\` for anything that runs for more than a few seconds.
+- **\`tmux_capture\`** — read current output from a running window after \`tmux_run\`. Use instead of polling bash.
+- **\`tmux_send_keys\`** — send keystrokes to a running process (e.g. \`C-c\` to interrupt, \`q\` to quit, \`Enter\` to confirm a prompt).
+- **\`tmux_watch\`** — register an async regex watcher; get a follow-up turn triggered when output matches. Use for "wait until ready" patterns (server started, tests passed, build succeeded).
+- **\`tmux_unwatch\`** — cancel a watcher when no longer needed.
+
+### Patterns
+
+**Start a process and wait for it to be ready:**
+\`\`\`
+tmux_run({ command: "npm run dev", window: "server", wait_for: { regex: "Local:|ready", timeout_ms: 60000 } })
+\`\`\`
+
+**Start a process and monitor it in the background:**
+\`\`\`
+tmux_run({ command: "npm test -- --watch", window: "tests" })
+tmux_watch({ regex: "FAIL|ERROR", window: "tests" })  // get notified on failure
+\`\`\`
+
+**Read output from a running process:**
+\`\`\`
+tmux_capture({ window: "server", tail_lines: 30 })
+\`\`\`
+
+**Interrupt a stuck process:**
+\`\`\`
+tmux_send_keys({ keys: "C-c", window: "server" })
+\`\`\`
+
+### Guidelines
+- Each window is independent — use descriptive names (e.g. \`server\`, \`tests\`, \`build\`).
+- Windows persist until the process exits or pi shuts down.
+- Prefer \`tmux_run\` + \`tmux_watch\` over repeated polling with \`bash\`.
+`.trim();
+
 export default function (pi: ExtensionAPI): void {
 
   function updateFooter(): void {
@@ -733,16 +775,12 @@ export default function (pi: ExtensionAPI): void {
 
   // ── Session lifecycle ───────────────────────────────────────────────────────
 
-  pi.on("session_start", async (_event, ctx) => {
-    try { logger.truncate(); } catch {} // truncate on start
+  pi.on("session_start", async (event: any, ctx) => {
+    if (event?.subagentMode) return; // skip in subagent sessions
+    logger.truncate();
     logger = createLogger("terminal", ctx.cwd);
     logger.truncate();
     debug("session_start", ctx.cwd);
-    // Delete the project temp root to clean up any leftovers from a crash.
-    try {
-      const tempDir = getProjectTempDir(ctx.cwd ?? process.cwd());
-      rmSync(tempDir, { recursive: true, force: true });
-    } catch {}
     storedCtx = ctx;
     uiCtx = ctx.ui;
     sessionName = deriveSessionName(ctx.cwd ?? process.cwd());
@@ -776,6 +814,10 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("tool_execution_start", async (_event, ctx) => { uiCtx = ctx.ui; });
+
+  pi.on("before_agent_start", async (event) => {
+    return { systemPrompt: event.systemPrompt + "\n\n" + TERMINAL_INSTRUCTION };
+  });
   pi.on("agent_end", async (_event, ctx) => { uiCtx = ctx.ui; updateFooter(); });
 
   // Allow other extensions to request session creation.
@@ -817,6 +859,27 @@ export default function (pi: ExtensionAPI): void {
       if (storedCtx) await openFocusModal(storedCtx, winName);
     } catch (err) {
       storedCtx?.ui.notify(`terminal: could not open pager: ${err instanceof Error ? err.message : String(err)}`, "warning");
+    }
+  });
+
+  pi.events.on("terminal:open-editor", async (data: any) => {
+    if (typeof data?.file !== "string") return;
+    const cwd = storedCtx?.cwd ?? process.cwd();
+    const file = data.file.startsWith("/") ? data.file : resolve(cwd, data.file);
+    const editorCmd = getConfig().terminal?.editorCmd ?? "vim $FILE";
+    const cmd = editorCmd.replace(/\$FILE/g, shellQuote(file));
+    const winName = `pi-code-editor-${file.split("/").pop()?.replace(/[^A-Za-z0-9_-]/g, "-") ?? "file"}`;
+    try {
+      const sess = await ensureSession(cwd);
+      if (await windowExists(sess, winName)) {
+        await tmux(["kill-window", "-t", windowTarget(sess, winName)]).catch(() => {});
+        knownWindows.delete(winName);
+      }
+      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", wrapCmd(cmd, true)]);
+      knownWindows.add(winName);
+      if (storedCtx) await openFocusModal(storedCtx, winName);
+    } catch (err) {
+      storedCtx?.ui.notify(`terminal: could not open editor: ${err instanceof Error ? err.message : String(err)}`, "warning");
     }
   });
 

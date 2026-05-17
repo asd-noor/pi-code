@@ -79,7 +79,8 @@ export default function (pi: ExtensionAPI) {
 
   // ── Session events ───────────────────────────────────────────────────────────
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event: any, ctx) => {
+    if (event?.subagentMode) return; // skip in subagent sessions
     logger = createLogger("git-hunk", ctx.cwd);
     logger.truncate();
     debug("session_start", ctx.cwd);
