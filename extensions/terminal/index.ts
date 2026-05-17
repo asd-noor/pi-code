@@ -10,8 +10,8 @@
  * Tools: tmux_run, tmux_send_keys, tmux_capture,
  *        tmux_watch, tmux_unwatch
  *
- * Commands: /terminal:editor <file>, /terminal:previewer <file>, /terminal:pager <file>, /terminal:focus [window]
- * Shortcut:  ctrl+shift+f — toggle focus modal
+ * Commands: /terminal [window], /terminal:editor <file>, /terminal:previewer <file>, /terminal:pager <file>
+ * Commands: /terminal [window], /terminal:editor <file>, /terminal:previewer <file>, /terminal:pager <file>
  *
  * Future: tmux.apps config key for user-configurable tmux apps (not yet implemented).
  */
@@ -49,6 +49,7 @@ const CAPTURE_LINES = 200;
 // ── Module-level state ────────────────────────────────────────────────────────
 
 let storedCtx: ExtensionContext | undefined;
+let uiCtx: any;
 /** The managed tmux session name for the current project. */
 let sessionName: string | undefined;
 /** Whether the managed session has been created. */
@@ -199,9 +200,11 @@ async function createPaneStream(target: string): Promise<PaneStream> {
       void closePaneStream(target).catch(() => {});
     });
     stream.on("end", () => {
-      // Window was closed — remove from registry.
+      // Window was closed naturally — remove from registry and refresh footer.
       const winName = target.includes(":") ? target.split(":").slice(1).join(":") : target;
       knownWindows.delete(winName);
+      const count = knownWindows.size;
+      uiCtx?.setStatus("terminal", count > 0 ? `\u276f ${count}` : undefined);
       void closePaneStream(target).catch(() => {});
     });
     await tmux(["pipe-pane", "-O", "-t", target, `cat > ${shellQuote(fifoPath)}`]);
@@ -565,7 +568,7 @@ class TmuxFocusModal implements Component {
       return;
     }
     if (parseSgrMouse(data)) return;
-    if (matchesKey(data, Key.ctrlShift("f"))) {
+    if (matchesKey(data, Key.ctrl("q"))) {
       this.done();
       return;
     }
@@ -625,7 +628,7 @@ class TmuxFocusModal implements Component {
     }
 
     const hints = [
-      shortcut(" ctrl+shift+f ") + dim("close focus"),
+      shortcut(" ctrl+q ") + dim("close"),
       dim("scroll wheel scrolls output"),
       dim("input sent to tmux"),
     ].join(border(" · "));
@@ -654,6 +657,7 @@ class TmuxFocusModal implements Component {
 // ── Focus modal helper ────────────────────────────────────────────────────────
 
 async function openFocusModal(ctx: ExtensionContext, window?: string): Promise<void> {
+  uiCtx = ctx.ui;
   if (!ctx.hasUI) {
     ctx.ui.notify("Focus modal requires a UI session.", "warning");
     return;
@@ -701,6 +705,9 @@ async function openFocusModal(ctx: ExtensionContext, window?: string): Promise<v
   } finally {
     disableMouseReporting();
     focusModalOpen = false;
+    // Refresh footer after modal closes — uiCtx was set at openFocusModal entry.
+    const count = knownWindows.size;
+    uiCtx?.setStatus("terminal", count > 0 ? `\u276f ${count}` : undefined);
   }
 }
 
@@ -708,10 +715,17 @@ async function openFocusModal(ctx: ExtensionContext, window?: string): Promise<v
 
 export default function (pi: ExtensionAPI): void {
 
+  function updateFooter(): void {
+    if (!uiCtx) return;
+    const count = knownWindows.size;
+    uiCtx.setStatus("terminal", count > 0 ? `\u276f ${count}` : undefined);
+  }
+
   // ── Session lifecycle ───────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
     storedCtx = ctx;
+    uiCtx = ctx.ui;
     sessionName = deriveSessionName(ctx.cwd ?? process.cwd());
     sessionReady = false;
     // Pre-populate knownWindows if session already exists.
@@ -722,7 +736,28 @@ export default function (pi: ExtensionAPI): void {
     } catch {
       knownWindows.clear();
     }
+    updateFooter();
+
+    // Auto-start windows from config.
+    const autostart = getConfig().terminal?.autostart ?? {};
+    if (Object.keys(autostart).length > 0) {
+      const cwd = ctx.cwd ?? process.cwd();
+      const sess = await ensureSession(cwd).catch(() => undefined);
+      if (sess) {
+        for (const [winName, cmdArr] of Object.entries(autostart)) {
+          const safeName = winName.replace(/[^A-Za-z0-9_-]/g, "-");
+          if (await windowExists(sess, safeName)) continue;
+          const cmdStr = cmdArr.map(shellQuote).join(" ");
+          await tmux(["new-window", "-t", sess, "-n", safeName, "-c", cwd, "bash", "-lc", cmdStr]).catch(() => {});
+          knownWindows.add(safeName);
+        }
+        updateFooter();
+      }
+    }
   });
+
+  pi.on("tool_execution_start", async (_event, ctx) => { uiCtx = ctx.ui; });
+  pi.on("agent_end", async (_event, ctx) => { uiCtx = ctx.ui; updateFooter(); });
 
   pi.on("session_shutdown", async () => {
     // Cancel all watchers.
@@ -735,22 +770,15 @@ export default function (pi: ExtensionAPI): void {
       await closePaneStream(target).catch(() => {});
     }
     storedCtx = undefined;
+    uiCtx?.setStatus("terminal", undefined);
+    uiCtx = undefined;
     sessionReady = false;
-  });
-
-  // ── Shortcut: ctrl+shift+f ─────────────────────────────────────────────────
-
-  pi.registerShortcut(Key.ctrlShift("f"), {
-    description: "Toggle tmux focus modal",
-    handler: async (ctx) => {
-      await openFocusModal(ctx as unknown as ExtensionContext);
-    },
   });
 
   // ── /terminal:focus ────────────────────────────────────────────────────────────
 
-  pi.registerCommand("terminal:focus", {
-    description: "Open the tmux focus modal for a window: /terminal:focus [window]",
+  pi.registerCommand("terminal", {
+    description: "Open the tmux focus modal for a window: /terminal [window]",
     getArgumentCompletions: (prefix: string) => {
       if (knownWindows.size === 0) return [];
       const filtered = [...knownWindows].filter((w) => w.startsWith(prefix));

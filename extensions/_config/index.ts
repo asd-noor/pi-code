@@ -227,6 +227,8 @@ export interface TerminalConfig {
   pagerCmd?: string;
   /** Override the command for /terminal:editor. Default: "vim $FILE". */
   editorCmd?: string;
+  /** Windows to auto-start when pi opens. Key = window name, value = command array. */
+  autostart?: Record<string, string[]>;
   apps?: Record<string, TerminalAppConfig>;
 }
 
