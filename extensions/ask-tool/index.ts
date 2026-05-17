@@ -91,7 +91,7 @@ rhetorical, or there is exactly one small factual clarification.
 
 - One concrete decision per question. Short, outcome-oriented option labels.
 - Always include a non-empty \`value\`. No filler options.
-- `single`: one answer expected. `multi`: multiple can coexist.
+- \`single\`: one answer expected. \`multi\`: multiple can coexist.
 - Avoid defaulting mechanically; infer type from whether options are mutually exclusive or can coexist.
 - Use notes (N = question note, n = option note) to capture context before submitting.
 
