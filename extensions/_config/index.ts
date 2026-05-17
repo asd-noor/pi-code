@@ -280,12 +280,6 @@ export interface TerminalAppConfig {
 }
 
 export interface TerminalConfig {
-  /** Override the command for /terminal:previewer. Default: "mcat $FILE; read -n1...". */
-  previewerCmd?: string;
-  /** Override the command for /terminal:pager. Default: "less -RS +F $FILE". */
-  pagerCmd?: string;
-  /** Override the command for /terminal:editor. Default: "vim $FILE". */
-  editorCmd?: string;
   /** Windows to auto-start when pi opens. Key = window name, value = command array. */
   autostart?: Record<string, string[]>;
   apps?: Record<string, TerminalAppConfig>;
