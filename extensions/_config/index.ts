@@ -199,11 +199,23 @@ export interface CodeMapConfig {
   fileLimit?: number;
 }
 
+export interface TmuxAppConfig {
+  /** Command to run, e.g. ["lazygit"] or ["psql", "mydb"]. */
+  cmd: string[];
+  /** Kill the window when the command exits. Default: false. */
+  autodestroy?: boolean;
+}
+
+export interface TmuxConfig {
+  apps?: Record<string, TmuxAppConfig>;
+}
+
 export interface PiCodeConfig {
   codeMap?: CodeMapConfig;
   scout?: ScoutConfig;
   memory?: MemoryConfig;
   subagents?: SubagentsConfig;
+  tmux?: TmuxConfig;
   [key: string]: unknown;
 }
 

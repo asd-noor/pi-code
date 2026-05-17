@@ -10,7 +10,7 @@
  * Tools: tmux_run, tmux_send_keys, tmux_capture,
  *        tmux_watch, tmux_unwatch
  *
- * Commands: /tmux:preview <file>, /tmux:focus [window]
+ * Commands: /tmux:preview <file>, /tmux:logger <file>, /tmux:focus [window]
  * Shortcut:  ctrl+shift+f — toggle focus modal
  *
  * Future: tmux.apps config key for user-configurable tmux apps (not yet implemented).
@@ -33,7 +33,7 @@ import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createReadStream, promises as fsp } from "node:fs";
 import type { ReadStream } from "node:fs";
-import { getProjectHash } from "../_config/index.ts";
+import { getProjectHash, getConfig } from "../_config/index.ts";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -91,6 +91,16 @@ function tmux(args: string[]): Promise<string> {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+/**
+ * Wrap a shell command for tmux execution.
+ * - autoClose: kill window immediately when command exits
+ * - keep: pause for keypress then kill window
+ */
+function wrapCmd(cmd: string, autoClose = true): string {
+  if (autoClose) return `${cmd}; tmux kill-window -t "$TMUX_PANE"`;
+  return `${cmd}; read -n1 -s -r -p $'\nPress any key to close...'; tmux kill-window -t "$TMUX_PANE"`;
 }
 
 // ── Session management ────────────────────────────────────────────────────────
@@ -743,16 +753,11 @@ export default function (pi: ExtensionAPI): void {
       const target = windowTarget(sess, winName);
       const exists = await windowExists(sess, winName);
       if (!exists) {
-        await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd]);
+        const sent = wrapCmd(command, !opts.keep);
+        await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", sent]);
         knownWindows.add(winName);
       }
 
-      // For auto-close: append a kill-window after the command exits.
-      const sent = opts.keep
-        ? command
-        : `${command}; tmux kill-window -t "$TMUX_PANE"`;
-
-      await tmux(["send-keys", "-t", target, sent, "Enter"]);
       focusWindow = winName;
       ctx.ui.notify(`Sent to [${winName}]: ${command}`, "info");
       await openFocusModal(ctx, winName);
@@ -786,11 +791,8 @@ export default function (pi: ExtensionAPI): void {
     const target = windowTarget(sess, winName);
     const exists = await windowExists(sess, winName);
     if (!exists) {
-      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd]);
-      const cmd = autoClose
-        ? `${command(file)}; tmux kill-window -t "$TMUX_PANE"`
-        : command(file);
-      await tmux(["send-keys", "-t", target, cmd, "Enter"]);
+      const cmd = wrapCmd(command(file), autoClose);
+      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", cmd]);
       knownWindows.add(winName);
     }
     focusWindow = winName;
@@ -799,16 +801,52 @@ export default function (pi: ExtensionAPI): void {
 
   pi.registerCommand("tmux:preview", {
     description: "Render a file with mcat in a tmux window: /tmux:preview <file>",
-    handler: (args, ctx) => openFileWindow(args, ctx, (f) => `mcat ${shellQuote(f)}; read -n1 -s -r -p $'\nPress any key to close...'`, true, "tmux:preview", "pi-preview"),
+    handler: (args, ctx) => openFileWindow(args, ctx, (f) => `mcat ${shellQuote(f)}`, false, "tmux:preview", "pi-preview"),
   });
 
-  pi.registerCommand("tmux:tail", {
-    description: "Follow a file with less in a tmux window: /tmux:tail <file>",
-    handler: (args, ctx) => openFileWindow(args, ctx, (f) => `less -R +F ${shellQuote(f)}`, true, "tmux:tail", "pi-tail"),
+  pi.registerCommand("tmux:logger", {
+    description: "Follow a file with less in a tmux window: /tmux:logger <file>",
+    handler: (args, ctx) => openFileWindow(args, ctx, (f) => `less -R +F ${shellQuote(f)}`, true, "tmux:logger", "pi-logger"),
   });
 
+  // ── /app:<name> — user-configured app launcher ───────────────────────────────
 
-  // ── Tools ─────────────────────────────────────────────────────────────────
+  function registerAppCommands(): void {
+    const apps = getConfig().tmux?.apps ?? {};
+    for (const [name, app] of Object.entries(apps)) {
+      const winName = name.replace(/[^A-Za-z0-9_-]/g, "-");
+      const cmdStr = app.cmd.map(shellQuote).join(" ");
+      pi.registerCommand(`app:${name}`, {
+        description: `Open ${name} (${app.cmd.join(" ")}) in a tmux window`,
+        handler: async (args, ctx) => {
+          const cwd = ctx.cwd ?? process.cwd();
+          let sess: string;
+          try {
+            sess = await ensureSession(cwd);
+          } catch (error) {
+            ctx.ui.notify(
+              `Could not start tmux session: ${error instanceof Error ? error.message : String(error)}`,
+              "warning",
+            );
+            return;
+          }
+          const target = windowTarget(sess, winName);
+          const exists = await windowExists(sess, winName);
+          if (!exists) {
+            const sent = wrapCmd(cmdStr, app.autodestroy ?? true);
+            await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", sent]);
+            knownWindows.add(winName);
+          }
+          focusWindow = winName;
+          await openFocusModal(ctx, winName);
+        },
+      });
+    }
+  }
+
+  registerAppCommands();
+
+
 
   // 1. tmux_run
   pi.registerTool({
