@@ -4,13 +4,12 @@
  * Shared types used across validate, state, ui, and index modules.
  */
 
-export type AskQuestionType = "single" | "multi" | "preview";
+export type AskQuestionType = "single" | "multi";
 
 export interface AskOption {
   value: string;
   label: string;
   description?: string;
-  preview?: string;
 }
 
 /** Raw input as passed by the LLM (all fields are Optional in the schema). */
@@ -24,7 +23,6 @@ export interface AskQuestionInput {
     value?: string;
     label?: string;
     description?: string;
-    preview?: string;
   }>;
 }
 

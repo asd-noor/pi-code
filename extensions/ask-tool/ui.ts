@@ -169,13 +169,7 @@ export class AskController {
     }
     lines.push("");
 
-    const isPreviewWide = q.type === "preview" && width >= 90;
     const opts = getRenderableOptions(q);
-
-    if (isPreviewWide) {
-      this.renderPreviewWide(lines, q, opts, width);
-      return;
-    }
 
     for (const [i, opt] of opts.entries()) {
       this.renderOption(lines, q, opt, i, width);
@@ -230,51 +224,6 @@ export class AskController {
       } else if (state.optionNotes[q.id]?.[opt.value]) {
         lines.push(clamp(th("syntaxString", "     note: ") + th("muted", state.optionNotes[q.id][opt.value]), width));
       }
-    }
-  }
-
-  private renderPreviewWide(lines: string[], q: AskQuestion, opts: AskOption[], width: number): void {
-    const { state, theme } = this;
-    const leftW = Math.floor(width * 0.4);
-    const rightW = width - leftW - 3; // 3 for separator + 2 border chars
-
-    // Left: option list — each line padded to exactly leftW visible chars
-    const leftLines: string[] = [];
-    for (const [i, opt] of opts.entries()) {
-      const isActive = state.activeOptionIndex === i;
-      const selected = isOptionSelected(state, q.id, opt.value);
-      const pointer = isActive ? "❯ " : "  ";
-      const color = isActive ? "accent" : selected ? "success" : "text";
-      const clamped = clamp(theme.fg(color, `${pointer}${i + 1}. ${opt.label}`), leftW);
-      const pad = leftW - visibleWidth(clamped);
-      leftLines.push(clamped + repeat(" ", Math.max(0, pad)));
-    }
-
-    // Right: preview for active option
-    const activeOpt = opts[state.activeOptionIndex];
-    const preview = activeOpt?.preview ?? "";
-    const previewLines: string[] = [];
-    const innerW = rightW - 2; // space inside borders
-    previewLines.push(theme.fg("borderMuted", "┌" + repeat("─", innerW) + "┐"));
-    for (const pw of preview.split("\n")) {
-      const content = " " + pw;
-      const contentClamped = clamp(content, innerW);
-      const pad = innerW - visibleWidth(contentClamped);
-      previewLines.push(
-        theme.fg("borderMuted", "│") +
-        contentClamped + repeat(" ", Math.max(0, pad)) +
-        theme.fg("borderMuted", "│"),
-      );
-    }
-    previewLines.push(theme.fg("borderMuted", "└" + repeat("─", innerW) + "┘"));
-
-    const maxRows = Math.max(leftLines.length, previewLines.length);
-    const blankL = repeat(" ", leftW);
-    const blankR = repeat(" ", rightW);
-    for (let i = 0; i < maxRows; i++) {
-      const l = leftLines[i] ?? blankL;
-      const r = previewLines[i] ?? blankR;
-      lines.push(clamp(l + " " + r, width));
     }
   }
 

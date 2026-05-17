@@ -33,8 +33,8 @@ export function validateParams(
     const qn = qi + 1;
 
     // type
-    if (q.type !== undefined && q.type !== "single" && q.type !== "multi" && q.type !== "preview") {
-      issues.push({ path: `${qPath}.type`, message: `Question ${qn}: invalid type "${q.type}"; expected single, multi, or preview` });
+    if (q.type !== undefined && q.type !== "single" && q.type !== "multi") {
+      issues.push({ path: `${qPath}.type`, message: `Question ${qn}: invalid type "${q.type}"; expected single or multi` });
     }
 
     // id
@@ -86,17 +86,6 @@ export function validateParams(
       if (o.description !== undefined && !o.description.trim()) {
         issues.push({ path: `${oPath}.description`, message: `${prefix}: description must not be empty` });
       }
-
-      if (o.preview !== undefined && !o.preview.trim()) {
-        issues.push({ path: `${oPath}.preview`, message: `${prefix}: preview must not be empty` });
-      }
-
-      if (qType === "preview" && !o.preview?.trim()) {
-        issues.push({
-          path: `${oPath}.preview`,
-          message: `${prefix}: preview questions require preview text for every option`,
-        });
-      }
     }
   }
 
@@ -125,10 +114,9 @@ function normalizeOption(o: AskQuestionInput["options"][number]): AskOption {
     value: o.value!.trim(),
     label: o.label!.trim(),
     ...(o.description ? { description: o.description.trim() } : {}),
-    ...(o.preview ? { preview: o.preview.trim() } : {}),
   };
 }
 
 function normalizeType(t: string | undefined): AskQuestionType {
-  return t === "multi" || t === "preview" ? t : "single";
+  return t === "multi" ? t : "single";
 }

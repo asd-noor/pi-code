@@ -116,7 +116,7 @@ export function confirm(state: AskState): AskState {
     return advanceTab(state);
   }
 
-  // Single/preview: select and advance
+  // Single: select and advance
   const next = setSelection(state, q.id, [opt.value]);
   return advanceTab(next);
 }
