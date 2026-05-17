@@ -137,10 +137,29 @@ export async function ensureSession(cwd: string): Promise<string> {
   } catch {
     // Session does not exist — create it.
   }
-  await tmux(["new-session", "-d", "-s", state.sessionName, "-c", cwd]);
+  // Name the default window with a sentinel so callers can reliably kill it
+  // once a real window has been added (we cannot kill it here because killing
+  // the only window would destroy the entire session).
+  await tmux(["new-session", "-d", "-s", state.sessionName, "-n", SENTINEL_WINDOW, "-c", cwd]);
   state.sessionReady = true;
   state.onSessionReady?.(state.sessionName, cwd);
   return state.sessionName;
+}
+
+/** Name given to the throwaway default window that `new-session` always creates. */
+export const SENTINEL_WINDOW = "_pi_init";
+
+/**
+ * Kill the sentinel window if it still exists.
+ * Safe to call only after at least one other window has been created in the
+ * session, otherwise tmux would destroy the whole session.
+ */
+export async function killSentinelWindow(sess: string): Promise<void> {
+  try {
+    await tmux(["kill-window", "-t", `${sess}:${SENTINEL_WINDOW}`]);
+  } catch {
+    // Already gone — that's fine.
+  }
 }
 
 /** Kill the managed session. Called on session_shutdown. */

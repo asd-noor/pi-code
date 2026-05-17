@@ -7,11 +7,10 @@
  *   - Session auto-killed on session_shutdown
  *   - Works whether pi is inside tmux or not
  *
- * Tools: tmux_run, tmux_send_keys, tmux_capture,
+ * Tools: tmux_run, tmux_list, tmux_send_keys, tmux_capture,
  *        tmux_watch, tmux_unwatch
  *
- * Commands: /terminal [window], /terminal:editor <file>, /terminal:previewer <file>, /terminal:pager <file>
- * Commands: /terminal [window], /terminal:editor <file>, /terminal:previewer <file>, /terminal:pager <file>
+ * Commands: /terminal [window]
  *
  * Future: tmux.apps config key for user-configurable tmux apps (not yet implemented).
  */
@@ -19,7 +18,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { rmSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
 import { getConfig, isGitRepo, createLogger, getProjectTempDir } from "../_config/index.ts";
 import {
   state,
@@ -32,6 +30,7 @@ import {
   deriveSessionName,
   ensureSession,
   killSession,
+  killSentinelWindow,
   windowTarget,
   windowExists,
   closePaneStream,
@@ -84,6 +83,8 @@ export default function (pi: ExtensionAPI): void {
           await tmux(["new-window", "-t", sess, "-n", safeName, "-c", cwd, "bash", "-lc", cmdStr]).catch(() => {});
           knownWindows.add(safeName);
         }
+        // Remove the default shell window that `new-session` always creates.
+        await killSentinelWindow(sess);
         updateFooter();
       }
     }
@@ -115,48 +116,6 @@ export default function (pi: ExtensionAPI): void {
   });
   pi.events.on("terminal:window-removed", (data: any) => {
     if (typeof data?.window === "string") { knownWindows.delete(data.window); updateFooter(); }
-  });
-
-  // Open a file in the pager (used by subagents and other extensions).
-  pi.events.on("terminal:open-pager", async (data: any) => {
-    if (typeof data?.file !== "string") return;
-    const cwd = state.storedCtx?.cwd ?? process.cwd();
-    const pagerCmd = getConfig().terminal?.pagerCmd ?? "less -RS +F $FILE";
-    const cmd = pagerCmd.replace(/\$FILE/g, shellQuote(data.file));
-    const winName = typeof data.window === "string" ? data.window : "pi-code-pager";
-    try {
-      const sess = await ensureSession(cwd);
-      if (await windowExists(sess, winName)) {
-        await tmux(["kill-window", "-t", windowTarget(sess, winName)]).catch(() => {});
-        knownWindows.delete(winName);
-      }
-      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", wrapCmd(cmd, true)]);
-      knownWindows.add(winName);
-      if (state.storedCtx) await openFocusModal(state.storedCtx, winName);
-    } catch (err) {
-      state.storedCtx?.ui.notify(`terminal: could not open pager: ${err instanceof Error ? err.message : String(err)}`, "warning");
-    }
-  });
-
-  pi.events.on("terminal:open-editor", async (data: any) => {
-    if (typeof data?.file !== "string") return;
-    const cwd = state.storedCtx?.cwd ?? process.cwd();
-    const file = data.file.startsWith("/") ? data.file : resolve(cwd, data.file);
-    const editorCmd = getConfig().terminal?.editorCmd ?? "vim $FILE";
-    const cmd = editorCmd.replace(/\$FILE/g, shellQuote(file));
-    const winName = `pi-code-editor-${file.split("/").pop()?.replace(/[^A-Za-z0-9_-]/g, "-") ?? "file"}`;
-    try {
-      const sess = await ensureSession(cwd);
-      if (await windowExists(sess, winName)) {
-        await tmux(["kill-window", "-t", windowTarget(sess, winName)]).catch(() => {});
-        knownWindows.delete(winName);
-      }
-      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", wrapCmd(cmd, true)]);
-      knownWindows.add(winName);
-      if (state.storedCtx) await openFocusModal(state.storedCtx, winName);
-    } catch (err) {
-      state.storedCtx?.ui.notify(`terminal: could not open editor: ${err instanceof Error ? err.message : String(err)}`, "warning");
-    }
   });
 
   pi.on("session_shutdown", async () => {
@@ -237,6 +196,8 @@ export default function (pi: ExtensionAPI): void {
         const sent = wrapCmd(command, !opts.keep);
         await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", sent]);
         knownWindows.add(winName);
+        // Remove the default shell window that `new-session` always creates.
+        await killSentinelWindow(sess);
       }
 
       state.focusWindow = winName;
@@ -276,6 +237,7 @@ export default function (pi: ExtensionAPI): void {
             const sent = wrapCmd(cmdStr, app.autoClose ?? true);
             await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", sent]);
             knownWindows.add(winName);
+            await killSentinelWindow(sess);
           }
           state.focusWindow = winName;
           await openFocusModal(ctx, winName);

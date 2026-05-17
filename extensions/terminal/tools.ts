@@ -1,5 +1,5 @@
 /**
- * Tool registrations: tmux_run, tmux_send_keys, tmux_capture,
+ * Tool registrations: tmux_run, tmux_list, tmux_send_keys, tmux_capture,
  * tmux_watch, tmux_unwatch.
  *
  * Call `registerTools(pi)` from the extension factory.
@@ -22,6 +22,7 @@ import {
   subscribePaneOutput,
   DEFAULT_WAIT_TIMEOUT_MS,
   POLL_MS,
+  killSentinelWindow,
 } from "./tmux.ts";
 
 export function registerTools(pi: ExtensionAPI): void {
@@ -58,6 +59,7 @@ export function registerTools(pi: ExtensionAPI): void {
       if (!exists) {
         await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd]);
         knownWindows.add(winName);
+        await killSentinelWindow(sess);
       }
 
       // Build bash -lc wrapper that tracks exit status via pane option.
@@ -112,7 +114,56 @@ export function registerTools(pi: ExtensionAPI): void {
     },
   });
 
-  // 2. tmux_send_keys
+  // 2. tmux_list
+  pi.registerTool({
+    name: "tmux_list",
+    label: "Tmux List",
+    description:
+      "List all open windows in the managed tmux session. Returns window names, running command, and alive status.",
+    promptSnippet: "tmux_list: list open windows in the managed tmux session",
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+      const cwd = ctx.cwd ?? process.cwd();
+      const sess = await ensureSession(cwd);
+      let raw = "";
+      try {
+        raw = await tmux([
+          "list-windows",
+          "-t", sess,
+          "-F", "#{window_name}\t#{pane_current_command}\t#{window_active}",
+        ]);
+      } catch {
+        return {
+          content: [{ type: "text" as const, text: "No windows found (session may be empty)." }],
+          details: { windows: [] },
+        };
+      }
+      const windows = raw
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [name, command, active] = line.split("\t");
+          return { name: name ?? "", command: command ?? "", active: active === "1" };
+        });
+      const text = windows.length
+        ? windows.map((w) => `${w.name}  (${w.command})${w.active ? "  [active]" : ""}`).join("\n")
+        : "No windows open.";
+      return {
+        content: [{ type: "text" as const, text }],
+        details: { windows },
+      };
+    },
+    renderCall(_args, theme) {
+      return new Text(theme.fg("toolTitle", "tmux_list"), 0, 0);
+    },
+    renderResult(result, _options, theme) {
+      const d = result.details as { windows?: unknown[] } | undefined;
+      return new Text(theme.fg("success", `${d?.windows?.length ?? 0} window(s).`), 0, 0);
+    },
+  });
+
+  // 3. tmux_send_keys
   pi.registerTool({
     name: "tmux_send_keys",
     label: "Tmux Send Keys",
@@ -146,7 +197,7 @@ export function registerTools(pi: ExtensionAPI): void {
     },
   });
 
-  // 3. tmux_capture
+  // 4. tmux_capture
   pi.registerTool({
     name: "tmux_capture",
     label: "Tmux Capture",
@@ -188,7 +239,7 @@ export function registerTools(pi: ExtensionAPI): void {
     },
   });
 
-  // 4. tmux_watch
+  // 5. tmux_watch
   pi.registerTool({
     name: "tmux_watch",
     label: "Tmux Watch",
@@ -259,7 +310,7 @@ export function registerTools(pi: ExtensionAPI): void {
     },
   });
 
-  // 5. tmux_unwatch
+  // 6. tmux_unwatch
   pi.registerTool({
     name: "tmux_unwatch",
     label: "Tmux Unwatch",
