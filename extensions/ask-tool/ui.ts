@@ -42,6 +42,21 @@ function repeat(ch: string, n: number): string {
   return n > 0 ? ch.repeat(n) : "";
 }
 
+/**
+ * Returns a view of plain-text input that always shows the cursor (end of text).
+ * If the full string fits within `availW`, returns it as-is.
+ * Otherwise trims from the left and prepends "…" so the cursor remains visible.
+ */
+function inputTailView(draft: string, cursorMark: string, availW: number): string {
+  const full = draft + cursorMark;
+  if (visibleWidth(full) <= availW) return full;
+  const ellipsis = "\u2026";
+  const budget = availW - visibleWidth(ellipsis);
+  // draft is plain text (no ANSI), safe to char-slice
+  const tail = full.slice(-Math.max(0, budget));
+  return ellipsis + tail;
+}
+
 function isAnswered(state: AskState, questionId: string): boolean {
   const vals = state.answers[questionId] ?? [];
   return vals.length > 0 || !!(state.customSelected[questionId] && state.customText[questionId]);
@@ -145,7 +160,10 @@ export class AskController {
     // Question-level note
     const inQuestionNote = state.view === "note" && state.noteTarget?.questionId === q.id && !state.noteTarget.optionValue;
     if (inQuestionNote) {
-      lines.push(clamp(th("syntaxString", " Note: ") + theme.bg("selectedBg", " " + this.noteDraft + "|  "), width));
+      const notePrefix = th("syntaxString", " Note: ");
+      const notePrefixW = visibleWidth(" Note: ");
+      const noteBoxW = width - notePrefixW - 1; // 1 for leading space inside box
+      lines.push(clamp(notePrefix + theme.bg("selectedBg", " " + inputTailView(this.noteDraft, "|", noteBoxW - 1) + " "), width));
     } else if (state.questionNotes[q.id]) {
       lines.push(clamp(th("syntaxString", " Note: ") + th("muted", state.questionNotes[q.id]), width));
     }
@@ -191,7 +209,8 @@ export class AskController {
 
     // Input box when actively editing this question's custom option
     if (isCustom && state.view === "input" && state.editingQuestionId === q.id) {
-      const boxContent = this.inputDraft + "|";
+      const boxAvailW = width - 2; // 2 for leading "  "
+      const boxContent = inputTailView(this.inputDraft, "|", boxAvailW);
       lines.push(clamp(theme.bg("selectedBg", "  " + boxContent), width));
     } else if (isCustom && state.customText[q.id] && !state.customSelected[q.id]) {
       // Show saved text in muted if not selected
@@ -204,7 +223,10 @@ export class AskController {
     if (!isCustom) {
       const inOptNote = state.view === "note" && state.noteTarget?.questionId === q.id && state.noteTarget.optionValue === opt.value;
       if (inOptNote) {
-        lines.push(clamp(th("syntaxString", "     note: ") + theme.bg("selectedBg", " " + this.noteDraft + "|  "), width));
+        const optNotePrefix = th("syntaxString", "     note: ");
+        const optNotePrefixW = visibleWidth("     note: ");
+        const optNoteBoxW = width - optNotePrefixW - 1;
+        lines.push(clamp(optNotePrefix + theme.bg("selectedBg", " " + inputTailView(this.noteDraft, "|", optNoteBoxW - 1) + " "), width));
       } else if (state.optionNotes[q.id]?.[opt.value]) {
         lines.push(clamp(th("syntaxString", "     note: ") + th("muted", state.optionNotes[q.id][opt.value]), width));
       }
@@ -214,34 +236,43 @@ export class AskController {
   private renderPreviewWide(lines: string[], q: AskQuestion, opts: AskOption[], width: number): void {
     const { state, theme } = this;
     const leftW = Math.floor(width * 0.4);
-    const rightW = width - leftW - 3; // 3 for border chars
+    const rightW = width - leftW - 3; // 3 for separator + 2 border chars
 
-    // Left: option list
+    // Left: option list — each line padded to exactly leftW visible chars
     const leftLines: string[] = [];
     for (const [i, opt] of opts.entries()) {
       const isActive = state.activeOptionIndex === i;
       const selected = isOptionSelected(state, q.id, opt.value);
       const pointer = isActive ? "❯ " : "  ";
       const color = isActive ? "accent" : selected ? "success" : "text";
-      leftLines.push(clamp(theme.fg(color, `${pointer}${i + 1}. ${opt.label}`), leftW));
+      const clamped = clamp(theme.fg(color, `${pointer}${i + 1}. ${opt.label}`), leftW);
+      const pad = leftW - visibleWidth(clamped);
+      leftLines.push(clamped + repeat(" ", Math.max(0, pad)));
     }
 
     // Right: preview for active option
     const activeOpt = opts[state.activeOptionIndex];
     const preview = activeOpt?.preview ?? "";
     const previewLines: string[] = [];
-    previewLines.push(theme.fg("borderMuted", "┌" + repeat("─", rightW - 2) + "┐"));
-    const pWords = preview.split("\n");
-    for (const pw of pWords) {
-      previewLines.push(theme.fg("borderMuted", "│") + clamp(" " + pw, rightW - 2) + theme.fg("borderMuted", "│"));
+    const innerW = rightW - 2; // space inside borders
+    previewLines.push(theme.fg("borderMuted", "┌" + repeat("─", innerW) + "┐"));
+    for (const pw of preview.split("\n")) {
+      const content = " " + pw;
+      const contentClamped = clamp(content, innerW);
+      const pad = innerW - visibleWidth(contentClamped);
+      previewLines.push(
+        theme.fg("borderMuted", "│") +
+        contentClamped + repeat(" ", Math.max(0, pad)) +
+        theme.fg("borderMuted", "│"),
+      );
     }
-    previewLines.push(theme.fg("borderMuted", "└" + repeat("─", rightW - 2) + "┘"));
+    previewLines.push(theme.fg("borderMuted", "└" + repeat("─", innerW) + "┘"));
 
-    const maxLines = Math.max(leftLines.length, previewLines.length);
-    const blank = repeat(" ", leftW);
+    const maxRows = Math.max(leftLines.length, previewLines.length);
+    const blankL = repeat(" ", leftW);
     const blankR = repeat(" ", rightW);
-    for (let i = 0; i < maxLines; i++) {
-      const l = leftLines[i] ?? blank;
+    for (let i = 0; i < maxRows; i++) {
+      const l = leftLines[i] ?? blankL;
       const r = previewLines[i] ?? blankR;
       lines.push(clamp(l + " " + r, width));
     }
