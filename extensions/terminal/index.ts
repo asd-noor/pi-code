@@ -39,6 +39,22 @@ import {
 } from "./tmux.ts";
 import { registerTools } from "./tools.ts";
 import { TERMINAL_INSTRUCTION } from "./instruction.ts";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
+
+// Detect available pager: prefer ov (with word wrap), fallback to less
+async function detectPager(file: string): Promise<string> {
+  try {
+    await execAsync("which ov");
+    // ov available: use word wrap mode (-w)
+    return `ov -w ${shellQuote(file)}`;
+  } catch {
+    // ov not found, fallback to less
+    return `less -R +F ${shellQuote(file)}`;
+  }
+}
 
 export default function (pi: ExtensionAPI): void {
 
@@ -126,10 +142,12 @@ export default function (pi: ExtensionAPI): void {
     if (exists) {
       debug("terminal:open-pager window already exists — focusing", winName);
     } else {
-      // less flags: -R honour ANSI colour codes, +F follow (tail) mode.
-      const cmd = `less -R +F ${shellQuote(file)}`;
-      debug("terminal:open-pager spawning window", { winName, cmd });
-      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", cmd]);
+      // Detect available pager: prefer ov (modern pager with word wrap), fallback to less
+      // ov flags: -w = word wrap, --follow-mode for tail-like behavior
+      // less flags: -R = honour ANSI colour codes, +F = follow (tail) mode
+      const pagerCmd = await detectPager(file);
+      debug("terminal:open-pager spawning window", { winName, pagerCmd });
+      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", pagerCmd]);
       knownWindows.add(winName);
       await killSentinelWindow(sess);
       updateFooter();
