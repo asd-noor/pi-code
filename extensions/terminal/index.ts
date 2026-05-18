@@ -97,12 +97,122 @@ export default function (pi: ExtensionAPI): void {
   });
   pi.on("agent_end", async (_event, ctx) => { state.uiCtx = ctx.ui; updateFooter(); });
 
+  // Open a file in a pager (less -R) in a dedicated tmux window.
+  // Emitted by the subagents and memory extensions for "View session" / "View file".
+  pi.events.on("terminal:open-pager", async (data: any) => {
+    const file   = data?.file as string | undefined;
+    const window = (data?.window as string | undefined) ?? "pager";
+    if (!file) {
+      debug("terminal:open-pager ignored — no file provided", data);
+      return;
+    }
+    debug("terminal:open-pager", { file, window });
+    const cwd = state.storedCtx?.cwd ?? process.cwd();
+    let sess: string;
+    try {
+      sess = await ensureSession(cwd);
+    } catch (err) {
+      debug("terminal:open-pager ensureSession failed", err);
+      state.uiCtx?.notify(
+        `Could not open pager: ${err instanceof Error ? err.message : String(err)}`,
+        "warning",
+      );
+      return;
+    }
+    // Sanitise window name (tmux rejects most special chars).
+    const winName = window.replace(/[^A-Za-z0-9_.()-]/g, "-").slice(0, 48);
+    const exists  = await windowExists(sess, winName);
+    if (exists) {
+      debug("terminal:open-pager window already exists — focusing", winName);
+    } else {
+      // less flags: -R honour ANSI colour codes, +F follow (tail) mode.
+      const cmd = `less -R +F ${shellQuote(file)}`;
+      debug("terminal:open-pager spawning window", { winName, cmd });
+      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", cmd]);
+      knownWindows.add(winName);
+      await killSentinelWindow(sess);
+      updateFooter();
+      debug("terminal:open-pager window created", winName);
+    }
+    state.focusWindow = winName;
+    if (state.storedCtx) {
+      await openFocusModal(state.storedCtx, winName);
+    } else {
+      debug("terminal:open-pager no storedCtx — cannot open focus modal");
+    }
+  });
+
   // Allow other extensions to request session creation.
   pi.events.on("terminal:ensure-session", async (data: any) => {
     const cwd = data?.cwd ?? state.storedCtx?.cwd ?? process.cwd();
     debug("terminal:ensure-session requested", cwd);
     await ensureSession(cwd).catch(() => {});
   });
+
+  // Open a file in an editor (default: vim) in a dedicated tmux window.
+  // Emitted by the memory browser when no editor config is set.
+  pi.events.on("terminal:open-editor", async (data: any) => {
+    const file   = data?.file as string | undefined;
+    const window = (data?.window as string | undefined) ?? "editor";
+    if (!file) {
+      debug("terminal:open-editor ignored — no file provided", data);
+      return;
+    }
+    debug("terminal:open-editor", { file, window });
+    const editor = process.env["EDITOR"] ?? "vim";
+    const cmd    = `${editor} ${shellQuote(file)}`;
+    await openInWindow(window, cmd, data?.cwd, data?.env);
+  });
+
+  // Open a command in a named tmux window and show the focus modal.
+  // Emitted by the memory browser for non-external viewer/editor configs.
+  pi.events.on("terminal:open-window", async (data: any) => {
+    const cmdArr = data?.cmd as string[] | undefined;
+    const window = (data?.window as string | undefined) ?? "terminal";
+    if (!cmdArr?.length) {
+      debug("terminal:open-window ignored — no cmd provided", data);
+      return;
+    }
+    debug("terminal:open-window", { cmd: cmdArr, window });
+    const cmd = cmdArr.map(shellQuote).join(" ");
+    await openInWindow(window, cmd, data?.cwd, data?.env);
+  });
+
+  // Shared helper: create (or focus) a tmux window running `cmd`, then open the focus modal.
+  async function openInWindow(window: string, cmd: string, cwdOverride?: string, env?: Record<string, string>): Promise<void> {
+    const cwd     = cwdOverride ?? state.storedCtx?.cwd ?? process.cwd();
+    let   sess: string;
+    try {
+      sess = await ensureSession(cwd);
+    } catch (err) {
+      debug("openInWindow ensureSession failed", err);
+      state.uiCtx?.notify(
+        `Could not open window: ${err instanceof Error ? err.message : String(err)}`,
+        "warning",
+      );
+      return;
+    }
+    const winName = window.replace(/[^A-Za-z0-9_.()-]/g, "-").slice(0, 48);
+    const exists  = await windowExists(sess, winName);
+    if (exists) {
+      debug("openInWindow window already exists — focusing", winName);
+    } else {
+      debug("openInWindow spawning window", { winName, cmd });
+      const envEntries = env ? Object.entries(env).map(([k, v]) => `${k}=${shellQuote(v)}`).join(" ") : "";
+      const fullCmd    = envEntries ? `${envEntries} ${cmd}` : cmd;
+      await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", fullCmd]);
+      knownWindows.add(winName);
+      await killSentinelWindow(sess);
+      updateFooter();
+      debug("openInWindow window created", winName);
+    }
+    state.focusWindow = winName;
+    if (state.storedCtx) {
+      await openFocusModal(state.storedCtx, winName);
+    } else {
+      debug("openInWindow no storedCtx — cannot open focus modal");
+    }
+  }
 
   // Emit terminal:session-ready when the managed session is first created.
   state.onSessionReady = (sess, cwd) => {

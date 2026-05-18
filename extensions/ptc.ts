@@ -55,6 +55,15 @@ Use this to run multiple scripts and other independent operations all at once. A
 1. **Python** (default) — executed via \`uv run --script\`. Include PEP 723 inline metadata for dependencies. No shebang needed.
 2. **Bash** — use only for clearly pure-shell tasks: git, build steps, shell pipelines.
 
+In bash scripts prefer modern alternatives:
+
+| Prefer | Over | Why |
+|--------|------|-----|
+| \`fd\` | \`find\` | faster, friendlier syntax |
+| \`rg\` | \`grep\` | faster, respects .gitignore |
+| \`sd\` | \`sed\` | simpler regex, Unicode-safe |
+| \`gawk\` | \`awk\` | portable, full GNU feature set |
+
 ### Python scripts
 
 Python scripts are executed via \`uv run --script\` — no shebang needed. Include PEP 723 inline metadata to declare dependencies:

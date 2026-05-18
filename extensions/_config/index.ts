@@ -224,11 +224,27 @@ export interface SubagentsConfig {
   askSubagentTimeout?: number;
 }
 
+export interface MemoryBrowserToolConfig {
+  /**
+   * Command to run, e.g. ["code", "$FILE"] or ["less", "-R", "$FILE"].
+   * `$FILE` is replaced with the target file path.
+   * `$CWD`  is replaced with the current project directory.
+   */
+  cmd: string[];
+  /**
+   * If true, run externally (fire-and-forget, like `/launch:*`).
+   * Defaults to false — opens in a tmux window (like `/app:*`).
+   */
+  isExternal?: boolean;
+  /** Environment variables to inject into the process. */
+  env?: Record<string, string>;
+}
+
 export interface MemoryBrowserConfig {
-  /** Shell command to edit a file (e / enter). Use `$FILE` as placeholder, e.g. `"code $FILE"`. */
-  editor?: string;
-  /** Shell command to view a file (v). Use `$FILE` as placeholder, e.g. `"open -a Typora $FILE"`. */
-  viewer?: string;
+  /** Tool config for editing a file (e / enter). */
+  editor?: MemoryBrowserToolConfig;
+  /** Tool config for viewing a file (v). */
+  viewer?: MemoryBrowserToolConfig;
 }
 
 export interface MemoryConfig {

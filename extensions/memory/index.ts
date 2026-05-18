@@ -636,26 +636,52 @@ File-specific rules:
         }).catch((err) => ctx.ui.notify(`memory compact failed: ${(err as Error).message}`, "error"));
 
       } else if (sub === "browser") {
-        const editorCmd  = getConfig().memory?.browser?.editor;
-        const previewCmd = getConfig().memory?.browser?.viewer;
-        const selection  = await openMemoryBrowserInteractive(ctx, memDir, editorCmd, previewCmd);
+        const browserCfg = getConfig().memory?.browser;
+        const selection  = await openMemoryBrowserInteractive(ctx, memDir, undefined, undefined);
         if (selection) {
-          const template = selection.action === "edit" ? editorCmd : previewCmd;
-          if (template) {
-            const cmd = template.replace(/\$FILE/g, `"${selection.path.replace(/"/g, '\\"')}"`);
-            try {
-              const child = spawn(cmd, [], { shell: true, detached: true, stdio: "ignore" });
-              child.unref();
-              ctx.ui.notify(`${selection.action}: ${cmd}`, "info");
-            } catch (err) {
-              ctx.ui.notify(`${selection.action}: ${(err as Error).message}`, "error");
+          const toolCfg = selection.action === "edit" ? browserCfg?.editor : browserCfg?.viewer;
+          const cwd     = ctx.cwd ?? process.cwd();
+          if (toolCfg) {
+            const resolvedCmd = toolCfg.cmd.map((token) =>
+              token
+                .replace(/\$FILE/g, selection.path)
+                .replace(/\$CWD/g,  cwd),
+            );
+            if (toolCfg.isExternal) {
+              // Fire-and-forget — same pattern as /launch:*
+              const [bin, ...argv] = resolvedCmd;
+              try {
+                const child = spawn(bin!, argv, {
+                  cwd,
+                  detached: true,
+                  stdio:    "ignore",
+                  env:      { ...process.env, ...toolCfg.env },
+                });
+                child.unref();
+                ctx.ui.notify(`${selection.action}: ${resolvedCmd.join(" ")}`, "info");
+              } catch (err) {
+                ctx.ui.notify(`${selection.action} failed: ${(err as Error).message}`, "error");
+              }
+            } else {
+              // Open in a tmux window — same pattern as /app:*
+              pi.events.emit("terminal:open-window", {
+                cmd:    resolvedCmd,
+                window: `memory-${selection.action}`,
+                cwd,
+                env:    toolCfg.env,
+              });
             }
           } else {
-            // Default: use terminal extension events.
+            // No config — fall back to terminal extension defaults.
             if (selection.action === "edit") {
               pi.events.emit("terminal:open-editor", { file: selection.path });
             } else {
-              pi.events.emit("terminal:open-pager", { file: selection.path });
+              // Default viewer: mcat $FILE
+              pi.events.emit("terminal:open-window", {
+                cmd:    ["mcat", selection.path],
+                window: "memory-viewer",
+                cwd,
+              });
             }
           }
         }

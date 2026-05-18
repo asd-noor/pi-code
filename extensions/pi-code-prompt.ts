@@ -57,6 +57,15 @@ ${codeMapPreCallBullet}
 
 Use \`parallel\` when you have 2+ independent operations to fan out in one call. Common slots are \`read\`, \`bash\`, \`write\`, \`edit\`, and \`ptc\`; \`parallel\` can also inline any supported extension tool by passing \`tool: "<name>"\` plus that tool's normal arguments. For Python \`ptc\` scripts, prefer Python + uv by default and only choose bash when the task is clearly pure shell; require the shebang \`#!/usr/bin/env -S uv run --script\` at the top of Python scripts. Python \`ptc\` execution runs the saved script file directly so the shebang invokes \`uv run --script\`. Prefer uv because it is robust at dependency management and uses caching, which makes subsequent script runs very fast.
 
+In bash scripts prefer modern alternatives:
+
+| Prefer | Over | Why |
+|--------|------|-----|
+| \`fd\` | \`find\` | faster, friendlier syntax |
+| \`rg\` | \`grep\` | faster, respects .gitignore |
+| \`sd\` | \`sed\` | simpler regex, Unicode-safe |
+| \`gawk\` | \`awk\` | portable, full GNU feature set |
+
 Slots must be independent of each other (no slot depends on another's output). Results come back together, and you can combine or process them after the call. Prefer \`parallel\` over sequential calls whenever the independence condition holds.
 ${codeMapToolsSection}
 
