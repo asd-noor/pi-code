@@ -94,7 +94,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("agenda-browser", {
     description: "Open interactive agenda browser. Enter focuses the selected in-progress agenda in the widget.",
     handler: async (_args, ctx) => {
-      const selected = await openAgendaBrowserInteractive(ctx);
+      const selected = await openAgendaBrowserInteractive(pi, ctx);
       if (selected != null) focusedAgendaId = selected;
       refresh(ctx.cwd, ctx.ui);
     },

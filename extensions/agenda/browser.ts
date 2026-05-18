@@ -1,8 +1,11 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
-import { getTasks, openDb } from "./db.ts";
-import { formatTaskState } from "./format.ts";
+import { getTasks, openDb, getLatestEvaluation } from "./db.ts";
+import { formatTaskState, formatAgendaDetailed } from "./format.ts";
 import type { AgendaBrowserFilters, AgendaBrowserRow, AgendaRow, TaskRow } from "./types.ts";
+import { getExtensionTempDir } from "../_config/index.ts";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 let agendaBrowserFilters: AgendaBrowserFilters = {
   state: "all",
@@ -49,7 +52,7 @@ function queryAgendaBrowserRows(cwd: string, filters: AgendaBrowserFilters): Age
   }
 }
 
-export async function openAgendaBrowserInteractive(ctx: ExtensionContext): Promise<number | undefined> {
+export async function openAgendaBrowserInteractive(pi: ExtensionAPI, ctx: ExtensionContext): Promise<number | undefined> {
   if (!ctx.hasUI) {
     throw new Error("/agenda-browser requires interactive UI mode (not available in print/json mode)");
   }
@@ -133,11 +136,50 @@ export async function openAgendaBrowserInteractive(ctx: ExtensionContext): Promi
       reloadSelectedTasks(true);
     };
 
+    // ── open tmux preview ────────────────────────────────────────────────────
+    const openPreview = async (agendaId: number) => {
+      const handle = openDb(undefined, ctx.cwd);
+      try {
+        const agenda = handle.db
+          .prepare(
+            `SELECT id, title, description, acceptance_guard, state, revision, created_at, updated_at
+             FROM agendas WHERE id = ?`,
+          )
+          .get(agendaId) as AgendaRow | undefined;
+
+        if (!agenda) {
+          errorMessage = `Agenda #${agendaId} not found`;
+          refresh();
+          return;
+        }
+
+        const tasks = getTasks(handle.db, agendaId);
+        const evaluation = getLatestEvaluation(handle.db, agendaId);
+        const content = formatAgendaDetailed(agenda, tasks, evaluation);
+
+        // Write to temp file in extension temp dir (cleaned up on pi exit)
+        const tempDir = getExtensionTempDir("agenda", ctx.cwd);
+        const tempFile = join(tempDir, `preview-${agendaId}.txt`);
+        writeFileSync(tempFile, content + "\n\n[Press q to close]", "utf-8");
+
+        // Open in tmux pager using terminal extension event
+        pi.events.emit("terminal:open-pager", {
+          file: tempFile,
+          window: `agenda-${agendaId}`,
+        });
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : String(error);
+        refresh();
+      } finally {
+        handle.db.close();
+      }
+    };
+
     // ── build content lines ───────────────────────────────────────────────────
     const buildLines = () => {
       const lines: string[] = [];
 
-    lines.push(dim("↑/↓ j/k move · t tasks · s state · u unfinished · r refresh · enter focus · esc/q close"));
+    lines.push(dim("↑/↓ j/k move · t tasks · s state · u unfinished · r refresh · enter preview · esc/q close"));
 
       const stateTag = stateColor(filters.state)(`state=${filters.state}`);
       const unfinTag = filters.withUnfinishedTasks ? wrn("unfinished=yes") : dim("unfinished=no");
@@ -241,7 +283,16 @@ export async function openAgendaBrowserInteractive(ctx: ExtensionContext): Promi
       invalidate:  () => {},
       handleInput: (data: string) => {
         if (matchesKey(data, Key.escape) || data === "q" || data === "Q") { close(); return; }
-        if (matchesKey(data, Key.return)) { close(true); return; }
+        if (matchesKey(data, Key.return)) {
+          const current = rows[selected];
+          if (current) {
+            openPreview(current.agenda.id).catch((err) => {
+              errorMessage = err instanceof Error ? err.message : String(err);
+              refresh();
+            });
+          }
+          return;
+        }
         if (matchesKey(data, Key.down) || data === "j") {
           if (rows.length > 0) { selected = Math.min(rows.length - 1, selected + 1); reloadSelectedTasks(true); refresh(); }
           return;

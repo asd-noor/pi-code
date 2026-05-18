@@ -62,3 +62,70 @@ export function formatList(rows: AgendaRow[]): string {
   const lines = rows.map((row) => `${String(row.id).padEnd(3)} ${row.state.padEnd(13)} ${row.title}`);
   return [header, ...lines].join("\n");
 }
+
+export function formatAgendaDetailed(agenda: AgendaRow, tasks: TaskRow[], evaluation: EvaluationRow | null): string {
+  const lines: string[] = [];
+
+  // ANSI color codes
+  const cyan    = "\x1b[36m";
+  const yellow  = "\x1b[33m";
+  const green   = "\x1b[32m";
+  const red     = "\x1b[31m";
+  const gray    = "\x1b[90m";
+  const bold    = "\x1b[1m";
+  const reset   = "\x1b[0m";
+  const sep     = `${gray}---${reset}`;
+
+  // Header
+  lines.push(`${cyan}${bold}Agenda #${agenda.id}${reset} ${gray}[${agenda.state}]${reset}`);
+  lines.push("");
+
+  // Title
+  lines.push(`${bold}${agenda.title}${reset}`);
+  lines.push(sep);
+
+  // Description
+  lines.push(`${yellow}Description:${reset}`);
+  lines.push(agenda.description || "(none)");
+  lines.push(sep);
+
+  // Acceptance Guard
+  lines.push(`${yellow}Acceptance Guard:${reset}`);
+  lines.push(agenda.acceptance_guard);
+  lines.push(sep);
+
+  // Tasks
+  lines.push(`${yellow}Tasks (${tasks.length}):${reset}`);
+  if (tasks.length === 0) {
+    lines.push("(no tasks)");
+  } else {
+    for (const t of tasks) {
+      const stateIcon = formatTaskState(t.state);
+      lines.push(`${stateIcon} #${t.task_order}: ${t.note}`);
+    }
+  }
+  lines.push(sep);
+
+  // Latest Evaluation
+  lines.push(`${yellow}Latest Evaluation:${reset}`);
+  if (evaluation) {
+    const verdictColor = evaluation.verdict === "pass" ? green : red;
+    const verdictIcon = evaluation.verdict === "pass" ? "✓" : "✗";
+    lines.push(`Verdict: ${verdictColor}${evaluation.verdict.toUpperCase()} ${verdictIcon}${reset}`);
+    lines.push(`Revision: ${evaluation.revision}`);
+    lines.push(`Summary:`);
+    lines.push(`  ${evaluation.evaluation_summary}`);
+  } else {
+    lines.push("(none)");
+  }
+  lines.push(sep);
+
+  // Metadata
+  lines.push(`${yellow}Metadata:${reset}`);
+  lines.push(`Revision: ${agenda.revision}`);
+  lines.push(`Created:  ${agenda.created_at}`);
+  lines.push(`Updated:  ${agenda.updated_at}`);
+
+  return lines.join("\n");
+}
+

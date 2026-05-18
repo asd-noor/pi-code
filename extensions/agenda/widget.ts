@@ -3,6 +3,25 @@ import { truncateToWidth } from "@earendil-works/pi-tui";
 import { getTasks, openDb } from "./db.ts";
 import type { AgendaRow, TaskRow } from "./types.ts";
 
+function wrapText(text: string, maxWidth: number): string[] {
+  if (!text || maxWidth <= 0) return [""];
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    if (currentLine.length + word.length + 1 <= maxWidth) {
+      currentLine += (currentLine ? " " : "") + word;
+    } else {
+      if (currentLine) lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+
+  return lines.length > 0 ? lines : [""];
+}
+
 export function buildInProgressAgendaWidgetLines(agenda: AgendaRow, tasks: TaskRow[], theme: any, width: number): string[] {
   const b    = (s: string) => theme.fg("borderMuted", s);
   const ac   = (s: string) => theme.fg("accent", s);
@@ -17,39 +36,90 @@ export function buildInProgressAgendaWidgetLines(agenda: AgendaRow, tasks: TaskR
   const padRight = Math.max(0, width - label.length - 3);
   lines.push(truncateToWidth(b("── ") + ac(label) + b(" " + "─".repeat(padRight)), width));
 
+  // Title with multiline support
   const titlePrefix = `  ${dim("Title:")} `;
-  const maxTitle    = Math.max(10, width - 10);
-  const title       = agenda.title.length > maxTitle ? `${agenda.title.slice(0, maxTitle - 1)}…` : agenda.title;
-  lines.push(truncateToWidth(`${titlePrefix}${ac(theme.bold(title))}`, width));
+  const maxTitleWidth = Math.max(10, width - titlePrefix.length - 2);
+  const titleLines = wrapText(agenda.title, maxTitleWidth);
+  for (let i = 0; i < titleLines.length; i++) {
+    const line = titleLines[i]!;
+    if (i === 0) {
+      lines.push(truncateToWidth(`${titlePrefix}${ac(theme.bold(line))}`, width));
+    } else {
+      lines.push(truncateToWidth(`${" ".repeat(titlePrefix.length)}${ac(theme.bold(line))}`, width));
+    }
+  }
 
-  const maxGuard = Math.max(10, width - 10);
-  const guard    =
-    agenda.acceptance_guard.length > maxGuard
-      ? `${agenda.acceptance_guard.slice(0, maxGuard - 1)}…`
-      : agenda.acceptance_guard;
-  lines.push(truncateToWidth(`  ${dim("Guard:")} ${muted(guard)}`, width));
+  // Guard with multiline support (no truncation)
+  const guardPrefix = `  ${dim("Guard:")} `;
+  const maxGuardWidth = Math.max(10, width - guardPrefix.length - 2);
+  const guardLines = wrapText(agenda.acceptance_guard, maxGuardWidth);
+  for (let i = 0; i < guardLines.length; i++) {
+    const line = guardLines[i]!;
+    if (i === 0) {
+      lines.push(truncateToWidth(`${guardPrefix}${muted(line)}`, width));
+    } else {
+      lines.push(truncateToWidth(`${" ".repeat(guardPrefix.length)}${muted(line)}`, width));
+    }
+  }
 
-  for (const task of tasks) {
-    const maxTask = Math.max(10, width - 12);
-    const short   = task.note.length > maxTask ? `${task.note.slice(0, maxTask - 1)}…` : task.note;
+  // Scroll window: max 5 items centered on active task
+  const MAX_ITEMS = 5;
+  let activeTaskIdx = tasks.findIndex(t => t.state === "in_progress");
+  if (activeTaskIdx === -1) activeTaskIdx = 0;
+
+  let startIdx = 0;
+  let endIdx = tasks.length;
+
+  if (tasks.length > MAX_ITEMS) {
+    // Center on active task
+    startIdx = Math.max(0, activeTaskIdx - Math.floor(MAX_ITEMS / 2));
+    endIdx = Math.min(tasks.length, startIdx + MAX_ITEMS);
+    
+    // Adjust if we're near the end
+    if (endIdx - startIdx < MAX_ITEMS) {
+      startIdx = Math.max(0, endIdx - MAX_ITEMS);
+    }
+  }
+
+  const visibleTasks = tasks.slice(startIdx, endIdx);
+  
+  // Show scroll indicator if needed
+  if (startIdx > 0) {
+    lines.push(truncateToWidth(`      ${dim("↑ " + String(startIdx) + " more above")}`, width));
+  }
+
+  for (const task of visibleTasks) {
+    const maxTaskWidth = Math.max(10, width - 12);
 
     let icon: string;
-    let text: string;
+    let colorFn: (s: string) => string;
     switch (task.state) {
       case "completed":
         icon = ok("✓");
-        text = muted(short);
+        colorFn = muted;
         break;
       case "in_progress":
         icon = warn("→");
-        text = short;
+        colorFn = (s: string) => s;
         break;
       default:
         icon = dim("○");
-        text = dim(short);
+        colorFn = dim;
     }
 
-    lines.push(truncateToWidth(`      ${icon} ${dim(`[${task.task_order}]`)} ${text}`, width));
+    const noteLines = wrapText(task.note, maxTaskWidth);
+    for (let i = 0; i < noteLines.length; i++) {
+      const line = noteLines[i]!;
+      if (i === 0) {
+        lines.push(truncateToWidth(`      ${icon} ${dim(`[${task.task_order}]`)} ${colorFn(line)}`, width));
+      } else {
+        lines.push(truncateToWidth(`            ${colorFn(line)}`, width));
+      }
+    }
+  }
+
+  if (endIdx < tasks.length) {
+    lines.push(truncateToWidth(`      ${dim("↓ " + String(tasks.length - endIdx) + " more below")}`, width));
   }
 
   lines.push(truncateToWidth(b("─".repeat(Math.max(4, width))), width));
