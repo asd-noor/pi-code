@@ -162,15 +162,9 @@ export async function openAgendaBrowserInteractive(pi: ExtensionAPI, ctx: Extens
         const tempFile = join(tempDir, `preview-${agendaId}.txt`);
         writeFileSync(tempFile, content + "\n\n[Press q to close]", "utf-8");
 
-        // Close browser first, then emit event to open preview
-        // (can't open focus modal while already in a TUI)
-        done(undefined);
-        setImmediate(() => {
-          pi.events.emit("terminal:open-pager", {
-            file: tempFile,
-            window: `agenda-${agendaId}`,
-          });
-        });
+        // Close browser and signal to open preview
+        selectedAgendaId = -agendaId; // Negative ID signals preview request
+        done(selectedAgendaId);
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : String(error);
         refresh();

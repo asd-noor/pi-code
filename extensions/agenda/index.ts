@@ -5,6 +5,7 @@ import { openDb } from "./db.ts";
 import { AGENDA_INSTRUCTION } from "./instruction.ts";
 import { AGENDA_TOOL_NAMES, registerAgendaTools } from "./tools.ts";
 import { refreshAgendaWidget } from "./widget.ts";
+import { join } from "node:path";
 
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
@@ -95,7 +96,21 @@ export default function (pi: ExtensionAPI) {
     description: "Open interactive agenda browser. Enter focuses the selected in-progress agenda in the widget.",
     handler: async (_args, ctx) => {
       const selected = await openAgendaBrowserInteractive(pi, ctx);
-      if (selected != null) focusedAgendaId = selected;
+      if (selected != null) {
+        if (selected < 0) {
+          // Negative value signals preview request
+          const agendaId = Math.abs(selected);
+          const tempDir = getExtensionTempDir("agenda", ctx.cwd);
+          const tempFile = join(tempDir, `preview-${agendaId}.txt`);
+          pi.events.emit("terminal:open-pager", {
+            file: tempFile,
+            window: `agenda-${agendaId}`,
+          });
+        } else {
+          // Positive value means focus in widget
+          focusedAgendaId = selected;
+        }
+      }
       refresh(ctx.cwd, ctx.ui);
     },
   });
