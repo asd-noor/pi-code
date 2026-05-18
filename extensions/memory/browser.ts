@@ -69,8 +69,8 @@ function loadPreviewLines(path: string, max = 18): string[] {
 export async function openMemoryBrowserInteractive(
   ctx: ExtensionContext,
   memDir: string,
-  editorCommand: string | undefined,
-  previewCommand: string | undefined,
+  hasEditor: boolean,
+  hasViewer: boolean,
 ): Promise<MemoryBrowserSelection | undefined> {
   if (!ctx.hasUI) {
     throw new Error("/memory browser requires interactive UI mode (not available in print/json mode)");
@@ -117,11 +117,11 @@ export async function openMemoryBrowserInteractive(
 
       // Hint line — show which actions are available
       const hints: string[] = ["↑/↓ j/k move", "r refresh", "esc/q close"];
-      if (editorCommand)  hints.splice(1, 0, "e edit");
-      if (previewCommand) hints.splice(editorCommand ? 2 : 1, 0, "v preview");
+      if (hasEditor) hints.splice(1, 0, "e edit");
+      if (hasViewer) hints.splice(hasEditor ? 2 : 1, 0, "v preview");
       lines.push(dim(hints.join(" · ")));
 
-      if (!editorCommand && !previewCommand) {
+      if (!hasEditor && !hasViewer) {
         lines.push(wrn("  set memory.browser.editor / memory.browser.viewer in pi-code.json"));
       }
 
@@ -204,11 +204,11 @@ export async function openMemoryBrowserInteractive(
           return;
         }
         if (matchesKey(data, Key.return) || data === "e" || data === "E") {
-          if (editorCommand && files[selected]) done({ path: files[selected]!.path, action: "edit" });
+          if (hasEditor && files[selected]) done({ path: files[selected]!.path, action: "edit" });
           return;
         }
         if (data === "v" || data === "V") {
-          if (previewCommand && files[selected]) done({ path: files[selected]!.path, action: "preview" });
+          if (hasViewer && files[selected]) done({ path: files[selected]!.path, action: "preview" });
           return;
         }
         if (matchesKey(data, Key.down) || data === "j") {

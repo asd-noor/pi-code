@@ -637,7 +637,7 @@ File-specific rules:
 
       } else if (sub === "browser") {
         const browserCfg = getConfig().memory?.browser;
-        const selection  = await openMemoryBrowserInteractive(ctx, memDir, undefined, undefined);
+        const selection  = await openMemoryBrowserInteractive(ctx, memDir, !!browserCfg?.editor, !!browserCfg?.viewer);
         if (selection) {
           const toolCfg = selection.action === "edit" ? browserCfg?.editor : browserCfg?.viewer;
           const cwd     = ctx.cwd ?? process.cwd();
