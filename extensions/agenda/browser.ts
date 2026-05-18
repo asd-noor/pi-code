@@ -3,9 +3,11 @@ import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { getTasks, openDb, getLatestEvaluation } from "./db.ts";
 import { formatTaskState, formatAgendaDetailed } from "./format.ts";
 import type { AgendaBrowserFilters, AgendaBrowserRow, AgendaRow, TaskRow } from "./types.ts";
-import { getExtensionTempDir } from "../_config/index.ts";
+import { getExtensionTempDir, createLogger } from "../_config/index.ts";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+
+const debug = createLogger("agenda");
 
 let agendaBrowserFilters: AgendaBrowserFilters = {
   state: "all",
@@ -138,6 +140,7 @@ export async function openAgendaBrowserInteractive(pi: ExtensionAPI, ctx: Extens
 
     // ── open tmux preview ────────────────────────────────────────────────────
     const openPreview = async (agendaId: number) => {
+      debug("openPreview called for agenda", agendaId);
       const handle = openDb(undefined, ctx.cwd);
       try {
         const agenda = handle.db
@@ -149,10 +152,12 @@ export async function openAgendaBrowserInteractive(pi: ExtensionAPI, ctx: Extens
 
         if (!agenda) {
           errorMessage = `Agenda #${agendaId} not found`;
+          debug("openPreview: agenda not found", agendaId);
           refresh();
           return;
         }
 
+        debug("openPreview: fetching tasks and evaluation for agenda", agendaId);
         const tasks = getTasks(handle.db, agendaId);
         const evaluation = getLatestEvaluation(handle.db, agendaId);
         const content = formatAgendaDetailed(agenda, tasks, evaluation);
@@ -160,13 +165,16 @@ export async function openAgendaBrowserInteractive(pi: ExtensionAPI, ctx: Extens
         // Write to temp file in extension temp dir (cleaned up on pi exit)
         const tempDir = getExtensionTempDir("agenda", ctx.cwd);
         const tempFile = join(tempDir, `preview-${agendaId}.txt`);
+        debug("openPreview: writing preview to", tempFile);
         writeFileSync(tempFile, content + "\n\n[Press q to close]", "utf-8");
 
         // Close browser and signal to open preview
         selectedAgendaId = -agendaId; // Negative ID signals preview request
+        debug("openPreview: closing browser with signal", selectedAgendaId);
         done(selectedAgendaId);
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : String(error);
+        debug("openPreview: error", error);
         refresh();
       } finally {
         handle.db.close();

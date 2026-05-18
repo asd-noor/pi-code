@@ -1,11 +1,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getExtensionTempDir } from "../_config/index.ts";
+import { getExtensionTempDir, createLogger } from "../_config/index.ts";
 import { openAgendaBrowserInteractive } from "./browser.ts";
 import { openDb } from "./db.ts";
 import { AGENDA_INSTRUCTION } from "./instruction.ts";
 import { AGENDA_TOOL_NAMES, registerAgendaTools } from "./tools.ts";
 import { refreshAgendaWidget } from "./widget.ts";
 import { join } from "node:path";
+
+const debug = createLogger("agenda");
 
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
@@ -95,19 +97,23 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("agenda-browser", {
     description: "Open interactive agenda browser. Enter focuses the selected in-progress agenda in the widget.",
     handler: async (_args, ctx) => {
+      debug("agenda-browser command invoked");
       const selected = await openAgendaBrowserInteractive(pi, ctx);
+      debug("agenda-browser closed, selected:", selected);
       if (selected != null) {
         if (selected < 0) {
           // Negative value signals preview request
           const agendaId = Math.abs(selected);
           const tempDir = getExtensionTempDir("agenda", ctx.cwd);
           const tempFile = join(tempDir, `preview-${agendaId}.txt`);
+          debug("opening preview for agenda", agendaId, "file:", tempFile);
           pi.events.emit("terminal:open-pager", {
             file: tempFile,
             window: `agenda-${agendaId}`,
           });
         } else {
           // Positive value means focus in widget
+          debug("focusing agenda in widget:", selected);
           focusedAgendaId = selected;
         }
       }
