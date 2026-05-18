@@ -6,7 +6,7 @@
 import { connect } from "node:net";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { getProjectDir } from "./paths.ts";
+import { getDaemonSocketPath, getProjectTempDir } from "../_config/index.ts";
 
 const QUERY_TIMEOUT_MS = 90_000;
 
@@ -15,9 +15,8 @@ export class SocketClient {
   private statusPath: string;
 
   constructor(rootPath: string) {
-    const projectDir  = getProjectDir(rootPath);
-    this.sockPath     = join(projectDir, "codemap-daemon.sock");
-    this.statusPath   = join(projectDir, "codemap-daemon.status");
+    this.sockPath   = getDaemonSocketPath("code-map", rootPath);
+    this.statusPath = join(getProjectTempDir(rootPath), "code-map", "daemon.status");
   }
 
   readStatus(): string {

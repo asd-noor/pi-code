@@ -8,14 +8,14 @@
  * Cache:  ~/.pi/cache/pi-code-projects/<sha256[:16] of project root>/
  */
 
-import { existsSync, readFileSync, writeFileSync, openSync, closeSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, openSync, closeSync, rmSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getProjectDir, ensureDir, getLspDir, getTreeSitterDir } from "./paths.ts";
 import { registerTools } from "./tools.ts";
-import { getConfig } from "../_config/index.ts";
+import { getConfig, getDaemonSocketPath, getProjectTempDir, getExtensionTempDir, createLogger } from "../_config/index.ts";
 
 const EXTENSION_DIR  = dirname(fileURLToPath(import.meta.url));
 const DAEMON_SCRIPT  = join(EXTENSION_DIR, "daemon", "runner.ts");
@@ -27,15 +27,22 @@ function getFileLimit(): number {
   return typeof limit === "number" && limit > 0 ? limit : DEFAULT_FILE_LIMIT;
 }
 
+// ── Logger ────────────────────────────────────────────────────────────────────
+
+let debug: (...args: unknown[]) => void = () => {};
+
 // ── Daemon status ─────────────────────────────────────────────────────────────
 
-function readStatus(projectDir: string): string {
-  try { return readFileSync(join(projectDir, "codemap-daemon.status"), "utf-8").trim(); }
+function readStatus(rootPath: string): string {
+  try { 
+    const statusPath = join(getProjectTempDir(rootPath), "code-map", "daemon.status");
+    return readFileSync(statusPath, "utf-8").trim(); 
+  }
   catch { return "stopped"; }
 }
 
-function readLogTail(projectDir: string, lines = 50): string {
-  const logFile = join(projectDir, "codemap-daemon.log");
+function readLogTail(rootPath: string, lines = 50): string {
+  const logFile = join(getProjectTempDir(rootPath), "code-map", "logfile.log");
   if (!existsSync(logFile)) return "(no log file)";
   try {
     const content = readFileSync(logFile, "utf-8");
@@ -66,7 +73,6 @@ async function resolveProjectRoot(cwd: string, exec: ExtensionAPI["exec"]): Prom
 
 export default function (pi: ExtensionAPI) {
   let projectRoot:  string | undefined;
-  let projectDir:   string | undefined;
   let daemonChild:  ChildProcess | undefined;
   let poller:       ReturnType<typeof setInterval> | undefined;
   let uiCtx:        any;
@@ -113,14 +119,14 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
   }
 
   function startPolling(): void {
-    if (poller || !projectDir) return;
+    if (poller || !projectRoot) return;
     poller = setInterval(() => {
-      if (!projectDir) return;
+      if (!projectRoot) return;
       // If the status file claims ready but the socket is gone, the daemon
       // died unexpectedly (e.g. killed by an old session_shutdown racing with
       // this session's start).  Show "stopped" so the footer is accurate.
-      const raw    = readStatus(projectDir);
-      const sock   = join(projectDir, "codemap-daemon.sock");
+      const raw    = readStatus(projectRoot);
+      const sock   = getDaemonSocketPath("code-map", projectRoot);
       const status = (raw === "ready" || raw === "indexing" || raw === "starting")
         && !existsSync(sock) ? "stopped" : raw;
       setFooterStatus(status);
@@ -130,9 +136,12 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
   // ── Daemon spawn ──────────────────────────────────────────────────────────
 
   function spawnDaemon(root: string, fileLimit: number): ChildProcess {
-    const dir     = ensureDir(getProjectDir(root));
-    const logPath = join(dir, "codemap-daemon.log");
-    const logFd   = openSync(logPath, "a");
+    const cacheDir = ensureDir(getProjectDir(root));
+    const tempDir  = getProjectTempDir(root);
+    const extDir   = join(tempDir, "code-map");
+    mkdirSync(extDir, { recursive: true });
+    const logPath  = join(extDir, "logfile.log");
+    const logFd    = openSync(logPath, "a");
 
     const child = spawn(
       "node",
@@ -141,7 +150,7 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
     );
     closeSync(logFd);
     child.on("error", (err) => {
-      process.stderr.write(`[code-map] daemon spawn error: ${err.message}\n`);
+      debug(`daemon spawn error: ${err.message}`);
     });
     return child;
   }
@@ -154,8 +163,8 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
 
   /** Kill any orphaned daemon left by a previous process (reads PID file). */
   function killOrphan(): void {
-    if (!projectDir) return;
-    const pidPath = join(projectDir, "codemap-daemon.pid");
+    if (!projectRoot) return;
+    const pidPath = join(getProjectTempDir(projectRoot), "code-map", "daemon.pid");
     try {
       const pid = parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
       if (pid > 0) process.kill(pid, "SIGTERM");
@@ -165,13 +174,22 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
   // ── Events ────────────────────────────────────────────────────────────────
 
   pi.on("session_start", async (event: any, ctx) => {
+    getExtensionTempDir("code-map", ctx.cwd);
     uiCtx = ctx.ui;
+
+    // Initialize logger
+    const logger = createLogger("code-map", ctx.cwd);
+    logger.truncate();
+    debug = logger.log;
 
     // Resolve project root
     projectRoot = await resolveProjectRoot(ctx.cwd, pi.exec.bind(pi));
-    projectDir  = getProjectDir(projectRoot);
+    debug(`project root: ${projectRoot}`);
 
-    if (getConfig().codeMap?.enabled === false) return;
+    if (getConfig().codeMap?.enabled === false) {
+      debug("code-map disabled in config");
+      return;
+    }
 
     // ── Client-only guard (subagents only) ────────────────────────────────────
     // Subagent sessions connect to the running daemon; they must not spawn or
@@ -185,7 +203,8 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
     // permanently stuck with no daemon and no recovery path.
     if (event?.subagentMode) {
       ownsDaemon = false;
-      setFooterStatus(readStatus(projectDir));
+      debug("subagent mode: client-only");
+      setFooterStatus(readStatus(projectRoot));
       startPolling();
       return;
     }
@@ -193,11 +212,10 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
     // ── Primary session: manage daemon lifecycle ─────────────────────────────
     // Kill our own child (if any) and any orphaned daemon left by a crashed
     // previous process (PID file) before spawning a fresh one.
+    debug("primary session: managing daemon lifecycle");
     killDaemon();
     killOrphan();
     if (poller) { clearInterval(poller); poller = undefined; }
-
-    // Load config
 
     ownsDaemon = true;
 
@@ -206,9 +224,13 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
 
     // Reset the status file so the poller doesn't read a stale "ready" from the
     // previous session and stop prematurely before the new daemon is actually up.
-    try { writeFileSync(join(projectDir, "codemap-daemon.status"), "starting", "utf-8"); } catch {}
+    try { 
+      const statusPath = join(getProjectTempDir(projectRoot), "code-map", "daemon.status");
+      writeFileSync(statusPath, "starting", "utf-8"); 
+    } catch {}
 
     // Spawn daemon async (fire and forget — don't block session start)
+    debug(`spawning daemon with file limit ${getFileLimit()}`);
     daemonChild = spawnDaemon(projectRoot, getFileLimit());
 
     // Start polling status → footer
@@ -221,12 +243,15 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
   });
 
   pi.on("session_shutdown", async () => {
+    debug("session_shutdown");
     if (poller) { clearInterval(poller); poller = undefined; }
-    if (ownsDaemon) killDaemon(); // only the owning session tears down the daemon
+    if (ownsDaemon) {
+      debug("killing owned daemon");
+      killDaemon();
+    }
     ownsDaemon = false;
     clearFooterStatus();
     projectRoot = undefined;
-    projectDir  = undefined;
     uiCtx       = undefined;
   });
 
@@ -245,15 +270,15 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
       uiCtx = ctx.ui;
       const sub = (args ?? "").trim().toLowerCase();
 
-      if (!projectRoot || !projectDir) {
+      if (!projectRoot) {
         ctx.ui.notify("code-map: no active project", "warning");
         return;
       }
 
       if (sub === "status" || sub === "") {
-        const sockPath = join(projectDir, "codemap-daemon.sock");
+        const sockPath = getDaemonSocketPath("code-map", projectRoot);
         const alive    = existsSync(sockPath);
-        const status   = alive ? readStatus(projectDir) : "stopped (socket missing)";
+        const status   = alive ? readStatus(projectRoot) : "stopped (socket missing)";
         ctx.ui.notify(
           [
             `Status:     ${status}`,
@@ -273,7 +298,7 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
         startPolling();
 
       } else if (sub === "logs") {
-        const tail = readLogTail(projectDir);
+        const tail = readLogTail(projectRoot);
         ctx.ui.notify(tail, "info");
 
       } else {
@@ -298,17 +323,18 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
       const sub = (args ?? "").trim().toLowerCase();
       if (sub === "") {
         // ── Current project cache ─────────────────────────────────────────
-        if (!projectDir || !projectRoot) {
+        if (!projectRoot) {
           ctx.ui.notify("code-map: no active project", "warning");
           return;
         }
-        if (!existsSync(projectDir)) {
+        const projectCacheDir = getProjectDir(projectRoot);
+        if (!existsSync(projectCacheDir)) {
           ctx.ui.notify("code-map: project cache is already empty", "info");
           return;
         }
         const ok = await ctx.ui.confirm(
           "Clean project cache?",
-          `Delete ${projectDir}\n\nRemoves the index and daemon state for this project. The index will be rebuilt on next session start.`,
+          `Delete ${projectCacheDir}\n\nRemoves the index and daemon state for this project. The index will be rebuilt on next session start.`,
         );
         if (!ok) return;
         if (poller) { clearInterval(poller); poller = undefined; }
@@ -316,7 +342,7 @@ For other languages fall back to \`ptc\` with a tree-sitter or AST library.`,
         clearFooterStatus();
         let deleteError: unknown;
         try {
-          rmSync(projectDir, { recursive: true, force: true });
+          rmSync(projectCacheDir, { recursive: true, force: true });
         } catch (err) {
           deleteError = err;
           ctx.ui.notify(`code-map: cache deletion failed — ${err}`, "error");

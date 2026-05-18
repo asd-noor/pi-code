@@ -3,10 +3,13 @@
  * Layout: ~/.pi/cache/
  *   lsp/                            shared LSP binaries
  *   tree-sitter/                    shared tree-sitter grammar packages
- *   pi-code-projects/<sha256[:16]>/ per-project state (codemap-daemon.sock, …)
+ *   pi-code-projects/<sha256[:16]>/ per-project cache (code-map.db)
  *
  * Per-project directories are resolved via _config.getProjectCacheDir so that
  * all extensions share the same stable, collision-resistant path scheme.
+ *
+ * Daemon runtime files (socket, pid, status, log) now live in:
+ *   /tmp/pi-code/<projectHash>/code-map/
  */
 
 import { join } from "node:path";

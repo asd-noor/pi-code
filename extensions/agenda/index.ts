@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getExtensionTempDir } from "../_config/index.ts";
 import { openAgendaBrowserInteractive } from "./browser.ts";
 import { openDb } from "./db.ts";
 import { AGENDA_INSTRUCTION } from "./instruction.ts";
@@ -100,6 +101,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    getExtensionTempDir("agenda", ctx.cwd);
     if (!ctx.hasUI) return;
     isInteractive       = true;
     pollCwd = ctx.cwd;

@@ -17,7 +17,7 @@
  *   pi.events.on("pi-code:config", (cfg: PiCodeConfig) => { ... });
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
@@ -105,15 +105,30 @@ export function getProjectHash(cwd?: string): string {
 }
 
 const PROJECT_TEMP_BASE = "/tmp/pi-code";
-const PROJECT_TEMP_SUBDIRS = ["logs", "subagents", "ptc", "fifo"];
+const PROJECT_TEMP_SUBDIRS = ["subagents", "ptc", "terminal"];
 
-/** Returns /tmp/pi-code/<projectHash> and ensures all subdirectories exist. */
+/**
+ * Returns /tmp/pi-code/<projectHash> and ensures all subdirectories exist.
+ * 
+ * This temp directory is automatically cleaned up by the terminal extension
+ * on successful exit (quit), but preserved on crash for inspection.
+ */
 export function getProjectTempDir(cwd?: string): string {
   const root = join(PROJECT_TEMP_BASE, getProjectHash(cwd));
   for (const sub of PROJECT_TEMP_SUBDIRS) {
     try { mkdirSync(join(root, sub), { recursive: true }); } catch {}
   }
   return root;
+}
+
+/**
+ * Returns /tmp/pi-code/<projectHash>/<extName>/ and ensures it exists.
+ * Use this for extension-specific temp files (logs, sockets, etc.).
+ */
+export function getExtensionTempDir(extName: string, cwd?: string): string {
+  const dir = join(getProjectTempDir(cwd), extName);
+  try { mkdirSync(dir, { recursive: true }); } catch {}
+  return dir;
 }
 
 /**
@@ -139,27 +154,38 @@ export interface DebugLogger {
 
 /**
  * Create a debug logger for an extension.
- * Logs to /tmp/pi-code/<projectHash>/logs/<extName>.log.
+ * Logs to /tmp/pi-code/<projectHash>/<extName>/logfile.log.
  * Call truncate() on session_start to clear stale logs.
  */
 export function createLogger(extName: string, cwd?: string): DebugLogger {
-  const logDir = join(getProjectTempDir(cwd), "logs");
-  const logPath = join(logDir, `${extName}.log`);
+  const extDir = join(getProjectTempDir(cwd), extName);
+  const logPath = join(extDir, "logfile.log");
   return {
     path: logPath,
     truncate() {
       try {
-        mkdirSync(logDir, { recursive: true });
+        mkdirSync(extDir, { recursive: true });
         writeFileSync(logPath, "");
       } catch {}
     },
     log(...args: unknown[]) {
       try {
-        mkdirSync(logDir, { recursive: true });
+        mkdirSync(extDir, { recursive: true });
         appendFileSync(logPath, `[${new Date().toISOString()}] ${args.map(String).join(" ")}\n`);
       } catch {}
     },
   };
+}
+
+/**
+ * Return the daemon socket path for an extension.
+ * Path: /tmp/pi-code/<projectHash>/<extName>/daemon.sock.
+ * Ensures the extension directory exists.
+ */
+export function getDaemonSocketPath(extName: string, cwd?: string): string {
+  const extDir = join(getProjectTempDir(cwd), extName);
+  try { mkdirSync(extDir, { recursive: true }); } catch {}
+  return join(extDir, "daemon.sock");
 }
 
 export function getProjectCacheDir(projectRoot?: string): string {
@@ -445,10 +471,24 @@ export function setSubagentsSendToPrimary(
 // ── Extension factory ─────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI): void {
+  let currentCwd: string | undefined;
+
   // On every session start (including /reload and /new), refresh the cache and
   // broadcast it so other extensions can subscribe without a direct import.
   pi.on("session_start", async (_event, ctx) => {
+    currentCwd = ctx.cwd;
     reloadConfig(ctx.cwd);
     pi.events.emit("pi-code:config", _config);
+  });
+
+  // Clean up temp directory on successful exit (quit only, not reload/new).
+  // Preserves temp files for crash inspection and session transitions.
+  pi.on("session_shutdown", async (event) => {
+    if (event.reason === "quit" && currentCwd) {
+      try {
+        const tempDir = getProjectTempDir(currentCwd);
+        rmSync(tempDir, { recursive: true, force: true });
+      } catch {}
+    }
   });
 }

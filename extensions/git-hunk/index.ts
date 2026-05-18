@@ -9,7 +9,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { execFile } from "node:child_process";
-import { isGitRepo, createLogger } from "../_config/index.ts";
+import { isGitRepo, getExtensionTempDir, createLogger } from "../_config/index.ts";
 
 let logger = createLogger("git-hunk");
 function debug(...args: unknown[]): void { logger.log(...args); }
@@ -81,6 +81,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (event: any, ctx) => {
     if (event?.subagentMode) return; // skip in subagent sessions
+    getExtensionTempDir("git-hunk", ctx.cwd);
     logger = createLogger("git-hunk", ctx.cwd);
     logger.truncate();
     debug("session_start", ctx.cwd);

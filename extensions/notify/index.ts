@@ -11,6 +11,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getExtensionTempDir } from "../_config/index.ts";
 
 const CUSTOM_TYPE = "notify-state";
 const FOOTER_KEY  = "notify";
@@ -81,6 +82,7 @@ export default function (pi: ExtensionAPI) {
   // ── Session start: restore persisted state ───────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
+    getExtensionTempDir("notify", ctx.cwd);
     uiCtx   = ctx.ui;
     enabled = false;  // reset; restore below
 

@@ -21,7 +21,7 @@ export function formatAgenda(agenda: AgendaRow, tasks: TaskRow[], evaluation: Ev
   ];
 
   for (const t of tasks) {
-    lines.push(`    ${formatTaskState(t.state)} #${t.task_order}: ${t.note}`);
+    lines.push(`    ${formatTaskState(t.state)} #${t.task_order}: [NOTE: ${t.note}]`);
   }
 
   if (evaluation) {

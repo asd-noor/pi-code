@@ -25,7 +25,7 @@ import { resolveModel, modelLabel } from "./model-resolver.ts";
 import { getDefaultMaxTurns, setDefaultMaxTurns, getGraceTurns, setGraceTurns, ALL_BUILTIN_TOOL_NAMES, sessionManagerToAgentId } from "./agent-runner.ts";
 import { AgentWidget, formatMs } from "./widget.ts";
 import type { AgentConfig, AgentRecord, AgentActivity } from "./types.ts";
-import { getConfig as getPiCodeConfig, updateGlobalConfig, setSubagentsSharedManager, getSubagentsSharedManager, getSubagentsPendingAskPrimary, setSubagentsSendToPrimary, getSubagentsSendToPrimary, getProjectTempDir, } from "../_config/index.ts";
+import { getConfig as getPiCodeConfig, updateGlobalConfig, setSubagentsSharedManager, getSubagentsSharedManager, getSubagentsPendingAskPrimary, setSubagentsSendToPrimary, getSubagentsSendToPrimary, getProjectTempDir, getExtensionTempDir, } from "../_config/index.ts";
 
 // ---- Seed bundled agents --------------------------------------------------
 
@@ -158,7 +158,7 @@ function buildSubagentInstruction(): string {
     "- You may need to react to one worker's output before deciding what to spawn next.",
     "- Spawning one at a time keeps you in control of sequencing and lets you intercept issues early.",
     "",
-    "Note: `MultiSubagent` with `run_in_background: true` does return agent IDs, so `steer_subagent` technically works - but individual `Subagent` calls are the right mental model for workers you actively orchestrate.",
+    "[NOTE: `MultiSubagent` with `run_in_background: true` does return agent IDs, so `steer_subagent` technically works - but individual `Subagent` calls are the right mental model for workers you actively orchestrate.]",
     "",
     "### Available agents",
     "",
@@ -364,6 +364,7 @@ export default function (pi: ExtensionAPI) {
   // ---- Events ----------------------------------------------------------------
 
   pi.on("session_start", async (event, ctx) => {
+    getExtensionTempDir("subagents", ctx.cwd);
     currentCwd = resolveCwd(ctx, currentCwd);
     rebuildRegistry(currentCwd);
     if (event.reason === "new" || event.reason === "resume") {
@@ -504,7 +505,7 @@ Guidelines:
       const isolated        = agentConfig.isolated        ?? params.isolated         ?? false;
       const inheritContext  = agentConfig.inheritContext  ?? params.inherit_context   ?? false;
       const maxTurns        = params.max_turns ?? agentConfig.maxTurns ?? getDefaultMaxTurns();
-      const fallbackNote    = fellBack ? `Note: Unknown subagent type "${params.subagent_type}" - using worker.\n\n` : "";
+      const fallbackNote    = fellBack ? `[NOTE: Unknown subagent type "${params.subagent_type}" - using worker.]\n\n` : "";
 
       // Resume existing agent
       if (params.resume) {

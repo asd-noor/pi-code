@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { getProjectTempDir } from "./_config/index.ts";
+import { getProjectTempDir, getExtensionTempDir } from "./_config/index.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -213,6 +213,12 @@ On failure: fix the script and call ptc again — do not fall back to individual
         };
       }
     },
+  });
+
+  // ── Session lifecycle ────────────────────────────────────────────────────
+
+  pi.on("session_start", async (_event, ctx) => {
+    getExtensionTempDir("ptc", ctx.cwd);
   });
 
   // ── System prompt ─────────────────────────────────────────────────────────

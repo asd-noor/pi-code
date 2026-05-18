@@ -18,6 +18,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
+import { getExtensionTempDir } from "../_config/index.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
@@ -399,6 +400,10 @@ export default function (pi: ExtensionAPI) {
 - If the project already pins an older library version, flag it and ask before upgrading.
 - Prefer \`web_search\` (fast) over \`web_research\` (deep); only escalate when search results are insufficient.
 `.trim();
+
+  pi.on("session_start", async (_event, ctx) => {
+    getExtensionTempDir("scout", ctx.cwd);
+  });
 
   pi.on("before_agent_start", async (event) => ({
     systemPrompt: `${event.systemPrompt}\n\n${SCOUT_INSTRUCTION}`,

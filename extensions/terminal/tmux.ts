@@ -205,7 +205,7 @@ export async function resolveWindowTarget(sess: string, window?: string): Promis
 
 export async function createPaneStream(target: string, cwd: string): Promise<PaneStream> {
   try {
-    const fifoDir = join(getProjectTempDir(cwd), "fifo");
+    const fifoDir = join(getProjectTempDir(cwd), "terminal");
     const fifoPath = join(fifoDir, `pi-tmux-${process.pid}-${randomBytes(6).toString("hex")}.fifo`);
     await new Promise<void>((resolve, reject) => {
       execFile("mkfifo", [fifoPath], (err) => (err ? reject(err) : resolve()));

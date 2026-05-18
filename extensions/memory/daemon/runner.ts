@@ -2,7 +2,8 @@
  * Daemon entry point — spawned as a child process by the pi extension.
  *
  * argv[2]  <memDir>       absolute path to the memory directory (.pi/memory)
- * argv[3]  <projectRoot>  absolute project root
+ * argv[3]  <cacheDir>     absolute path to cache directory (for DB)
+ * argv[4]  <cwd>          current working directory (for temp paths)
  *
  * Startup sequence:
  *   1. Write pid + status files
@@ -28,18 +29,19 @@ import { isAppleSilicon, isUvAvailable, spawnSidecar, waitForSidecar } from "../
 
 const memDir   = process.argv[2];
 const cacheDir = process.argv[3];
+const cwd      = process.argv[4];
 
-if (!memDir || !cacheDir) {
-  process.stderr.write("usage: runner.ts <memDir> <cacheDir>\n");
+if (!memDir || !cacheDir || !cwd) {
+  process.stderr.write("usage: runner.ts <memDir> <cacheDir> <cwd>\n");
   process.exit(1);
 }
 
-const sockPath    = getSocketPath(cacheDir);
-const sidecarSock = getSidecarSocketPath(cacheDir);
+const sockPath    = getSocketPath(cwd);
+const sidecarSock = getSidecarSocketPath(cwd);
 const dbPath      = getDbPath(cacheDir);
-const logPath     = getLogPath(cacheDir);
-const pidPath     = getPidPath(cacheDir);
-const statusPath  = getStatusPath(cacheDir);
+const logPath     = getLogPath(cwd);
+const pidPath     = getPidPath(cwd);
+const statusPath  = getStatusPath(cwd);
 
 const embedScript = getEmbedScriptPath();
 

@@ -33,6 +33,7 @@ import { isTreeSitterInstalled, installTreeSitter, getTreeSitterDir } from "../t
 import { loadGrammars } from "../tree-sitter/loader.ts";
 import { TreeSitterParser } from "../tree-sitter/parser.ts";
 import { getProjectDir, ensureDir } from "../paths.ts";
+import { getDaemonSocketPath, getProjectTempDir } from "../../_config/index.ts";
 import { EXT_TO_LANG } from "./graph.ts";
 import { CodeMapDB } from "./db.ts";
 import { Indexer } from "./indexer.ts";
@@ -55,11 +56,13 @@ const fileLimit    = fileLimitArg ? parseInt(fileLimitArg.split("=")[1], 10) || 
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
-const projectDir = ensureDir(getProjectDir(rootPath));
-const pidFile    = join(projectDir, "codemap-daemon.pid");
-const sockFile   = join(projectDir, "codemap-daemon.sock");
-const statusFile = join(projectDir, "codemap-daemon.status");
-const dbPath     = join(projectDir, "codemap.db");
+const projectCacheDir = ensureDir(getProjectDir(rootPath)); // DB lives here
+const tempDir         = getProjectTempDir(rootPath);
+const extDir          = join(tempDir, "code-map");
+const pidFile         = join(extDir, "daemon.pid");
+const sockFile        = getDaemonSocketPath("code-map", rootPath);
+const statusFile      = join(extDir, "daemon.status");
+const dbPath          = join(projectCacheDir, "codemap.db");
 
 function log(msg: string) { process.stderr.write(`[code-map] ${msg}\n`); }
 

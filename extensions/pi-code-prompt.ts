@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getConfig } from "./_config/index.ts";
+import { getConfig, getExtensionTempDir } from "./_config/index.ts";
 
 function buildInstruction(codeMapEnabled: boolean, isSubagent = false): string {
   const clarifyBullet = isSubagent
@@ -122,6 +122,10 @@ Immediately after \`agenda_complete\` succeeds:
 }
 
 export default function (pi: ExtensionAPI) {
+  pi.on("session_start", async (_event, ctx) => {
+    getExtensionTempDir("pi-code-prompt", ctx.cwd);
+  });
+
   pi.on("before_agent_start", async (event) => {
     const sp = event.systemPrompt;
     const codeMapEnabled = getConfig().codeMap?.enabled !== false;

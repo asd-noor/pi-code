@@ -18,7 +18,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { rmSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { getConfig, isGitRepo, createLogger, getProjectTempDir } from "../_config/index.ts";
+import { getConfig, isGitRepo, createLogger, getProjectTempDir, getExtensionTempDir } from "../_config/index.ts";
 import {
   state,
   watchers,
@@ -52,6 +52,7 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("session_start", async (event: any, ctx) => {
     if (event?.subagentMode) return; // skip in subagent sessions
+    getExtensionTempDir("terminal", ctx.cwd);
     state.logger.truncate();
     state.logger = createLogger("terminal", ctx.cwd);
     state.logger.truncate();
@@ -238,11 +239,6 @@ export default function (pi: ExtensionAPI): void {
     for (const target of [...paneStreams.keys()]) {
       await closePaneStream(target).catch(() => {});
     }
-    // Delete the project temp root (logs, fifo, ptc scripts, subagent sessions).
-    try {
-      const tempDir = getProjectTempDir(state.storedCtx?.cwd);
-      rmSync(tempDir, { recursive: true, force: true });
-    } catch {}
     state.storedCtx = undefined;
     state.uiCtx?.setStatus("terminal", undefined);
     state.uiCtx = undefined;

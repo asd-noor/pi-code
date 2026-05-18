@@ -43,7 +43,7 @@ import {
   toPositiveInt as agendaToPositiveInt,
   nowIso,
 } from "./agenda/db.ts";
-import { getProjectTempDir } from "./_config/index.ts";
+import { getProjectTempDir, getExtensionTempDir } from "./_config/index.ts";
 import { DISCOVERY_CATEGORIES, DISCOVERY_OUTCOMES } from "./agenda/types.ts";
 import { formatDiscovery, formatDiscoveryList } from "./agenda/format.ts";
 import { AGENDA_DISCOVERY_TOOL_NAMES } from "./agenda/tools.ts";
@@ -777,6 +777,10 @@ export default function (pi: ExtensionAPI) {
         isError: errorCount === results.length,
       };
     },
+  });
+
+  pi.on("session_start", async (_event, ctx) => {
+    getExtensionTempDir("parallel", ctx.cwd);
   });
 
   pi.on("before_agent_start", async (event) => ({

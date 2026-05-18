@@ -7,6 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getExtensionTempDir } from "../_config/index.ts";
 import { Type } from "typebox";
 import { validateParams } from "./validate.ts";
 import { AskController } from "./ui.ts";
@@ -151,7 +152,7 @@ function summarizeResult(result: AskResult): string {
       const ans = result.answers[q.id];
       if (ans) {
         lines.push(`  ${q.label}: ${ans.labels.join(", ")}`);
-        if (ans.note) lines.push(`    note: ${ans.note}`);
+        if (ans.note) lines.push(`    [NOTE: ${ans.note}]`);
       } else {
         lines.push(`  ${q.label}: (unanswered)`);
       }
@@ -163,11 +164,11 @@ function summarizeResult(result: AskResult): string {
     const ans = result.answers[q.id];
     if (ans) {
       lines.push(`${q.label}: ${ans.labels.join(", ")}`);
-      if (ans.note) lines.push(`  note: ${ans.note}`);
+      if (ans.note) lines.push(`  [NOTE: ${ans.note}]`);
       if (ans.optionNotes) {
         for (const [val, note] of Object.entries(ans.optionNotes)) {
           const label = ans.labels[ans.values.indexOf(val)] ?? val;
-          lines.push(`  ${label} note: ${note}`);
+          lines.push(`  ${label} [NOTE: ${note}]`);
         }
       }
     }
@@ -271,6 +272,10 @@ export default function (pi: ExtensionAPI) {
         details: result,
       };
     },
+  });
+
+  pi.on("session_start", async (_event, ctx) => {
+    getExtensionTempDir("ask-tool", ctx.cwd);
   });
 
   pi.on("before_agent_start", async (event) => {

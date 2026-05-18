@@ -24,7 +24,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { registerTools } from "./tools.ts";
 import { getLogPath, getStatusPath, getSocketPath } from "./paths.ts";
-import { getProjectRoot, getConfig, getProjectCacheDir, getDetachedCacheDir } from "../_config/index.ts";
+import { getProjectRoot, getConfig, getProjectCacheDir, getDetachedCacheDir, getExtensionTempDir, getProjectTempDir } from "../_config/index.ts";
 import { openMemoryBrowserInteractive, type MemoryBrowserSelection } from "./browser.ts";
 
 // ── Activity log helpers ──────────────────────────────────────────────────────
@@ -199,6 +199,7 @@ interface Session {
   memDir:      string;
   projectRoot: string;
   cacheDir:    string;
+  cwd:         string;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -295,7 +296,7 @@ Some description.
 
   function readStatus(): string {
     if (!sess) return "stopped";
-    try { return readFileSync(getStatusPath(sess.cacheDir), "utf8").trim(); }
+    try { return readFileSync(getStatusPath(sess.cwd), "utf8").trim(); }
     catch { return "stopped"; }
   }
 
@@ -315,11 +316,13 @@ Some description.
 
   // ── Daemon lifecycle ──────────────────────────────────────────────────────
 
-  function spawnDaemon(dir: string, cd: string): ChildProcess {
-    const logFd = openSync(getLogPath(cd), "w");
+  function spawnDaemon(dir: string, cd: string, cwd: string): ChildProcess {
+    const extDir = join(getProjectTempDir(cwd), "memory");
+    mkdirSync(extDir, { recursive: true });
+    const logFd = openSync(getLogPath(cwd), "w");
     const child = spawn(
       process.execPath,
-      ["--import", JITI_REGISTER, RUNNER_SCRIPT, dir, cd],
+      ["--import", JITI_REGISTER, RUNNER_SCRIPT, dir, cd, cwd],
       {
         env:   process.env,
         stdio: ["ignore", logFd, logFd],
@@ -341,13 +344,14 @@ Some description.
   // ── Lifecycle events ──────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
+    getExtensionTempDir("memory", ctx.cwd);
     const projectRoot = getProjectRoot(ctx.cwd);
     const memDir      = resolveMemDir(ctx.cwd);
     mkdirSync(memDir, { recursive: true });
     const cacheDir    = getConfig().memory?.customSrcDir?.trim()
       ? getDetachedCacheDir(memDir)
       : getProjectCacheDir(projectRoot);
-    sess = { memDir, projectRoot, cacheDir };
+    sess = { memDir, projectRoot, cacheDir, cwd: ctx.cwd };
 
     if (!ctx.hasUI) return;
     isInteractive = true;
@@ -358,7 +362,7 @@ Some description.
 
     const short = memDir.replace(homedir(), "~");
     uiCtx!.setStatus("memory-md", `| memory: starting… (${short})`);
-    daemonChild = spawnDaemon(memDir, cacheDir);
+    daemonChild = spawnDaemon(memDir, cacheDir, ctx.cwd);
     poller = setInterval(updateFooter, 2000);
   });
 
@@ -498,7 +502,7 @@ Some description.
 
       if (sub === "status" || sub === "") {
         const status = readStatus();
-        const sockPath = getSocketPath(cacheDir);
+        const sockPath = getSocketPath(sess.cwd);
         ctx.ui.notify(
           [
             `Status:  ${status}`,
@@ -519,9 +523,9 @@ Some description.
         const cacheDir    = getConfig().memory?.customSrcDir?.trim()
           ? getDetachedCacheDir(memDir)
           : getProjectCacheDir(projectRoot);
-        sess = { memDir, projectRoot, cacheDir };
+        sess = { memDir, projectRoot, cacheDir, cwd: ctx.cwd };
         uiCtx!.setStatus("memory-md", `| memory: starting…`);
-        daemonChild = spawnDaemon(memDir, cacheDir);
+        daemonChild = spawnDaemon(memDir, cacheDir, ctx.cwd);
         poller = setInterval(updateFooter, 2000);
 
       } else if (sub === "snapshot") {

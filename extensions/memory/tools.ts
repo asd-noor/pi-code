@@ -6,7 +6,7 @@ export function registerTools(pi: ExtensionAPI, getCacheDir: () => string | unde
   function client(ctx: { cwd: string }): MemoryClient {
     const dir = getCacheDir();
     if (!dir) throw new Error("memory daemon is not initialised");
-    return new MemoryClient(dir);
+    return new MemoryClient(ctx.cwd);
   }
 
   pi.registerTool({
