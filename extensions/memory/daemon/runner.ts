@@ -63,15 +63,45 @@ async function shutdown(server: DaemonServer, watcher: FileWatcher, db: MemoryDB
   watcher.stop();
   writeFileSync(statusPath, "stopped", "utf8");
   await server.close();
-  if (sidecarChild) { try { sidecarChild.kill("SIGTERM"); } catch (_) {} }
+  
+  if (sidecarChild) {
+    const pid = sidecarChild.pid;
+    log(`sending SIGTERM to sidecar (pid ${pid})`);
+    try {
+      sidecarChild.kill("SIGTERM");
+      // Wait up to 1s for sidecar to exit
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          log(`sidecar did not exit, sending SIGKILL (pid ${pid})`);
+          try {
+            sidecarChild?.kill("SIGKILL");
+          } catch (err) {
+            log(`SIGKILL failed: ${err}`);
+          }
+          resolve();
+        }, 1000);
+        sidecarChild!.once("exit", (code, signal) => {
+          clearTimeout(timeout);
+          log(`sidecar exited (pid ${pid}, code ${code}, signal ${signal})`);
+          resolve();
+        });
+      });
+    } catch (err) {
+      log(`error killing sidecar: ${err}`);
+    }
+  }
+  
   db.close();
   try {
     const stored = parseInt(readFileSync(pidPath, "utf8").trim(), 10);
     if (stored === process.pid) {
-      try { unlinkSync(sockPath); } catch (_) {}
-      try { unlinkSync(pidPath); } catch (_) {}
+      try { unlinkSync(sockPath); } catch (err) { log(`error unlinking socket: ${err}`); }
+      try { unlinkSync(pidPath); } catch (err) { log(`error unlinking pid: ${err}`); }
     }
-  } catch (_) {}
+  } catch (err) {
+    log(`error reading pid file: ${err}`);
+  }
+  log("shutdown complete");
   process.exit(0);
 }
 
@@ -86,6 +116,11 @@ async function main(): Promise<void> {
     const logFd = openSync(logPath, "a");
     sidecarChild = spawnSidecar(embedScript, sidecarSock, logFd);
     sidecarChild.on("error", (err) => log(`sidecar spawn error: ${err.message}`));
+    sidecarChild.on("exit", (code, signal) => {
+      if (!shuttingDown) {
+        log(`sidecar exited unexpectedly (code ${code}, signal ${signal})`);
+      }
+    });
     void waitForSidecar(sidecarSock, 30_000).then((ready) => {
       log(ready ? "sidecar ready (vector search enabled)" : "sidecar timed out (FTS5-only mode)");
     });

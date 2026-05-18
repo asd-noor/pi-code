@@ -24,7 +24,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { registerTools } from "./tools.ts";
 import { getLogPath, getStatusPath, getSocketPath } from "./paths.ts";
-import { getProjectRoot, getConfig, getProjectCacheDir, getDetachedCacheDir, getExtensionTempDir, getProjectTempDir } from "../_config/index.ts";
+import { getProjectRoot, getConfig, getProjectCacheDir, getDetachedCacheDir, getExtensionTempDir, getProjectTempDir, createLogger } from "../_config/index.ts";
 import { openMemoryBrowserInteractive, type MemoryBrowserSelection } from "./browser.ts";
 
 // ── Activity log helpers ──────────────────────────────────────────────────────
@@ -208,6 +208,7 @@ export default function (pi: ExtensionAPI) {
   let poller:      ReturnType<typeof setInterval> | undefined;
   let uiCtx:       { setStatus: (key: string, label: string | undefined) => void; notify: (msg: string, level: string) => void } | undefined;
   let isInteractive = false;
+  let debug: ReturnType<typeof createLogger> | undefined;
 
   // Pass projectRoot to all tools (per the naming-fix note in the spec)
   registerTools(pi, () => sess?.cacheDir);
@@ -335,35 +336,75 @@ Some description.
     return child;
   }
 
-  function killDaemon(): void {
+  async function killDaemon(): Promise<void> {
     if (!daemonChild) return;
-    try { daemonChild.kill("SIGTERM"); } catch (_) {}
+    const child = daemonChild;
+    const pid = child.pid;
     daemonChild = undefined;
+    
+    debug?.log("killDaemon: sending SIGTERM to daemon", pid);
+    try {
+      child.kill("SIGTERM");
+      // Wait up to 2s for graceful shutdown
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          debug?.log("killDaemon: timeout reached, sending SIGKILL", pid);
+          try { 
+            child.kill("SIGKILL"); 
+          } catch (err) {
+            debug?.log("killDaemon: SIGKILL failed", err);
+          }
+          resolve();
+        }, 2000);
+        child.once("exit", (code, signal) => {
+          clearTimeout(timeout);
+          debug?.log("killDaemon: daemon exited", { pid, code, signal });
+          resolve();
+        });
+      });
+    } catch (err) {
+      debug?.log("killDaemon: error sending SIGTERM", err);
+    }
   }
 
   // ── Lifecycle events ──────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
-    getExtensionTempDir("memory", ctx.cwd);
-    const projectRoot = getProjectRoot(ctx.cwd);
-    const memDir      = resolveMemDir(ctx.cwd);
-    mkdirSync(memDir, { recursive: true });
-    const cacheDir    = getConfig().memory?.customSrcDir?.trim()
-      ? getDetachedCacheDir(memDir)
-      : getProjectCacheDir(projectRoot);
-    sess = { memDir, projectRoot, cacheDir, cwd: ctx.cwd };
+    try {
+      debug = createLogger("memory", ctx.cwd);
+      debug.truncate();
+      debug.log("session_start event fired");
+      
+      getExtensionTempDir("memory", ctx.cwd);
+      const projectRoot = getProjectRoot(ctx.cwd);
+      const memDir      = resolveMemDir(ctx.cwd);
+      mkdirSync(memDir, { recursive: true });
+      const cacheDir    = getConfig().memory?.customSrcDir?.trim()
+        ? getDetachedCacheDir(memDir)
+        : getProjectCacheDir(projectRoot);
+      sess = { memDir, projectRoot, cacheDir, cwd: ctx.cwd };
 
-    if (!ctx.hasUI) return;
-    isInteractive = true;
-    uiCtx = ctx.ui as typeof uiCtx;
+      if (!ctx.hasUI) {
+        debug.log("no UI, skipping daemon start");
+        return;
+      }
+      isInteractive = true;
+      uiCtx = ctx.ui as typeof uiCtx;
 
-    killDaemon();
-    if (poller) { clearInterval(poller); poller = undefined; }
+      debug.log("killing existing daemon");
+      await killDaemon();
+      if (poller) { clearInterval(poller); poller = undefined; }
 
-    const short = memDir.replace(homedir(), "~");
-    uiCtx!.setStatus("memory-md", `| memory: starting… (${short})`);
-    daemonChild = spawnDaemon(memDir, cacheDir, ctx.cwd);
-    poller = setInterval(updateFooter, 2000);
+      const short = memDir.replace(homedir(), "~");
+      uiCtx!.setStatus("memory-md", `| memory: starting… (${short})`);
+      debug.log("spawning daemon", { memDir, cacheDir, cwd: ctx.cwd });
+      daemonChild = spawnDaemon(memDir, cacheDir, ctx.cwd);
+      debug.log("daemon spawned", daemonChild.pid);
+      poller = setInterval(updateFooter, 2000);
+    } catch (err) {
+      console.error("[memory] session_start error:", err);
+      debug?.log("session_start error", err);
+    }
   });
 
   pi.on("tool_execution_start", async (_event, ctx) => {
@@ -463,10 +504,16 @@ Some description.
   });
 
   pi.on("session_shutdown", async () => {
-    if (!isInteractive) return;
+    debug?.log("session_shutdown event received");
+    if (!isInteractive) {
+      debug?.log("session_shutdown: not interactive, skipping");
+      return;
+    }
     isInteractive = false;
     if (poller) { clearInterval(poller); poller = undefined; }
-    killDaemon();
+    debug?.log("session_shutdown: calling killDaemon");
+    await killDaemon();
+    debug?.log("session_shutdown: killDaemon complete");
     uiCtx?.setStatus("memory-md", undefined);
     sess        = undefined;
     uiCtx       = undefined;
@@ -516,7 +563,7 @@ Some description.
       } else if (sub === "restart") {
         ctx.ui.notify("memory: restarting…", "info");
         if (poller) { clearInterval(poller); poller = undefined; }
-        killDaemon();
+        await killDaemon();
         const memDir      = resolveMemDir(ctx.cwd);
         const projectRoot = getProjectRoot(ctx.cwd);
         mkdirSync(memDir, { recursive: true });
