@@ -203,7 +203,7 @@ export async function openMemoryBrowserInteractive(
           done(undefined);
           return;
         }
-        if (matchesKey(data, Key.return) || data === "e" || data === "E") {
+        if (data === "e" || data === "E") {
           if (hasEditor && files[selected]) done({ path: files[selected]!.path, action: "edit" });
           return;
         }
