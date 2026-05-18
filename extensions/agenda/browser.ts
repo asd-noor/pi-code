@@ -7,7 +7,8 @@ import { getExtensionTempDir, createLogger } from "../_config/index.ts";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const debug = createLogger("agenda");
+let logger = createLogger("agenda");
+function debug(...args: unknown[]): void { logger.log(...args); }
 
 let agendaBrowserFilters: AgendaBrowserFilters = {
   state: "all",

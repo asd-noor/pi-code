@@ -2,6 +2,19 @@
 
 This document contains important patterns and practices to follow when building features for pi-code.
 
+## ⚠️ CRITICAL RULE: Mandatory Code Review
+
+**NEVER commit code without review.**
+
+After making ANY code changes:
+1. Stage all changes: `git add <files>`
+2. Either:
+   - Ask human: "Staged X files. Ready for review."
+   - OR spawn Reviewer subagent with detailed context (see Code Review Process below)
+3. Wait for approval before committing
+
+No exceptions. Even "trivial" changes must be reviewed.
+
 ## Logging
 
 **Always add debug logging when implementing new features or complex logic.**
@@ -90,6 +103,76 @@ Before committing:
 - [ ] Verified no TypeScript errors
 - [ ] Checked logs make sense when reading them
 - [ ] Verified cleanup happens on session end
+
+## Code Review Process
+
+**After making any code changes (this is mandatory, not optional):**
+
+1. **Stage all changes immediately:**
+   ```bash
+   git add <modified-files>
+   ```
+
+2. **Stop. Do not commit yet. Choose review path:**
+
+   **Option A: Ask human to review**
+   ```
+   Staged X files with Y changes. Ready for your review.
+   ```
+
+   **Option B: Spawn reviewer subagent**
+   
+   Provide a clear, detailed prompt explaining:
+   - What was changed and why
+   - Which files were modified
+   - What functionality was added/fixed/refactored
+   - Any architectural decisions made
+   - Edge cases to pay attention to
+   
+   Example:
+   ```typescript
+   Subagent({
+     subagent_type: "Reviewer",
+     description: "Review agenda preview changes",
+     prompt: `Review the staged changes in extensions/agenda/.
+     
+     Changes made:
+     - Added tmux preview integration to agenda browser
+     - Browser now closes before opening preview to avoid modal conflicts
+     - Return negative agenda ID to signal preview request
+     - Handler in index.ts opens preview after browser closes
+     - Added debug logging throughout
+     
+     Focus areas:
+     - Event emission timing and TUI lifecycle
+     - Error handling in openPreview()
+     - Signal convention (negative IDs)
+     - File path construction and cleanup
+     
+     Files modified:
+     - extensions/agenda/browser.ts (+debug, preview logic)
+     - extensions/agenda/index.ts (+preview handler)
+     `,
+     run_in_background: true,
+     agenda_id: <current-agenda-id>
+   })
+   ```
+
+3. **❌ STOP - Never commit without review ❌**
+   
+   Wait for:
+   - Human approval: "Looks good, commit it"
+   - OR Reviewer agent completion with no critical issues
+   
+   If issues found → fix them → stage → review again → repeat until approved
+
+### Why
+
+- Catches bugs before they reach main branch
+- Validates architectural decisions
+- Ensures code follows project patterns
+- Documents intent for future reference
+- Prevents silent regressions
 
 ---
 

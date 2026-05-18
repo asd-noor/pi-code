@@ -979,7 +979,11 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     if (!action || action === "Back") return;
 
     if (action === "View session") {
-      pi.events.emit("terminal:open-pager", { file: filePath, window: `${record.type} (${record.id.slice(0, 8)})` });
+      pi.events.emit("terminal:open-pager", { 
+        file: filePath, 
+        window: `${record.type} (${record.id.slice(0, 8)})`,
+        follow: isActive, // Tail the log if subagent is still running
+      });
     } else if (action === "Stop subagent") {
       const ok = await ctx.ui.confirm("Stop subagent?", `Abort: ${record.description}`);
       if (ok) { manager.abort(record.id); ctx.ui.notify(`Subagent ${record.id} stopped.`, "info"); }
@@ -1033,7 +1037,11 @@ Each task in the tasks array accepts the same per-agent options as the Subagent 
     const sessionIdx = menuOpts.indexOf(pick) - 1;
     if (sessionIdx >= 0 && running[sessionIdx]) {
       const filePath = join(getProjectTempDir(running[sessionIdx]!.cwd ?? currentCwd), "subagents", running[sessionIdx]!.id);
-      pi.events.emit("terminal:open-pager", { file: filePath, window: `${running[sessionIdx]!.type} (${running[sessionIdx]!.id.slice(0, 8)})` });
+      pi.events.emit("terminal:open-pager", { 
+        file: filePath, 
+        window: `${running[sessionIdx]!.type} (${running[sessionIdx]!.id.slice(0, 8)})`,
+        follow: true, // Always tail for running sessions
+      });
     }
   }
 

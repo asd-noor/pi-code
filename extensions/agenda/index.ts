@@ -7,7 +7,8 @@ import { AGENDA_TOOL_NAMES, registerAgendaTools } from "./tools.ts";
 import { refreshAgendaWidget } from "./widget.ts";
 import { join } from "node:path";
 
-const debug = createLogger("agenda");
+let logger = createLogger("agenda");
+function debug(...args: unknown[]): void { logger.log(...args); }
 
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
@@ -122,6 +123,9 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    logger = createLogger("agenda", ctx.cwd);
+    logger.truncate();
+    debug("session_start", ctx.cwd);
     getExtensionTempDir("agenda", ctx.cwd);
     if (!ctx.hasUI) return;
     isInteractive       = true;

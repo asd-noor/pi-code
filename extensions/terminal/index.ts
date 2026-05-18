@@ -44,16 +44,12 @@ import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
-// Detect available pager: prefer ov (with word wrap), fallback to less
-async function detectPager(file: string): Promise<string> {
-  try {
-    await execAsync("which ov");
-    // ov available: use word wrap mode (-w)
-    return `ov -w ${shellQuote(file)}`;
-  } catch {
-    // ov not found, fallback to less
-    return `less -R +F ${shellQuote(file)}`;
-  }
+// Pager command: use less with appropriate flags
+function getPagerCommand(file: string, follow = false): string {
+  // -R honours ANSI colour codes
+  // -S chop long lines (use arrow keys to scroll horizontally)
+  // +F enables follow (tail) mode for growing files
+  return follow ? `less -RS +F ${shellQuote(file)}` : `less -RS ${shellQuote(file)}`;
 }
 
 export default function (pi: ExtensionAPI): void {
@@ -119,11 +115,12 @@ export default function (pi: ExtensionAPI): void {
   pi.events.on("terminal:open-pager", async (data: any) => {
     const file   = data?.file as string | undefined;
     const window = (data?.window as string | undefined) ?? "pager";
+    const follow = data?.follow === true; // Enable tail/follow mode if explicitly set
     if (!file) {
       debug("terminal:open-pager ignored — no file provided", data);
       return;
     }
-    debug("terminal:open-pager", { file, window });
+    debug("terminal:open-pager", { file, window, follow });
     const cwd = state.storedCtx?.cwd ?? process.cwd();
     let sess: string;
     try {
@@ -142,10 +139,8 @@ export default function (pi: ExtensionAPI): void {
     if (exists) {
       debug("terminal:open-pager window already exists — focusing", winName);
     } else {
-      // Detect available pager: prefer ov (modern pager with word wrap), fallback to less
-      // ov flags: -w = word wrap, --follow-mode for tail-like behavior
-      // less flags: -R = honour ANSI colour codes, +F = follow (tail) mode
-      const pagerCmd = await detectPager(file);
+      // Use less with -R (ANSI colors), -S (chop long lines), +F (follow mode if tailing)
+      const pagerCmd = getPagerCommand(file, follow);
       debug("terminal:open-pager spawning window", { winName, pagerCmd });
       await tmux(["new-window", "-t", sess, "-n", winName, "-c", cwd, "bash", "-lc", pagerCmd]);
       knownWindows.add(winName);
