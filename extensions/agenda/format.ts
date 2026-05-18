@@ -1,5 +1,60 @@
 import type { AgendaRow, DiscoveryRow, EvaluationRow, TaskRow, TaskState } from "./types.ts";
 
+// Wrap text at maxWidth visible characters, preserving ANSI codes
+function wrapText(text: string, maxWidth = 120, indent = ""): string {
+  const ansiRegex = /\x1b\[[0-9;]*m/g;
+  const lines: string[] = [];
+  
+  for (const line of text.split("\n")) {
+    if (line.length === 0) {
+      lines.push("");
+      continue;
+    }
+    
+    // Strip ANSI codes to measure visible width
+    const visibleText = line.replace(ansiRegex, "");
+    
+    if (visibleText.length <= maxWidth) {
+      lines.push(line);
+      continue;
+    }
+    
+    // Need to wrap - build wrapped lines character by character
+    let currentLine = indent;
+    let visibleCount = indent.length;
+    let i = 0;
+    
+    while (i < line.length) {
+      // Check for ANSI code
+      const ansiMatch = line.slice(i).match(/^\x1b\[[0-9;]*m/);
+      if (ansiMatch) {
+        currentLine += ansiMatch[0];
+        i += ansiMatch[0].length;
+        continue;
+      }
+      
+      // Regular character
+      currentLine += line[i];
+      visibleCount++;
+      i++;
+      
+      // Wrap if we hit the limit
+      if (visibleCount >= maxWidth) {
+        lines.push(currentLine);
+        currentLine = indent;
+        visibleCount = indent.length;
+      }
+    }
+    
+    // Push remaining content
+    if (currentLine.replace(ansiRegex, "").trim().length > 0) {
+      lines.push(currentLine);
+    }
+  }
+  
+  return lines.join("\n");
+}
+
 export function formatTaskState(state: TaskState): string {
   switch (state) {
     case "completed":  return "[x]";
@@ -86,12 +141,12 @@ export function formatAgendaDetailed(agenda: AgendaRow, tasks: TaskRow[], evalua
 
   // Description
   lines.push(`${yellow}Description:${reset}`);
-  lines.push(agenda.description || "(none)");
+  lines.push(wrapText(agenda.description || "(none)", 120));
   lines.push(sep);
 
   // Acceptance Guard
   lines.push(`${yellow}Acceptance Guard:${reset}`);
-  lines.push(agenda.acceptance_guard);
+  lines.push(wrapText(agenda.acceptance_guard, 120));
   lines.push(sep);
 
   // Tasks
@@ -101,7 +156,7 @@ export function formatAgendaDetailed(agenda: AgendaRow, tasks: TaskRow[], evalua
   } else {
     for (const t of tasks) {
       const stateIcon = formatTaskState(t.state);
-      lines.push(`${stateIcon} #${t.task_order}: ${t.note}`);
+      lines.push(wrapText(`${stateIcon} #${t.task_order}: ${t.note}`, 120, "  "));
     }
   }
   lines.push(sep);
@@ -114,7 +169,7 @@ export function formatAgendaDetailed(agenda: AgendaRow, tasks: TaskRow[], evalua
     lines.push(`Verdict: ${verdictColor}${evaluation.verdict.toUpperCase()} ${verdictIcon}${reset}`);
     lines.push(`Revision: ${evaluation.revision}`);
     lines.push(`Summary:`);
-    lines.push(`  ${evaluation.evaluation_summary}`);
+    lines.push(wrapText(`  ${evaluation.evaluation_summary}`, 120, "  "));
   } else {
     lines.push("(none)");
   }

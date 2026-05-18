@@ -44,10 +44,10 @@ import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
-// Pager command: use less with appropriate flags
+// Pager command: use less for all cases
 function getPagerCommand(file: string, follow = false): string {
   // -R honours ANSI colour codes
-  // -S chop long lines (use arrow keys to scroll horizontally)
+  // -S chop long lines (allows horizontal scrolling)
   // +F enables follow (tail) mode for growing files
   return follow ? `less -RS +F ${shellQuote(file)}` : `less -RS ${shellQuote(file)}`;
 }
